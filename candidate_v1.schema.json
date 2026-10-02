@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "promptguard/candidate-v1",
+  "title": "PromptGuard 후보(candidate) 레코드 v1",
+  "description": "탐지기가 '비밀일 수도 있다'고 뽑은 값 1개(1회 등장)를 설명하는 레코드. 데이터(정우)·hook(세훈)이 만들고 모델(민준)이 읽는다. 위치 필드(span, line, context)는 반드시 location.py로 만든다. 위치 규칙: (1) 기준 문자열 chunk = 가공 전 원문 str 하나 (hook: extract_text() 결과, 데이터: newline=\"\"로 읽은 파일 내용) (2) 정규화(NFC/NFD)·strip·탭 변환·줄바꿈 변환 금지 (3) 위치 단위 = Python str 인덱스(Unicode 코드포인트), start 포함·end 미포함 (4) 줄은 \\n으로만 나눔 (splitlines() 금지), \\r은 line.text에 남김. 문맥 규칙: (5) 문맥은 줄 개수가 아니라 값 앞뒤 글자 수(chars_each_side)로 자름.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "candidate_id", "group_id", "source", "granularity", "value", "line", "context", "type", "detector"],
+  "properties": {
+    "schema_version": {"const": "candidate-v1"},
+    "candidate_id": {"type": "string", "minLength": 1, "description": "전체 데이터에서 유일한 ID"},
+    "group_id": {"type": "string", "minLength": 1, "description": "분할 단위. 같은 group_id는 train/validation/test 중 한쪽에만 둔다 (저장소·세션·과제)"},
+    "chunk_id": {"type": ["string", "null"], "description": "후보가 들어 있는 텍스트 덩어리 ID (프롬프트 1개, tool 출력 1개, 파일 1개). span이 가리키는 기준 문자열이 이 chunk다"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset", "channel"],
+      "properties": {
+        "dataset": {"enum": ["creddata", "secretbench", "injected", "agent_trace", "live"]},
+        "agent": {"enum": ["codex", "claude_code", null]},
+        "channel": {"enum": ["user_prompt", "tool_input", "tool_output", "file"]},
+        "tool_name": {"type": ["string", "null"], "description": "Bash, apply_patch, mcp__server__tool 등"},
+        "command": {"type": ["string", "null"], "description": "Bash라면 실행한 명령. 명령 안의 비밀은 이미 가짜값이어야 함"},
+        "file_path": {"type": ["string", "null"]},
+        "session_id": {"type": ["string", "null"]},
+        "turn_index": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "granularity": {"enum": ["value", "line"], "description": "value = 값 위치까지 앎, line = 어느 줄인지만 앎"},
+    "value": {"type": ["string", "null"], "description": "후보 값. granularity=line이거나 value_redacted=true면 null"},
+    "value_redacted": {"type": "boolean", "default": false, "description": "실시간 로그처럼 진짜 값을 남기면 안 되는 경우 true"},
+    "value_hash": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$", "description": "값의 SHA-256 (원문 값 그대로 UTF-8 인코딩, 정규화하지 않음). 금고 조회·중복 확인용"},
+    "span": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "description": "chunk(가공 전 원문 str) 기준 위치. 단위는 Python str 인덱스(Unicode 코드포인트), 0부터, start 포함·end 미포함. chunk[start:end] == value. hook이 원문에서 값을 바꿔 끼울 때 쓴다. 원문 chunk가 없으면 null",
+      "properties": {"start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 0}}
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first", "last", "text", "value_start", "value_end"],
+      "description": "모델 입력용 위치. 줄은 chunk를 \\n으로만 나눈 것 (splitlines() 금지). \\r은 text 끝에 남는다",
+      "properties": {
+        "first": {"type": ["integer", "null"], "minimum": 1, "description": "후보가 시작하는 줄 번호 (1부터, \\n 기준)"},
+        "last": {"type": ["integer", "null"], "minimum": 1},
+        "text": {"type": "string", "description": "후보가 걸친 줄 전체 (여러 줄이면 \\n으로 연결). 단 문맥 창 밖 부분은 잘린다 (압축된 JS 같은 긴 줄). 앞에서 잘라낸 길이는 meta.line_crop_offset에 적는다"},
+        "value_start": {"type": ["integer", "null"], "minimum": 0, "description": "line.text 안에서 값 시작 위치 (단위는 span과 같음)"},
+        "value_end": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before", "after", "chars_each_side", "before_truncated", "after_truncated"],
+      "description": "문맥 창 = 원문에서 값 앞 chars_each_side자 + 값 + 값 뒤 chars_each_side자. 줄 개수가 아니라 글자 수로 자른다. 창 안의 내용을 \\n으로 나눠 후보 줄은 line.text, 앞은 before, 뒤는 after에 넣는다. before + line.text + after를 \\n으로 이으면 원문의 연속 구간이 된다",
+      "properties": {
+        "before": {"type": "array", "items": {"type": "string"}, "description": "창 안에서 후보 줄 앞에 있는 줄들 (가까운 줄이 마지막)"},
+        "after": {"type": "array", "items": {"type": "string"}, "description": "창 안에서 후보 줄 뒤에 있는 줄들 (가까운 줄이 처음)"},
+        "chars_each_side": {"type": "integer", "minimum": 1, "description": "값 앞뒤로 가져온 최대 글자 수 (기본 1000)"},
+        "before_truncated": {"type": "boolean", "description": "before[0]이 줄 중간부터 시작하면 true (창 끝에서 잘림)"},
+        "after_truncated": {"type": "boolean", "description": "after의 마지막 줄이 줄 중간에서 끝나면 true (창 끝에서 잘림)"}
+      }
+    },
+    "type": {"enum": ["API_KEY", "TOKEN", "PASSWORD", "PRIVATE_KEY", "URL_CREDENTIAL", "CLOUD_CREDENTIAL", "GENERIC_SECRET", "OTHER"]},
+    "detector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "rule_id", "raw_type", "score"],
+      "properties": {
+        "name": {"type": "string", "description": "탐지기 이름 (gitleaks-rules, credsweeper, creddata-meta 등)"},
+        "rule_id": {"type": ["string", "null"]},
+        "raw_type": {"type": ["string", "null"], "description": "탐지기가 붙인 원래 종류 이름"},
+        "score": {"type": ["number", "null"], "description": "탐지기 자체 점수가 있으면"}
+      }
+    },
+    "label": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["action", "reason", "source", "provisional"],
+      "description": "학습·평가 데이터에만 있음. 실시간 추론 때는 null",
+      "properties": {
+        "action": {"enum": ["MASK", "KEEP"]},
+        "reason": {"enum": ["real_credential", "placeholder", "doc_example", "test_value", "non_secret_id", "public_by_design", "not_secret", "unknown"]},
+        "source": {"enum": ["creddata", "secretbench", "injection", "human", "llm"]},
+        "provisional": {"type": "boolean", "description": "라벨 정의가 우리 기준과 달라 임시로 옮긴 라벨이면 true"},
+        "note": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"action": {"const": "MASK"}}}, "then": {"properties": {"reason": {"enum": ["real_credential", "unknown"]}}}},
+        {"if": {"properties": {"action": {"const": "KEEP"}}}, "then": {"properties": {"reason": {"not": {"const": "real_credential"}}}}}
+      ]
+    },
+    "meta": {"type": "object", "description": "자유 필드. 원본 데이터의 추가 정보. line_crop_offset(정수, line.text를 자른 경우 잘라낸 앞부분 길이)은 location.py가 채운다"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"granularity": {"const": "value"}}},
+      "then": {"properties": {"line": {"properties": {"value_start": {"type": "integer"}, "value_end": {"type": "integer"}}}}}
+    },
+    {
+      "if": {"properties": {"granularity": {"const": "line"}}},
+      "then": {"properties": {"value": {"type": "null"}, "span": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"value_redacted": {"const": true}}, "required": ["value_redacted"]},
+      "then": {"properties": {"value": {"type": "null"}}}
+    }
+  ],
+  "$defs": {
+    "prediction": {
+      "title": "모델 예측 레코드 v1 (모델 → 시스템)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "candidate_id", "model_version", "p_mask", "threshold", "action"],
+      "properties": {
+        "schema_version": {"const": "prediction-v1"},
+        "candidate_id": {"type": "string"},
+        "model_version": {"type": "string"},
+        "p_mask": {"type": "number", "minimum": 0, "maximum": 1},
+        "threshold": {"type": "number", "minimum": 0, "maximum": 1},
+        "action": {"enum": ["MASK", "KEEP"]},
+        "latency_ms": {"type": ["number", "null"]}
+      }
+    }
+  }
+}
