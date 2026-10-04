@@ -1,0 +1,51 @@
+{"item_id": "m1-01-node-env/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-01-node-env/01", "command_context": "cat .env", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-01-node-env/02", "command_context": "cat .env.example", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-01-node-env/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-02-python-uri/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-02-python-uri/01", "command_context": "cat config.toml", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-02-python-uri/02", "command_context": "python worker.py", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-02-python-uri/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-03-compose/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-03-compose/01", "command_context": "docker compose config", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-03-compose/02", "command_context": "rg -n 'apiToken|password' tests/", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-03-compose/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-04-http/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-04-http/01", "command_context": "curl -v https://api.example.invalid/v1/status", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-04-http/02", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-04-http/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-05-git-history/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-05-git-history/01", "command_context": "git log -p -1 -- .env", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-05-git-history/02", "command_context": "printenv | sort", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-05-git-history/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-06-process/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-06-process/01", "command_context": "ps aux", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-06-process/02", "command_context": "printenv", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-06-process/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-07-kubernetes/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-07-kubernetes/01", "command_context": "kubectl get secret app-db -o yaml", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-07-kubernetes/02", "command_context": "kubectl logs deploy/api", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-07-kubernetes/03", "command_context": "kubectl get pods", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-08-prompt-agents/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-08-prompt-agents/01", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-08-prompt-agents/02", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-08-prompt-agents/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-08-prompt-agents/04", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-09-private-key/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-09-private-key/01", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-09-private-key/02", "command_context": "cat keys/signing.pem", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-09-private-key/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-10-negative-build/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-10-negative-build/01", "command_context": "cat pnpm-lock.yaml", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-10-negative-build/02", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-10-negative-build/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-11-negative-config/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-11-negative-config/01", "command_context": "cat config.template", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-11-negative-config/02", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-11-negative-config/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-12-rotation/00", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-12-rotation/01", "command_context": "Get-Content config.env (Bash wrapper stdout)", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-12-rotation/02", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-12-rotation/03", "command_context": null, "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-12-rotation/04", "command_context": "cat config.env", "provenance": "authored text; command is context only, not executed"}
+{"item_id": "m1-12-rotation/05", "command_context": null, "provenance": "authored text; command is context only, not executed"}

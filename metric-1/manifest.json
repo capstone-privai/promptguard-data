@@ -1,0 +1,38 @@
+{
+  "version": "metric1-v0.1",
+  "reference_commit": "027a3e0d0cb4d86e9b310293229dddc7d4459b9c",
+  "sessions": 12,
+  "items": 51,
+  "gold_spans": 32,
+  "annotated_negative_spans": 17,
+  "negative_only_sessions": 2,
+  "lines": 151,
+  "gold_per_1000_lines": 211.9205298013245,
+  "gold_by_type": {
+    "PASSWORD": 14,
+    "SECRET": 7,
+    "TOKEN": 7,
+    "ACCESS_KEY": 3,
+    "PRIVATE_KEY": 1
+  },
+  "gold_by_channel": {
+    "stdout": 22,
+    "stderr": 7,
+    "prompt": 2,
+    "agents_md": 1
+  },
+  "gold_by_exposure": {
+    "direct": 24,
+    "embedded": 3,
+    "base64": 3,
+    "url_encoded": 1,
+    "multiline": 1
+  },
+  "gold_by_reason": {
+    "test_value": 28,
+    "real_credential": 2,
+    "public_by_design": 2
+  },
+  "unsupported_channel_gold": 3,
+  "dataset_sha256": "d75fa424382cd66fa885a345ca3b0b4037fa36697a1db4ace75c08a32e6e401d"
+}

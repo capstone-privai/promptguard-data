@@ -1,0 +1,82 @@
+{
+  "started_at": "2026-10-04T20:15:37",
+  "git": {
+    "commit": "027a3e0d0cb4d86e9b310293229dddc7d4459b9c",
+    "branch": "feat/evaluation-metric1",
+    "dirty": null
+  },
+  "system": {
+    "system": "promptguard",
+    "predictor": "mock",
+    "threshold": null,
+    "processed_channels": [
+      "stdout",
+      "stderr"
+    ]
+  },
+  "thresholds": [
+    null
+  ],
+  "debug": false,
+  "dataset": {
+    "path": "evaluation_data/metric1-v0/sessions.jsonl",
+    "sha256": "d75fa424382cd66fa885a345ca3b0b4037fa36697a1db4ace75c08a32e6e401d",
+    "sessions": 12,
+    "items": 51,
+    "gold_spans": 32,
+    "meta_summary": {
+      "dataset_version": {
+        "metric1-v0.1": 12
+      },
+      "group_id": {
+        "01-node-env": 1,
+        "02-python-uri": 1,
+        "03-compose": 1,
+        "04-http": 1,
+        "05-git-history": 1,
+        "06-process": 1,
+        "07-kubernetes": 1,
+        "08-prompt-agents": 1,
+        "09-private-key": 1,
+        "10-negative-build": 1,
+        "11-negative-config": 1,
+        "12-rotation": 1
+      },
+      "human_review": {
+        "pending": 12
+      },
+      "label_policy": {
+        "notion-2026-10-02+metric1-2026-10-04": 12
+      },
+      "real_codex_rollout": {
+        "False": 12
+      },
+      "scenario": {
+        "Docker Compose의 기본값과 테스트 비밀번호": 1,
+        "Git 이력에 남은 클라우드 키": 1,
+        "HTTP 클라이언트 인증 헤더와 쿠키": 1,
+        "Kubernetes Secret의 인코딩된 값": 1,
+        "Node API의 환경 설정 확인": 1,
+        "PEM 개인키와 줄 경계": 1,
+        "Python DB 연결 실패와 예외 출력": 1,
+        "비밀이 없는 빌드 출력과 고엔트로피 식별자": 1,
+        "비밀이 없는 참조 표현과 식별자": 1,
+        "여러 턴의 반복 노출·한국어·CRLF·공개용 키": 1,
+        "프로세스 명령줄과 셸 기본값 속 비밀": 1,
+        "프롬프트와 자동 로드 파일의 채널 누락": 1
+      },
+      "source": {
+        "authored_synthetic_injection": 12
+      },
+      "split": {
+        "pilot_test": 12
+      }
+    }
+  },
+  "versions": {
+    "evaluation": "0.1.0",
+    "python": "3.12.14",
+    "credsweeper": "1.18.5"
+  },
+  "platform": "macOS-27.2-arm64-arm-64bit"
+}

@@ -1,0 +1,51 @@
+{"item_id": "m1-01-node-env/00", "channel": "prompt", "text": "로컬 API가 인증 오류로 시작되지 않아. 환경 설정과 예시 파일의 차이를 확인해줘."}
+{"item_id": "m1-01-node-env/01", "channel": "stdout", "text": "NODE_ENV=development\nPORT=3000\nDB_HOST=db.example.invalid\nDB_PASSWORD=\"<REDACTED>\"\nPAYMENT_API_KEY=<REDACTED>\nLOG_LEVEL=info\n"}
+{"item_id": "m1-01-node-env/02", "channel": "stdout", "text": "# Required variables\nDB_PASSWORD=<REDACTED>\nAPI_KEY=${PAYMENT_API_KEY}\nPORT=3000\n"}
+{"item_id": "m1-01-node-env/03", "channel": "stderr", "text": "Error: upstream returned 401\n    at connect (/workspace/api/client.js:42:9)\nretry_count=3\n"}
+{"item_id": "m1-02-python-uri/00", "channel": "prompt", "text": "Find why the worker cannot connect to the database after the configuration change."}
+{"item_id": "m1-02-python-uri/01", "channel": "stdout", "text": "[database]\nurl = \"<REDACTED>\"\npool_size = 5\n[worker]\nconcurrency = 2\n"}
+{"item_id": "m1-02-python-uri/02", "channel": "stderr", "text": "Traceback (most recent call last):\n  File \"/workspace/worker.py\", line 21, in main\n    connect(settings.url)\nConnectionError: connection refused for <REDACTED>\n"}
+{"item_id": "m1-02-python-uri/03", "channel": "stdout", "text": "request_id=ca9728a4-a732-4cda-88e9-543f5c34204f\nstatus=retrying\nbackoff_seconds=2\n"}
+{"item_id": "m1-03-compose/00", "channel": "prompt", "text": "컨테이너를 다시 만든 뒤 DB 인증이 실패해. Compose에서 전달하는 값을 확인해줘."}
+{"item_id": "m1-03-compose/01", "channel": "stdout", "text": "services:\n  database:\n    image: postgres:16\n    environment:\n      POSTGRES_USER: app\n      POSTGRES_PASSWORD: <REDACTED>\n  api:\n    environment:\n      SESSION_SECRET: <REDACTED>\n"}
+{"item_id": "m1-03-compose/02", "channel": "stdout", "text": "tests/auth.test.ts:8:const apiToken = '<REDACTED>';\ntests/auth.test.ts:9:const password = '<REDACTED>';\n"}
+{"item_id": "m1-03-compose/03", "channel": "stderr", "text": "api-1 | password authentication failed for user app\ndatabase-1 | connection closed\n"}
+{"item_id": "m1-04-http/00", "channel": "prompt", "text": "Inspect the API client's authentication error without changing the retry policy."}
+{"item_id": "m1-04-http/01", "channel": "stderr", "text": "* Connected to api.example.invalid port 443\n> GET /v1/status HTTP/1.1\n> Host: api.example.invalid\n> Authorization: Bearer <REDACTED>\n> X-Request-ID: ace39be0-09f5-425d-a18f-6c5b31f91dfb\n< HTTP/1.1 401 Unauthorized\n"}
+{"item_id": "m1-04-http/02", "channel": "stdout", "text": "HTTP/1.1 200 OK\nContent-Type: application/json\nSet-Cookie: session=<REDACTED>; HttpOnly; Secure; SameSite=Lax\nETag: \"4acc052a5df1967c4515e30137e9537b\"\n"}
+{"item_id": "m1-04-http/03", "channel": "stderr", "text": "DEBUG retrying with Authorization: Basic <REDACTED>\nERROR upstream status=403\n"}
+{"item_id": "m1-05-git-history/00", "channel": "prompt", "text": "현재 설정에는 없는 AWS 인증 오류의 원인이 최근 변경에 있는지 살펴봐줘."}
+{"item_id": "m1-05-git-history/01", "channel": "stdout", "text": "commit 69a441436c5c51fc8377449ebbb2464fc813a51a\nAuthor: Build Bot <build@example.invalid>\n\n    remove local credentials\n\ndiff --git a/.env b/.env\n--- a/.env\n+++ b/.env\n@@ -1,3 +1 @@\n-AWS_ACCESS_KEY_ID=<REDACTED>\n-AWS_SECRET_ACCESS_KEY=<REDACTED>\n AWS_REGION=ap-northeast-2\n"}
+{"item_id": "m1-05-git-history/02", "channel": "stdout", "text": "AWS_REGION=ap-northeast-2\nAWS_PROFILE=dev\ncredential_source=Environment\n"}
+{"item_id": "m1-05-git-history/03", "channel": "stderr", "text": "InvalidClientTokenId: the security token included in the request is invalid\nrequest_id=848237a0-011a-4df9-9574-36a28b8c094b\n"}
+{"item_id": "m1-06-process/00", "channel": "prompt", "text": "The background export job is stuck. Check its arguments and environment."}
+{"item_id": "m1-06-process/01", "channel": "stdout", "text": "USER       PID COMMAND\nworker     201 mysql --host=db.example.invalid --user=export -p<REDACTED> app\nworker     208 sh -c 'curl -H \"X-Api-Key: ${SERVICE_KEY:-<REDACTED>}\" https://api.example.invalid/jobs'\n"}
+{"item_id": "m1-06-process/02", "channel": "stdout", "text": "HOME=/home/worker\nPATH=/usr/local/bin:/usr/bin\nGITHUB_TOKEN=<REDACTED>\nJOB_ID=batch-20261004-021\n"}
+{"item_id": "m1-06-process/03", "channel": "stderr", "text": "mysql: [Warning] Using a password on the command line interface can be insecure.\nERROR 2003: connection refused\n"}
+{"item_id": "m1-07-kubernetes/00", "channel": "prompt", "text": "배포한 Pod가 DB 인증에 실패해. Secret과 앱 로그의 설정이 일치하는지 확인해줘."}
+{"item_id": "m1-07-kubernetes/01", "channel": "stdout", "text": "apiVersion: v1\nkind: Secret\nmetadata:\n  name: app-db\n  namespace: staging\ntype: Opaque\ndata:\n  password: <REDACTED>\n  api-token: <REDACTED>\n"}
+{"item_id": "m1-07-kubernetes/02", "channel": "stdout", "text": "2026-10-04T08:00:00Z INFO opening connection\n2026-10-04T08:00:01Z DEBUG connection_uri_encoded=<REDACTED>\n2026-10-04T08:00:02Z ERROR auth failed\n"}
+{"item_id": "m1-07-kubernetes/03", "channel": "stdout", "text": "NAME                   READY   STATUS\napi-7cbd6f9d4b-qx2n8   0/1     Running\n"}
+{"item_id": "m1-08-prompt-agents/00", "channel": "prompt", "text": "스테이징 DB 비밀번호는 <REDACTED> 이야. 연결이 왜 끊기는지 로그를 확인해줘."}
+{"item_id": "m1-08-prompt-agents/01", "channel": "agents_md", "text": "# Workspace notes\nRun unit tests before changing deployment scripts.\nThe temporary deploy password is <REDACTED>.\nUse the package manager lockfile.\n"}
+{"item_id": "m1-08-prompt-agents/02", "channel": "stdout", "text": "2026-10-04 INFO db_host=db.example.invalid\n2026-10-04 ERROR connection timeout\nretries=3\n"}
+{"item_id": "m1-08-prompt-agents/03", "channel": "prompt", "text": "The service token was rotated to <REDACTED>. Check whether the retry changed the error."}
+{"item_id": "m1-08-prompt-agents/04", "channel": "stderr", "text": "인증 재시도 실패: password=<REDACTED>\nnetwork_timeout_ms=5000\n"}
+{"item_id": "m1-09-private-key/00", "channel": "prompt", "text": "The signing worker rejects its local key. Inspect the configured key format."}
+{"item_id": "m1-09-private-key/01", "channel": "stdout", "text": "signing_key_path=/workspace/keys/signing.pem\nalgorithm=Ed25519\n"}
+{"item_id": "m1-09-private-key/02", "channel": "stdout", "text": "<REDACTED>\n"}
+{"item_id": "m1-09-private-key/03", "channel": "stderr", "text": "KeyError: remote key id does not match\nkey_id=signer-2026-10\n"}
+{"item_id": "m1-10-negative-build/00", "channel": "prompt", "text": "Check whether the dependency build completed and identify the changed artifact."}
+{"item_id": "m1-10-negative-build/01", "channel": "stdout", "text": "lockfileVersion: 9\npackage: web-client\nintegrity: sha512-IX2feySqI8NGj4bzfkKUJm/t3xcmSbWJSzlvZfE19j1qnqCxEQVxwllDlcDs1fbL8phATq+u/25lEpvaB/QL6w==\nresolved: https://registry.npmjs.org/typescript/-/typescript-5.7.3.tgz\n"}
+{"item_id": "m1-10-negative-build/02", "channel": "stdout", "text": "image=web-client\ndigest=sha256:430210f9f971568911dca2761e692e40bc8cb65663d28c96ca579c5d2fbcb896\nrequest_id=792a25e2-93f1-4892-b14e-fcfb66bc6074\nmodules=248\nbuild completed in 2.4s\n"}
+{"item_id": "m1-10-negative-build/03", "channel": "stderr", "text": "warning: source map omitted for vendor.js\n0 errors, 1 warning\n"}
+{"item_id": "m1-11-negative-config/00", "channel": "prompt", "text": "설정 문서에서 필요한 환경 변수와 공개 식별자 목록을 정리해줘."}
+{"item_id": "m1-11-negative-config/01", "channel": "stdout", "text": "DB_PASSWORD=${DB_PASSWORD}\nAPI_TOKEN=<API_TOKEN>\nSECRET_NAME=service-config\npassword=\n"}
+{"item_id": "m1-11-negative-config/02", "channel": "stdout", "text": "# Runtime metrics\ntoken_count=2048\nmax_tokens=8192\nchecksum=46b649cd499551dd10378e5c4522a72e6d1bb2578b65aab29d01c4df026974f7\nasset_id=1af68b2a-3e30-41f7-a825-bcc4e8c5c6d1\n"}
+{"item_id": "m1-11-negative-config/03", "channel": "stdout", "text": "Reference variables are substituted by the deployment environment.\nNo literal credentials are defined in this template.\n"}
+{"item_id": "m1-12-rotation/00", "channel": "prompt", "text": "🔎 윈도우 설정과 인증 오류를 확인하고, 교체 전후 값을 비교해줘."}
+{"item_id": "m1-12-rotation/01", "channel": "stdout", "text": "# 인증 설정 🔐\r\nDB_USER=배포\r\nDB_PASSWORD=\"<REDACTED>\"\r\nPUBLISHABLE_KEY=<REDACTED>\r\n"}
+{"item_id": "m1-12-rotation/02", "channel": "stderr", "text": "connect failed; password=<REDACTED>; retry_password=<REDACTED>\n"}
+{"item_id": "m1-12-rotation/03", "channel": "prompt", "text": "설정 파일을 교체했어. 다시 확인하고 새 오류를 비교해줘."}
+{"item_id": "m1-12-rotation/04", "channel": "stdout", "text": "# updated config\nDB_PASSWORD='<REDACTED>'\nPUBLISHABLE_KEY=<REDACTED>\n"}
+{"item_id": "m1-12-rotation/05", "channel": "stderr", "text": "new connection failed; password=<REDACTED>"}
