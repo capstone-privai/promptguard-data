@@ -1,12 +1,20 @@
-"""Build a small authored, injected session corpus, independently of any detector.
+"""Build session corpora with gold spans recorded at insertion time, independently of any detector.
 
-Run from the repository root: python metric-1/scripts/build_dataset.py
+Run from the repository root:
+  python metric-1/scripts/build_dataset.py                       built-in corpus below
+  python metric-1/scripts/build_dataset.py --template T.jsonl --origin authored|injected
 This is normalized evaluation input, NOT a captured Codex rollout.
 
-Writes exactly two files:
+Writes two files (with --template T.jsonl: sessions_from_T.jsonl, gold_from_T.jsonl):
   sessions.jsonl  one session per line: session_id, items, meta (no gold)
   gold.jsonl      one gold span per line: session_id, item_id, span_id, span
                   (span = {start, end, type}; items without spans are omitted)
+
+Template file: same shape as sessions.jsonl, but item text holds placeholders that are
+replaced by deterministic synthetic secrets (see metric-1/templates/README.md):
+  {{kind}} {{kind:name}} {{kind:name|transform|...}}   generated value, e.g. {{password:db|base64}}
+  {{TYPE=literal}}                                    fixed value labeled TYPE, e.g. {{PASSWORD=changeme}}
+  \\{{                                                 a literal "{{"
 """
 from __future__ import annotations
 
@@ -19,7 +27,12 @@ from pathlib import Path
 import re
 from urllib.parse import quote
 
+from dataset_policy import ALLOWED_USE
+
 VERSION = "metric1-v0.1"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CHANNELS = {"prompt", "stdout", "stderr", "agents_md", "file_read"}
+TYPES = {"PASSWORD", "SECRET", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY"}
 
 
 @dataclass(frozen=True)
@@ -54,12 +67,16 @@ class Corpus:
         self.gold = []
 
     def session(self, slug: str, title: str):
-        self.current = {"session_id": f"m1-{slug}", "items": [], "meta": {
+        self.add_session(f"m1-{slug}", {
             "dataset_version": VERSION, "source": "authored_synthetic_injection",
-            "scenario": title, "group_id": slug, "split": "pilot_test",
+            "origin": "authored", "allowed_use": ALLOWED_USE["authored"],
+            "scenario": title, "group_id": slug,
             "label_policy": "notion-2026-10-02+metric1-2026-10-04",
-            "human_review": "pending", "real_codex_rollout": False,
-        }}
+            "human_review": "pending",
+        })
+
+    def add_session(self, session_id: str, meta: dict):
+        self.current = {"session_id": session_id, "items": [], "meta": meta}
         self.sessions.append(self.current)
 
     def item(self, channel: str, *parts: str | Slot, turn: str = "t0"):
@@ -185,6 +202,159 @@ def build() -> Corpus:
     return c
 
 
+# ---- templates -------------------------------------------------------------
+
+def strong_password(seed: str) -> str:
+    # 14 chars with every character class, without a fixed suffix a model could learn.
+    body = value(seed + ":body", 11, "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+    extra = value(seed + ":upper", 1, "ABCDEFGHJKLMNPQRSTUVWXYZ") + value(seed + ":digit", 1, "23456789") + \
+        value(seed + ":symbol", 1, "!#$%&*+-=?@^_~")
+    cut = hashlib.sha256(seed.encode()).digest()[0] % len(body)
+    return body[:cut] + extra + body[cut:]
+
+
+def b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+
+def jwt(seed: str) -> str:
+    header = b64url(b'{"alg":"HS256","typ":"JWT"}')
+    payload = b64url(json.dumps({"sub": value(seed + ":sub", 8, "0123456789"), "iat": 1790000000}, separators=(",", ":")).encode())
+    return f"{header}.{payload}.{b64url(hashlib.sha256((VERSION + ':' + seed).encode()).digest())}"
+
+
+def ed25519_pem(seed: str) -> str:
+    # RFC 8410 PKCS#8 wrapper around a public deterministic seed; never registered anywhere.
+    der = bytes.fromhex("302e020100300506032b657004220420") + hashlib.sha256((VERSION + ":" + seed).encode()).digest()
+    return "-----BEGIN PRIVATE KEY-----\n" + base64.b64encode(der).decode() + "\n-----END PRIVATE KEY-----"
+
+
+DIGITS = "0123456789"
+UPPER_ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+AWS_SECRET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/+"
+
+# kind -> (gold type, generator(seed) -> value)
+GENERATORS = {
+    "password": ("PASSWORD", strong_password),
+    "token": ("TOKEN", lambda s: value(s, 40)),
+    "github_token": ("TOKEN", lambda s: "ghp_" + value(s, 36)),
+    "slack_token": ("TOKEN", lambda s: f"xoxb-{value(s + ':a', 12, DIGITS)}-{value(s + ':b', 13, DIGITS)}-{value(s, 24)}"),
+    "jwt": ("TOKEN", jwt),
+    "api_key": ("SECRET", lambda s: value(s, 40)),
+    "secret": ("SECRET", lambda s: value(s, 48)),
+    "aws_access_key": ("ACCESS_KEY", lambda s: "AKIA" + value(s, 16, UPPER_ALNUM)),
+    "aws_secret_key": ("SECRET", lambda s: value(s, 40, AWS_SECRET)),
+    "publishable_key": ("ACCESS_KEY", lambda s: "pk_test_" + value(s, 24)),
+    "db_uri": ("SECRET", lambda s: f"postgresql://service:{quote(strong_password(s), safe='')}@db.example.invalid:5432/app"),
+    "private_key": ("PRIVATE_KEY", ed25519_pem),
+}
+
+
+def transform(text: str, name: str, arg: str | None) -> tuple[str, str | None]:
+    """Returns the encoded text and, if the transform changes it, the new gold type."""
+    if name == "base64":
+        return base64.b64encode(text.encode()).decode(), None
+    if name == "url":
+        return quote(text, safe=""), None
+    if name == "basic":
+        # HTTP Basic credential: base64("user:secret"), labeled as a token like the built-in corpus.
+        return base64.b64encode(f"{arg or 'user'}:{text}".encode()).decode(), "TOKEN"
+    raise ValueError(f"unknown transform {name!r}")
+
+
+PLACEHOLDER = re.compile(r"""
+    \\\{\{                                                     # escaped literal "{{"
+  | \{\{ (?P<kind>[a-z][a-z0-9_]*) (?::(?P<name>[\w.-]+))?
+         (?P<transforms>(?:\|[a-z0-9_]+(?:=[^|}]*)?)*) \}\}    # {{kind:name|t1|t2=arg}}
+  | \{\{ (?P<type>[A-Z][A-Z_]*) = (?P<literal>.+?) \}\}        # {{TYPE=literal}}
+""", re.VERBOSE | re.DOTALL)
+SUSPICIOUS = re.compile(r"\{\{[A-Za-z][^\s{}]*\}\}")
+
+
+def parse_text(text: str, seed: str, unnamed: list[int]) -> list[str | Slot]:
+    """Split template text into literal strings and Slots."""
+    parts, pos = [], 0
+    for m in PLACEHOLDER.finditer(text):
+        parts.append(text[pos:m.start()])
+        pos = m.end()
+        if m.group(0) == "\\{{":
+            parts.append("{{")
+        elif m.group("type"):
+            if m.group("type") not in TYPES:
+                raise ValueError(f"unknown gold type in {m.group(0)!r}, expected one of {sorted(TYPES)}")
+            parts.append(Slot(m.group("literal"), m.group("type")))
+        else:
+            kind = m.group("kind")
+            if kind not in GENERATORS:
+                raise ValueError(f"unknown kind in {m.group(0)!r}, expected one of {sorted(GENERATORS)}")
+            kind_type, generate = GENERATORS[kind]
+            name = m.group("name")
+            if name is None:  # each unnamed placeholder gets its own value
+                unnamed[0] += 1
+                name = f"#{unnamed[0]}"
+            out = generate(f"{seed}:{kind}:{name}")
+            for t in filter(None, m.group("transforms").split("|")):
+                t_name, _, t_arg = t.partition("=")
+                out, new_type = transform(out, t_name, t_arg or None)
+                kind_type = new_type or kind_type
+            parts.append(Slot(out, kind_type))
+    parts.append(text[pos:])
+    for part in parts:
+        if isinstance(part, str) and (m := SUSPICIOUS.search(part)):
+            raise ValueError(f"{m.group(0)!r} looks like a placeholder but is not one; escape it as \\{{{{ if it is literal text")
+    return [p for p in parts if p != ""]
+
+
+def from_template(path: Path, origin: str) -> Corpus:
+    if origin not in ALLOWED_USE:
+        raise ValueError(f"unknown origin {origin!r}, expected one of {sorted(ALLOWED_USE)}")
+    try:
+        template = str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        template = str(path.resolve())
+    c = Corpus()
+    seen = set()
+    for n, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+        if not line.strip():
+            continue
+        where = f"{path.name}:{n}"
+        s = json.loads(line)
+        if set(s) - {"session_id", "items", "meta"} or not {"session_id", "items"} <= set(s):
+            raise ValueError(f"{where}: a session needs session_id and items, and may have meta; got {sorted(s)}")
+        sid = s["session_id"]
+        if sid in seen:
+            raise ValueError(f"{where}: duplicate session_id {sid}")
+        seen.add(sid)
+        meta = dict(s.get("meta", {}))
+        owned = {"dataset_version": VERSION, "source": "template", "template": template,
+                 "origin": origin, "allowed_use": ALLOWED_USE[origin]}
+        for key, val in owned.items():
+            if key in meta and meta[key] != val:
+                raise ValueError(f"{where}: meta.{key} is set by the builder ({val!r}); remove {meta[key]!r} from the template")
+        meta = {**owned, "group_id": sid, **meta}
+        c.add_session(sid, meta)
+        unnamed = [0]
+        for i, item in enumerate(s["items"]):
+            if set(item) - {"item_id", "turn_id", "channel", "text"} or not {"channel", "text"} <= set(item):
+                raise ValueError(f"{where}: item {i} needs channel and text, and may have item_id and turn_id; got {sorted(item)}")
+            if item.get("item_id", i) != i:
+                raise ValueError(f"{where}: item at index {i} has item_id {item['item_id']!r}")
+            if item["channel"] not in CHANNELS:
+                raise ValueError(f"{where}: item {i} unknown channel {item['channel']!r}, expected one of {sorted(CHANNELS)}")
+            try:
+                parts = parse_text(item["text"], f"{path.stem}:{sid}", unnamed)
+            except ValueError as e:
+                raise ValueError(f"{where}: item {i}: {e}") from None
+            c.item(item["channel"], *parts, turn=item.get("turn_id", "t0"))
+    return c
+
+
+def output_paths(out: Path, template: Path | None) -> tuple[Path, Path]:
+    if template is None:
+        return out / "sessions.jsonl", out / "gold.jsonl"
+    return out / f"sessions_from_{template.stem}.jsonl", out / f"gold_from_{template.stem}.jsonl"
+
+
 def write_jsonl(path: Path, rows):
     path.write_bytes("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows).encode("utf-8"))
 
@@ -207,13 +377,23 @@ def validate(c: Corpus):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--template", type=Path, help="session template JSONL with {{...}} placeholders")
+    parser.add_argument("--origin", choices=sorted(ALLOWED_USE),
+                        help="required with --template: authored if the secrets fit the context they were written in, "
+                             "injected if placeholders were added to a trajectory not written for them (rule_eval only)")
     args = parser.parse_args()
-    c = build()
+    if args.template and not args.origin:
+        parser.error("--template requires --origin")
+    if args.origin and not args.template:
+        parser.error("--origin only applies to --template")
+    c = from_template(args.template, args.origin) if args.template else build()
     validate(c)
     args.out.mkdir(parents=True, exist_ok=True)
-    write_jsonl(args.out / "sessions.jsonl", c.sessions)
-    write_jsonl(args.out / "gold.jsonl", c.gold)
-    print(f"{len(c.sessions)} sessions, {sum(len(s['items']) for s in c.sessions)} items, {len(c.gold)} gold spans")
+    sessions_path, gold_path = output_paths(args.out, args.template)
+    write_jsonl(sessions_path, c.sessions)
+    write_jsonl(gold_path, c.gold)
+    print(f"{sessions_path.name}, {gold_path.name}: {len(c.sessions)} sessions, "
+          f"{sum(len(s['items']) for s in c.sessions)} items, {len(c.gold)} gold spans")
 
 
 if __name__ == "__main__":

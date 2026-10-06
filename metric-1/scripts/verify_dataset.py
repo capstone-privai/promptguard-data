@@ -1,13 +1,19 @@
-"""Verify sessions.jsonl and gold.jsonl written by build_dataset.py.
+"""Verify a sessions/gold pair written by build_dataset.py or convert_creddata.py.
 
-Run from the repository root: python metric-1/scripts/verify_dataset.py
+Run from the repository root:
+  python metric-1/scripts/verify_dataset.py                                     sessions.jsonl + gold.jsonl
+  python metric-1/scripts/verify_dataset.py metric-1/sessions_from_example.jsonl  + gold_from_example.jsonl
+  python metric-1/scripts/verify_dataset.py metric-1/sessions_from_CredData.jsonl --creddata ../CredData
 
 Checks:
-  1. sessions.jsonl schema: unique session_id, item_id = 0..n-1, known channel, no gold fields
-  2. gold.jsonl schema: one span per row, span_id = 0..k-1 per item, items without spans omitted
-  3. span bounds: 0 <= start < end <= len(text), no overlap within an item, known type
-  4. coverage: every occurrence of a long (>= 9 chars) gold value in any item is inside a gold span
-  5. reproduction: rebuilding with build_dataset.py yields byte-identical files
+  1. sessions schema: unique session_id, item_id = 0..n-1, known channel, no gold fields
+  2. meta: one source per file; allowed_use matches dataset_policy.ALLOWED_USE[origin]
+  3. gold schema: one span per row, span_id = 0..k-1 per item, items without spans omitted
+  4. span bounds: 0 <= start < end <= len(text), no overlap within an item, known type
+  5. coverage: every occurrence of a long (>= 9 chars) gold value in any item is inside a gold span
+     (skipped for origin=external: those labels are the source dataset's, not ours)
+  6. reproduction: regenerating from the recorded source yields byte-identical files
+     (built-in corpus, meta.template, or --creddata; skipped for CredData without --creddata)
 Exits 1 and lists every problem found if any check fails.
 """
 from __future__ import annotations
@@ -20,20 +26,22 @@ import re
 import sys
 import tempfile
 
-from build_dataset import build, write_jsonl
+from build_dataset import CHANNELS, REPO_ROOT, TYPES, build, from_template, write_jsonl
+from dataset_policy import ALLOWED_USE
 
 SESSION_KEYS = {"session_id", "items", "meta"}
 ITEM_KEYS = {"item_id", "turn_id", "channel", "text"}
 GOLD_KEYS = {"session_id", "item_id", "span_id", "span"}
 SPAN_KEYS = {"start", "end", "type"}
-CHANNELS = {"prompt", "stdout", "stderr", "agents_md"}
-TYPES = {"PASSWORD", "SECRET", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY"}
 MIN_COVERAGE_LEN = 9
 
 
 def read_jsonl(path: Path, errors: list[str]) -> list[dict]:
     rows = []
-    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    # Split on "\n" only: str.splitlines() also breaks on U+2028 etc., which JSON leaves unescaped.
+    for n, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+        if not line:
+            continue
         try:
             rows.append(json.loads(line))
         except json.JSONDecodeError as e:
@@ -41,11 +49,11 @@ def read_jsonl(path: Path, errors: list[str]) -> list[dict]:
     return rows
 
 
-def check_sessions(sessions: list[dict], errors: list[str]) -> dict[tuple[str, int], str]:
+def check_sessions(sessions: list[dict], name: str, errors: list[str]) -> dict[tuple[str, int], str]:
     texts = {}
     seen = set()
     for n, s in enumerate(sessions, 1):
-        where = f"sessions.jsonl:{n}"
+        where = f"{name}:{n}"
         if set(s) != SESSION_KEYS:
             errors.append(f"{where}: keys {sorted(s)} != {sorted(SESSION_KEYS)}")
             continue
@@ -68,11 +76,33 @@ def check_sessions(sessions: list[dict], errors: list[str]) -> dict[tuple[str, i
     return texts
 
 
-def check_gold(gold: list[dict], texts: dict[tuple[str, int], str], errors: list[str]) -> list[tuple]:
+def check_meta(sessions: list[dict], name: str, errors: list[str]) -> tuple[str | None, str | None]:
+    """Returns the file's single (source, origin)."""
+    sources = Counter()
+    for n, s in enumerate(sessions, 1):
+        meta = s.get("meta")
+        if not isinstance(meta, dict):
+            errors.append(f"{name}:{n}: meta is not an object")
+            continue
+        origin = meta.get("origin")
+        if origin not in ALLOWED_USE:
+            errors.append(f"{name}:{n}: meta.origin {origin!r} not in {sorted(ALLOWED_USE)}")
+        elif meta.get("allowed_use") != ALLOWED_USE[origin]:
+            errors.append(f"{name}:{n}: meta.allowed_use {meta.get('allowed_use')!r} != {ALLOWED_USE[origin]!r} for origin {origin}")
+        sources[(meta.get("source"), origin, meta.get("template"))] += 1
+    if len(sources) > 1:
+        errors.append(f"{name}: mixes sources/origins {sorted(sources, key=str)}; keep one per file")
+    if not sources:
+        return None, None
+    (source, origin, _), _ = sources.most_common(1)[0]
+    return source, origin
+
+
+def check_gold(gold: list[dict], texts: dict[tuple[str, int], str], name: str, errors: list[str]) -> list[tuple]:
     spans = []  # (session_id, item_id, start, end, type)
     next_span_id = {}
     for n, g in enumerate(gold, 1):
-        where = f"gold.jsonl:{n}"
+        where = f"{name}:{n}"
         if set(g) != GOLD_KEYS:
             errors.append(f"{where}: keys {sorted(g)} != {sorted(GOLD_KEYS)}")
             continue
@@ -103,18 +133,18 @@ def check_gold(gold: list[dict], texts: dict[tuple[str, int], str], errors: list
     order = {key: i for i, key in enumerate(texts)}
     keys = [order[(s[0], s[1])] for s in spans]
     if keys != sorted(keys):
-        errors.append("gold.jsonl: rows are not in session/item order")
+        errors.append(f"{name}: rows are not in session/item order")
 
     by_item = {}
     for sid, iid, start, end, _ in spans:
         by_item.setdefault((sid, iid), []).append((start, end))
     for key, ranges in by_item.items():
         if ranges != sorted(ranges):
-            errors.append(f"gold.jsonl: spans of {key} are not ordered by start")
+            errors.append(f"{name}: spans of {key} are not ordered by start")
         ranges = sorted(ranges)
         for (_, prev_end), (start, _) in zip(ranges, ranges[1:]):
             if start < prev_end:
-                errors.append(f"gold.jsonl: overlapping spans in {key} at {start}")
+                errors.append(f"{name}: overlapping spans in {key} at {start}")
     return spans
 
 
@@ -133,31 +163,63 @@ def check_coverage(spans: list[tuple], texts: dict[tuple[str, int], str], errors
                     errors.append(f"uncovered occurrence of {value[:20]!r}... in {key} at {m.start()}")
 
 
-def check_reproduction(root: Path, errors: list[str]):
-    corpus = build()
+def regenerate(sessions: list[dict], source: str | None, origin: str | None, creddata: Path | None):
+    """Rows the recorded source would produce now, or None with the reason it cannot be regenerated."""
+    if source == "authored_synthetic_injection":
+        c = build()
+        return (c.sessions, c.gold), None
+    if source == "template":
+        c = from_template(REPO_ROOT / sessions[0]["meta"]["template"], origin)
+        return (c.sessions, c.gold), None
+    if source == "creddata":
+        if creddata is None:
+            return None, "skipped (pass --creddata to regenerate)"
+        from convert_creddata import convert
+        new_sessions, new_gold, _, _ = convert(creddata, sessions[0]["meta"]["context_lines"])
+        return (new_sessions, new_gold), None
+    return None, f"skipped (unknown source {source!r})"
+
+
+def check_reproduction(paths: tuple[Path, Path], rows, errors: list[str]):
     with tempfile.TemporaryDirectory() as directory:
-        temp = Path(directory)
-        for name, rows in (("sessions.jsonl", corpus.sessions), ("gold.jsonl", corpus.gold)):
-            write_jsonl(temp / name, rows)
-            if (temp / name).read_bytes() != (root / name).read_bytes():
-                errors.append(f"{name}: differs from a fresh build (edited or stale)")
+        for path, new_rows in zip(paths, rows):
+            fresh = Path(directory) / path.name
+            write_jsonl(fresh, new_rows)
+            if fresh.read_bytes() != path.read_bytes():
+                errors.append(f"{path.name}: differs from a fresh build (edited or stale)")
+
+
+def gold_path_for(sessions_path: Path) -> Path:
+    name = sessions_path.name
+    if not name.startswith("sessions"):
+        raise ValueError(f"cannot derive the gold file from {name}; pass --gold")
+    return sessions_path.with_name("gold" + name[len("sessions"):])
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-dir", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("sessions", type=Path, nargs="?", default=Path(__file__).resolve().parents[1] / "sessions.jsonl")
+    parser.add_argument("--gold", type=Path, help="default: sessions*.jsonl -> gold*.jsonl in the same folder")
+    parser.add_argument("--creddata", type=Path, help="CredData checkout, to regenerate sessions_from_CredData.jsonl")
     parser.add_argument("--skip-rebuild", action="store_true", help="skip the byte-reproduction check")
     args = parser.parse_args()
-    root = args.dataset_dir
+    gold_path = args.gold or gold_path_for(args.sessions)
 
     errors: list[str] = []
-    sessions = read_jsonl(root / "sessions.jsonl", errors)
-    gold = read_jsonl(root / "gold.jsonl", errors)
-    texts = check_sessions(sessions, errors)
-    spans = check_gold(gold, texts, errors)
-    check_coverage(spans, texts, errors)
-    if not args.skip_rebuild:
-        check_reproduction(root, errors)
+    sessions = read_jsonl(args.sessions, errors)
+    gold = read_jsonl(gold_path, errors)
+    texts = check_sessions(sessions, args.sessions.name, errors)
+    source, origin = check_meta(sessions, args.sessions.name, errors)
+    spans = check_gold(gold, texts, gold_path.name, errors)
+    coverage = "skipped (external labels)" if origin == "external" else "passed"
+    if origin != "external":
+        check_coverage(spans, texts, errors)
+    reproduction = "skipped"
+    if not args.skip_rebuild and sessions:
+        rows, reproduction = regenerate(sessions, source, origin, args.creddata)
+        if rows is not None:
+            check_reproduction((args.sessions, gold_path), rows, errors)
+            reproduction = "passed"
 
     if errors:
         print(f"FAILED: {len(errors)} problem(s)", file=sys.stderr)
@@ -167,13 +229,18 @@ def main():
 
     positive = {(s[0], s[1]) for s in spans}
     print(json.dumps({
+        "files": [args.sessions.name, gold_path.name],
+        "source": source,
+        "origin": origin,
+        "allowed_use": ALLOWED_USE.get(origin),
         "sessions": len(sessions),
         "items": len(texts),
         "items_with_spans": len(positive),
         "items_without_spans": len(texts) - len(positive),
         "spans": len(spans),
         "spans_by_type": dict(sorted(Counter(s[4] for s in spans).items())),
-        "reproduction": "skipped" if args.skip_rebuild else "passed",
+        "coverage": coverage,
+        "reproduction": reproduction,
     }, ensure_ascii=False, indent=2))
 
 
