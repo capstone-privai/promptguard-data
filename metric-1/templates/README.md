@@ -4,8 +4,8 @@
 
 ```bash
 python metric-1/scripts/build_dataset.py --template metric-1/templates/example.jsonl --origin authored
-# -> metric-1/sessions_from_example.jsonl, metric-1/gold_from_example.jsonl
-python metric-1/scripts/verify_dataset.py metric-1/sessions_from_example.jsonl
+# -> metric-1/data_test/sessions_from_example.jsonl, metric-1/data_answer/gold_from_example.jsonl
+python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_example.jsonl
 ```
 
 ## `--origin`: 필수, 파일 단위

@@ -8,4 +8,4 @@ runs/
 metric-1/claude/
 # CredData file contents stay under their source repos' licenses (CredData itself ships only
 # metadata); regenerate with metric-1/scripts/convert_creddata.py
-metric-1/*_from_CredData.jsonl
+metric-1/**/*_from_CredData.jsonl

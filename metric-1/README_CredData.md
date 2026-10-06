@@ -25,7 +25,7 @@ hdiutil detach /Volumes/CredDataCS && rm CredData-cs.sparseimage
 
 # 3. 변환과 검증 (이 저장소 루트에서). metric-1/creddata_review.jsonl의 판정이 gold에 반영된다
 python metric-1/scripts/convert_creddata.py --creddata ../CredData
-python metric-1/scripts/verify_dataset.py metric-1/sessions_from_CredData.jsonl --creddata ../CredData
+python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_CredData.jsonl --creddata ../CredData
 ```
 
 ## X/F 검수
@@ -33,7 +33,7 @@ python metric-1/scripts/verify_dataset.py metric-1/sessions_from_CredData.jsonl 
 CredData의 X(테스트 값·예시·placeholder)와 일부 F는 우리 기준(2026-10-02)에서 MASK다. 예를 들어 `x-pack-test-password`는 X로 63번, F로 51번 라벨되어 있다. 그래서 사람이 값 단위로 다시 판정한다.
 
 ```bash
-python metric-1/scripts/review_creddata.py --creddata ../CredData   # http://127.0.0.1:8765 를 연다
+python metric-1/manual_review/review_creddata.py --creddata ../CredData   # http://127.0.0.1:8765 를 연다
 ```
 
 - 대상: 값 위치가 있는 한 줄짜리 X/F 행(X 4,079 · F 15,480). 줄 전체를 표시한 F 행은 제외한다.

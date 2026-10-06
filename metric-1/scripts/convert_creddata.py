@@ -5,10 +5,10 @@ Run from the repository root, after building CredData's data/ (see metric-1/READ
 
 EVALUATION ONLY. origin=external, allowed_use=[rule_eval, ml_eval]: never train on this.
 
-Writes, next to sessions.jsonl:
-  sessions_from_CredData.jsonl  one session per labeled file; each item is a window of the file
+Writes, under --out (default metric-1/):
+  data_test/sessions_from_CredData.jsonl  one session per labeled file; each item is a window of the file
                                 (labeled lines +- --context-lines, overlapping windows merged), channel tool_output
-  gold_from_CredData.jsonl      CredData T rows, plus X/F rows reviewed as MASK, as gold spans (same schema as gold.jsonl)
+  data_answer/gold_from_CredData.jsonl  CredData T rows, plus X/F rows reviewed as MASK, as gold spans (same schema as gold.jsonl)
   labels_from_CredData.jsonl    every CredData row (T/F/X) mapped to item offsets, with its review decision, for analysis
 
 Review (metric-1/creddata_review.jsonl, written by review_creddata.py; ids and decisions only, no file contents):
@@ -253,8 +253,10 @@ def main():
 
 def write_outputs(creddata: Path, context: int, out: Path, review_path: Path = REVIEW_PATH) -> dict:
     sessions, gold, labels, stats = convert(creddata, context, review_path)
-    write_jsonl(out / f"sessions_from_{NAME}.jsonl", sessions)
-    write_jsonl(out / f"gold_from_{NAME}.jsonl", gold)
+    for sub in ("data_test", "data_answer"):
+        (out / sub).mkdir(parents=True, exist_ok=True)
+    write_jsonl(out / "data_test" / f"sessions_from_{NAME}.jsonl", sessions)
+    write_jsonl(out / "data_answer" / f"gold_from_{NAME}.jsonl", gold)
     write_jsonl(out / f"labels_from_{NAME}.jsonl", labels)
     return {"sessions": len(sessions), "items": sum(len(s["items"]) for s in sessions),
             "gold_spans": len(gold), "gold_by_type": dict(Counter(g["span"]["type"] for g in gold)),

@@ -1,12 +1,13 @@
 """Local web page for reviewing CredData X/F rows against our label policy (MASK or KEEP).
 
 Run from the repository root, then open the printed URL:
-  python metric-1/scripts/review_creddata.py --creddata ../CredData
+  python metric-1/manual_review/review_creddata.py --creddata ../CredData
 
 Rows are grouped by value, so one decision covers every X/F occurrence of the same string; a row can
 override its group or correct its span. Every change is saved to metric-1/creddata_review.jsonl
-(CredData ids and decisions only, no file contents). "완료" saves and regenerates the
-*_from_CredData.jsonl files with convert_creddata.py, so MASK rows become gold.
+(CredData ids and decisions only, no file contents). "완료" saves and regenerates
+data_test/sessions_from_CredData.jsonl and data_answer/gold_from_CredData.jsonl with
+metric-1/scripts/convert_creddata.py, so MASK rows become gold.
 Serves on 127.0.0.1 only: the page shows CredData file contents, which are not ours to publish.
 """
 from __future__ import annotations
@@ -18,12 +19,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 from pathlib import Path
 import re
+import sys
 import tempfile
 
+OUT = Path(__file__).resolve().parents[1]  # metric-1/
+sys.path.insert(0, str(OUT / "scripts"))
 from convert_creddata import REPO_ROOT, REVIEW_PATH, convert, load_review, write_outputs
 
 PAGE = Path(__file__).with_name("review_creddata.html")
-OUT = Path(__file__).resolve().parents[1]
 CONTEXT_SHOWN = 2  # lines shown above and below the labeled line
 LINE_SHOWN = 400  # longer lines are cut to a window around the value
 NEAR_LINE = 160

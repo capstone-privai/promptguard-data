@@ -1,9 +1,9 @@
 """Verify a sessions/gold pair written by build_dataset.py or convert_creddata.py.
 
 Run from the repository root:
-  python metric-1/scripts/verify_dataset.py                                     sessions.jsonl + gold.jsonl
-  python metric-1/scripts/verify_dataset.py metric-1/sessions_from_example.jsonl  + gold_from_example.jsonl
-  python metric-1/scripts/verify_dataset.py metric-1/sessions_from_CredData.jsonl --creddata ../CredData
+  python metric-1/scripts/verify_dataset.py                                               data_test/sessions.jsonl + data_answer/gold.jsonl
+  python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_example.jsonl  + data_answer/gold_from_example.jsonl
+  python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_CredData.jsonl --creddata ../CredData
 
 Checks:
   1. sessions schema: unique session_id, item_id = 0..n-1, known channel, no gold fields
@@ -193,13 +193,16 @@ def gold_path_for(sessions_path: Path) -> Path:
     name = sessions_path.name
     if not name.startswith("sessions"):
         raise ValueError(f"cannot derive the gold file from {name}; pass --gold")
-    return sessions_path.with_name("gold" + name[len("sessions"):])
+    folder = sessions_path.parent
+    if folder.name == "data_test":
+        folder = folder.with_name("data_answer")
+    return folder / ("gold" + name[len("sessions"):])
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("sessions", type=Path, nargs="?", default=Path(__file__).resolve().parents[1] / "sessions.jsonl")
-    parser.add_argument("--gold", type=Path, help="default: sessions*.jsonl -> gold*.jsonl in the same folder")
+    parser.add_argument("sessions", type=Path, nargs="?", default=Path(__file__).resolve().parents[1] / "data_test" / "sessions.jsonl")
+    parser.add_argument("--gold", type=Path, help="default: data_test/sessions*.jsonl -> data_answer/gold*.jsonl")
     parser.add_argument("--creddata", type=Path, help="CredData checkout, to regenerate sessions_from_CredData.jsonl")
     parser.add_argument("--skip-rebuild", action="store_true", help="skip the byte-reproduction check")
     args = parser.parse_args()

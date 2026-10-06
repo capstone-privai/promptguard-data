@@ -5,10 +5,10 @@ Run from the repository root:
   python metric-1/scripts/build_dataset.py --template T.jsonl --origin authored|injected
 This is normalized evaluation input, NOT a captured agent session; channels follow opencode's hooks.
 
-Writes two files (with --template T.jsonl: sessions_from_T.jsonl, gold_from_T.jsonl):
-  sessions.jsonl  one session per line: session_id, items, meta (no gold)
-  gold.jsonl      one gold span per line: session_id, item_id, span_id, span
-                  (span = {start, end, type}; items without spans are omitted)
+Writes two files under --out (default metric-1/; with --template T.jsonl: sessions_from_T.jsonl, gold_from_T.jsonl):
+  data_test/sessions.jsonl  one session per line: session_id, items, meta (no gold)
+  data_answer/gold.jsonl    one gold span per line: session_id, item_id, span_id, span
+                            (span = {start, end, type}; items without spans are omitted)
 
 Template file: same shape as sessions.jsonl, but item text holds placeholders that are
 replaced by deterministic synthetic secrets (see metric-1/templates/README.md):
@@ -355,9 +355,8 @@ def from_template(path: Path, origin: str) -> Corpus:
 
 
 def output_paths(out: Path, template: Path | None) -> tuple[Path, Path]:
-    if template is None:
-        return out / "sessions.jsonl", out / "gold.jsonl"
-    return out / f"sessions_from_{template.stem}.jsonl", out / f"gold_from_{template.stem}.jsonl"
+    suffix = "" if template is None else f"_from_{template.stem}"
+    return out / "data_test" / f"sessions{suffix}.jsonl", out / "data_answer" / f"gold{suffix}.jsonl"
 
 
 def write_jsonl(path: Path, rows):
@@ -393,8 +392,9 @@ def main():
         parser.error("--origin only applies to --template")
     c = from_template(args.template, args.origin) if args.template else build()
     validate(c)
-    args.out.mkdir(parents=True, exist_ok=True)
     sessions_path, gold_path = output_paths(args.out, args.template)
+    sessions_path.parent.mkdir(parents=True, exist_ok=True)
+    gold_path.parent.mkdir(parents=True, exist_ok=True)
     write_jsonl(sessions_path, c.sessions)
     write_jsonl(gold_path, c.gold)
     print(f"{sessions_path.name}, {gold_path.name}: {len(c.sessions)} sessions, "
