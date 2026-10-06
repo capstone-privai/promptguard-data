@@ -4,11 +4,11 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표
 
 | 폴더 | 내용 | 상태 |
 |---|---|---|
-| [metric-1/](metric-1/) | 탐지·마스킹 평가 데이터, 정답 span, 생성·검증 도구 | 합성 파일럿 v0.1, 사람 검토 대기 |
+| [metric-1/](metric-1/) | 탐지·마스킹 평가 데이터, 정답 span, 생성·검증 도구, 채점기 | 합성 파일럿 v0.1, 사람 검토 대기 |
 | [metric-2/](metric-2/) | 작업 성공 평가 데이터 | 준비용 폴더 |
 | [metric-3/](metric-3/) | KEEP 판단 정확도 평가 데이터 | 준비용 폴더 |
 
-평가 실행 코드는 [promptguard-demo-v0의 feat/evaluation-metric1 브랜치](https://github.com/capstone-privai/promptguard-demo-v0/tree/feat/evaluation-metric1)에 있다. 이 저장소는 데이터와 생성·검증 도구를 맡는다.
+이 저장소는 데이터, 생성·검증 도구, 채점기를 맡는다. 평가 대상 시스템(PromptGuard)은 [promptguard-demo-v0](https://github.com/capstone-privai/promptguard-demo-v0)에 있고, 채점기가 그 체크아웃을 불러 쓴다.
 
 ## 지표 1
 
@@ -18,7 +18,8 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표
 |---|---|
 | `metric-1/data_test/` | 평가기 입력(세션). 정답은 들어 있지 않다 |
 | `metric-1/data_answer/` | 정답 span(gold) |
-| `metric-1/scripts/` | 생성(`build_dataset.py`, `convert_creddata.py`), 검증(`verify_dataset.py`), 용도 정책(`dataset_policy.py`) |
+| `metric-1/scripts/` | 생성(`build_dataset.py`, `convert_creddata.py`), 검증(`verify_dataset.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`) |
+| [`metric-1/evaluation/`](metric-1/evaluation/README.md) | 채점기: 시스템 어댑터, span 채점, 지표 집계, 결과 파일 |
 | `metric-1/templates/` | placeholder로 세션을 쓰는 템플릿과 [작성법](metric-1/templates/README.md) |
 | `metric-1/manual_review/` | CredData X/F 행을 다시 판정하는 로컬 검수 페이지 |
 | [`metric-1/README_CredData.md`](metric-1/README_CredData.md) | CredData 변환 방법, 변환 규칙, 우리 라벨 기준과 다른 점 |
@@ -92,3 +93,13 @@ python metric-1/scripts/verify_dataset.py <sessions 파일> [--gold <gold 파일
 검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, 정답 누락(같은 비밀값이 다른 곳에도 나오는데 정답에서 빠졌는지), 재생성 시 바이트 단위 일치다.
 
 생성 스크립트는 세션을 `metric-1/data_test/`, 정답을 `metric-1/data_answer/`에 쓴다. 검증 스크립트는 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 자동으로 찾는다.
+
+### 채점
+
+```bash
+pip install -r metric-1/evaluation/requirements.txt
+python metric-1/scripts/evaluate.py run --system promptguard [--sessions <sessions 파일>] [--system-root ../promptguard-demo-v0]
+python metric-1/scripts/evaluate.py run --system credsweeper|oracle|identity [--sessions <sessions 파일>]
+```
+
+결과는 `runs/<시각>_<system>/`에 쌓인다. 세션의 `meta.allowed_use`에 실행 용도(`rule_eval`, ML predictor면 `ml_eval`)가 없으면 실행하지 않는다. 옵션, 채널 대응, 지표 정의는 [metric-1/evaluation/README.md](metric-1/evaluation/README.md)에 있다.

@@ -1,0 +1,1 @@
+credsweeper==1.18.5  # same pin as promptguard-demo-v0/requirements.txt
