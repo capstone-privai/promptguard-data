@@ -23,12 +23,12 @@ python metric-1/scripts/verify_dataset.py metric-1/sessions_from_example.jsonl
 
 ```json
 {"session_id": "tpl-01", "meta": {"scenario": "..."},
- "items": [{"turn_id": "t0", "channel": "stdout", "text": "DB_PASSWORD={{password:db}}\n"}]}
+ "items": [{"turn_id": "t0", "channel": "tool_output", "text": "DB_PASSWORD={{password:db}}\n"}]}
 ```
 
 - `session_id`, `items` 필수. `meta`는 선택이며 `group_id`(기본값 session_id)와 자유 필드를 넣을 수 있다.
 - item: `channel`, `text` 필수. `turn_id`(기본값 `t0`), `item_id`(넣는다면 0부터 순서대로)는 선택.
-- channel: `prompt`, `stdout`, `stderr`, `agents_md`, `file_read`.
+- channel: `prompt`(사용자 메시지), `instructions`(AGENTS.md 등), `tool_input`(모델이 쓴 도구 인자, 예: bash 명령), `tool_output`(도구 결과. bash는 stdout과 stderr가 합쳐져 나온다).
 
 ## placeholder
 

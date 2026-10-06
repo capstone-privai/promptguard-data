@@ -7,7 +7,7 @@ EVALUATION ONLY. origin=external, allowed_use=[rule_eval, ml_eval]: never train 
 
 Writes, next to sessions.jsonl:
   sessions_from_CredData.jsonl  one session per labeled file; each item is a window of the file
-                                (labeled lines +- --context-lines, overlapping windows merged), channel file_read
+                                (labeled lines +- --context-lines, overlapping windows merged), channel tool_output
   gold_from_CredData.jsonl      CredData T rows, plus X/F rows reviewed as MASK, as gold spans (same schema as gold.jsonl)
   labels_from_CredData.jsonl    every CredData row (T/F/X) mapped to item offsets, with its review decision, for analysis
 
@@ -227,7 +227,7 @@ def convert(creddata: Path, context: int, review_path: Path = REVIEW_PATH):
             for span_id, s in enumerate(resolve_overlaps(spans, stats)):
                 gold.append({"session_id": session_id, "item_id": item_id, "span_id": span_id,
                              "span": {"start": s["start"], "end": s["end"], "type": s["type"]}})
-            items.append({"item_id": item_id, "turn_id": "t0", "channel": "file_read", "text": text})
+            items.append({"item_id": item_id, "turn_id": "t0", "channel": "tool_output", "text": text})
             item_lines.append([a, b])
         sessions.append({"session_id": session_id, "items": items, "meta": {
             "dataset_version": f"creddata@{commit[:12]}", "source": "creddata",

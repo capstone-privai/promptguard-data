@@ -46,7 +46,7 @@ python metric-1/scripts/review_creddata.py --creddata ../CredData   # http://127
 
 | 파일 | 내용 |
 |---|---|
-| `sessions_from_CredData.jsonl` | 라벨된 파일 하나가 세션 하나. item은 라벨된 줄 ±10줄 창이고, 겹치는 창은 합친다. channel은 `file_read` |
+| `sessions_from_CredData.jsonl` | 라벨된 파일 하나가 세션 하나. item은 라벨된 줄 ±10줄 창이고, 겹치는 창은 합친다. channel은 `tool_output` (에이전트가 파일을 읽어 받은 도구 결과로 본다) |
 | `gold_from_CredData.jsonl` | CredData T 행과 검수에서 MASK로 판정한 X/F 행. `gold.jsonl`과 같은 형식 |
 | `labels_from_CredData.jsonl` | CredData 전체 행(T/F/X)을 item 좌표로 옮긴 분석용 파일. 원래 Category와 Id, 검수 대상 여부(`reviewable`)와 판정(`review`)을 함께 남긴다 |
 

@@ -11,19 +11,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "NODE_ENV=development\nPORT=3000\nDB_HOST=db.example.invalid\nDB_PASSWORD=\"imSqk5V5BG40x#7!\"\nPAYMENT_API_KEY=tWmNfvuYA7fadxr34Ch1hVEPIXNbkIW24defWOrY\nLOG_LEVEL=info\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "# Required variables\nDB_PASSWORD=changeme\nAPI_KEY=${PAYMENT_API_KEY}\nPORT=3000\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "Error: upstream returned 401\n    at connect (/workspace/api/client.js:42:9)\nretry_count=3\n"
       }
     ],
@@ -54,19 +54,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "[database]\nurl = \"postgresql://service:8QC6l6qPnH0eR%237%21@db.example.invalid:5432/app\"\npool_size = 5\n[worker]\nconcurrency = 2\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "Traceback (most recent call last):\n  File \"/workspace/worker.py\", line 21, in main\n    connect(settings.url)\nConnectionError: connection refused for postgresql://service:8QC6l6qPnH0eR%237%21@db.example.invalid:5432/app\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "request_id=ca9728a4-a732-4cda-88e9-543f5c34204f\nstatus=retrying\nbackoff_seconds=2\n"
       }
     ],
@@ -97,19 +97,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "services:\n  database:\n    image: postgres:16\n    environment:\n      POSTGRES_USER: app\n      POSTGRES_PASSWORD: postgres\n  api:\n    environment:\n      SESSION_SECRET: sLbkWBr7dbalQLnvT9HItuPRK6YIdOU7vU2PeIbFiBbId8k1\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "tests/auth.test.ts:8:const apiToken = 'dummy_token_123';\ntests/auth.test.ts:9:const password = 'test1234';\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "api-1 | password authentication failed for user app\ndatabase-1 | connection closed\n"
       }
     ],
@@ -140,19 +140,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "* Connected to api.example.invalid port 443\n> GET /v1/status HTTP/1.1\n> Host: api.example.invalid\n> Authorization: Bearer f7jfAGUvayFd715cWU91PeIvymT6IawH3tK4\n> X-Request-ID: ace39be0-09f5-425d-a18f-6c5b31f91dfb\n< HTTP/1.1 401 Unauthorized\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "HTTP/1.1 200 OK\nContent-Type: application/json\nSet-Cookie: session=1Famox8y9gXzoQksXjIPdncC9kp3j23j4DUf; HttpOnly; Secure; SameSite=Lax\nETag: \"4acc052a5df1967c4515e30137e9537b\"\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "DEBUG retrying with Authorization: Basic ZGVwbG95OkdTdTNhRzRCME9EME8jNyE=\nERROR upstream status=403\n"
       }
     ],
@@ -183,19 +183,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "commit 69a441436c5c51fc8377449ebbb2464fc813a51a\nAuthor: Build Bot <build@example.invalid>\n\n    remove local credentials\n\ndiff --git a/.env b/.env\n--- a/.env\n+++ b/.env\n@@ -1,3 +1 @@\n-AWS_ACCESS_KEY_ID=AKIA1ABT4S0XM2PRDA0Y\n-AWS_SECRET_ACCESS_KEY=mFNdxMEqz2L0E9L/HrMOe0yaDAAtSwDLSM6ls4O/\n AWS_REGION=ap-northeast-2\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "AWS_REGION=ap-northeast-2\nAWS_PROFILE=dev\ncredential_source=Environment\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "InvalidClientTokenId: the security token included in the request is invalid\nrequest_id=848237a0-011a-4df9-9574-36a28b8c094b\n"
       }
     ],
@@ -226,19 +226,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "USER       PID COMMAND\nworker     201 mysql --host=db.example.invalid --user=export -pWSJJC0Ys1MnNY!8 app\nworker     208 sh -c 'curl -H \"X-Api-Key: ${SERVICE_KEY:-MlSvvBMYVJn35FWAKncSdbfyHGDlXPhIvBuO}\" https://api.example.invalid/jobs'\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "HOME=/home/worker\nPATH=/usr/local/bin:/usr/bin\nGITHUB_TOKEN=ghp_VHGEqnYWL5GDOYcOdblQWy1FryL933re3qXT\nJOB_ID=batch-20261004-021\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "mysql: [Warning] Using a password on the command line interface can be insecure.\nERROR 2003: connection refused\n"
       }
     ],
@@ -269,19 +269,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "apiVersion: v1\nkind: Secret\nmetadata:\n  name: app-db\n  namespace: staging\ntype: Opaque\ndata:\n  password: SmNWT0lORE95d29oMyM3IQ==\n  api-token: QnV5N2NpalBCNlpOUTFzVWdwWlVDMHpqN1ZKTFkybDFxU09s\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "2026-10-04T08:00:00Z INFO opening connection\n2026-10-04T08:00:01Z DEBUG connection_uri_encoded=postgresql%3A%2F%2Fservice%3AJcVOINDOywoh3%25237%2521%40db.example.invalid%3A5432%2Fapp\n2026-10-04T08:00:02Z ERROR auth failed\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "NAME                   READY   STATUS\napi-7cbd6f9d4b-qx2n8   0/1     Running\n"
       }
     ],
@@ -312,13 +312,13 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "agents_md",
+        "channel": "instructions",
         "text": "# Workspace notes\nRun unit tests before changing deployment scripts.\nThe temporary deploy password is su3Ch8C2JaaaV#7!.\nUse the package manager lockfile.\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "2026-10-04 INFO db_host=db.example.invalid\n2026-10-04 ERROR connection timeout\nretries=3\n"
       },
       {
@@ -330,7 +330,7 @@
       {
         "item_id": 4,
         "turn_id": "t1",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "인증 재시도 실패: password=1PGnMvTw9uilt#7!\nnetwork_timeout_ms=5000\n"
       }
     ],
@@ -361,19 +361,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "signing_key_path=/workspace/keys/signing.pem\nalgorithm=Ed25519\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIAhKvDFTcj/gC1cJfkgueY4tMXLXXNyKmKbVY0DZGUKP\n-----END PRIVATE KEY-----\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "KeyError: remote key id does not match\nkey_id=signer-2026-10\n"
       }
     ],
@@ -404,19 +404,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "lockfileVersion: 9\npackage: web-client\nintegrity: sha512-IX2feySqI8NGj4bzfkKUJm/t3xcmSbWJSzlvZfE19j1qnqCxEQVxwllDlcDs1fbL8phATq+u/25lEpvaB/QL6w==\nresolved: https://registry.npmjs.org/typescript/-/typescript-5.7.3.tgz\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "image=web-client\ndigest=sha256:430210f9f971568911dca2761e692e40bc8cb65663d28c96ca579c5d2fbcb896\nrequest_id=792a25e2-93f1-4892-b14e-fcfb66bc6074\nmodules=248\nbuild completed in 2.4s\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "warning: source map omitted for vendor.js\n0 errors, 1 warning\n"
       }
     ],
@@ -447,19 +447,19 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "DB_PASSWORD=${DB_PASSWORD}\nAPI_TOKEN=<API_TOKEN>\nSECRET_NAME=service-config\npassword=\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "# Runtime metrics\ntoken_count=2048\nmax_tokens=8192\nchecksum=46b649cd499551dd10378e5c4522a72e6d1bb2578b65aab29d01c4df026974f7\nasset_id=1af68b2a-3e30-41f7-a825-bcc4e8c5c6d1\n"
       },
       {
         "item_id": 3,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "Reference variables are substituted by the deployment environment.\nNo literal credentials are defined in this template.\n"
       }
     ],
@@ -490,13 +490,13 @@
       {
         "item_id": 1,
         "turn_id": "t0",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "# 인증 설정 🔐\r\nDB_USER=배포\r\nDB_PASSWORD=\"IoVeF2nKFHTlG#7!\"\r\nPUBLISHABLE_KEY=pk_test_wdOVXMwh6sL4SgoUrvfaMgyZ\r\n"
       },
       {
         "item_id": 2,
         "turn_id": "t0",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "connect failed; password=IoVeF2nKFHTlG#7!; retry_password=IoVeF2nKFHTlG#7!\n"
       },
       {
@@ -508,13 +508,13 @@
       {
         "item_id": 4,
         "turn_id": "t1",
-        "channel": "stdout",
+        "channel": "tool_output",
         "text": "# updated config\nDB_PASSWORD='cEO187tC3tQTt#7!'\nPUBLISHABLE_KEY=pk_test_wdOVXMwh6sL4SgoUrvfaMgyZ\n"
       },
       {
         "item_id": 5,
         "turn_id": "t1",
-        "channel": "stderr",
+        "channel": "tool_output",
         "text": "new connection failed; password=cEO187tC3tQTt#7!"
       }
     ],
