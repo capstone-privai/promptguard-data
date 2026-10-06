@@ -155,7 +155,7 @@ def build() -> Corpus:
            "\n  api-token: ", Slot(base64.b64encode(token("k8s-api").value.encode()).decode(), "TOKEN", exposure="base64", subtype="K8S_SECRET_DATA"), "\n", command="kubectl get secret app-db -o yaml")
     c.item("stdout", "2026-10-04T08:00:00Z INFO opening connection\n2026-10-04T08:00:01Z DEBUG connection_uri_encoded=", uri("k8s-db", encoded=True),
            "\n2026-10-04T08:00:02Z ERROR auth failed\n", command="kubectl logs deploy/api")
-    c.item("stdout", "NAME                   READY   STATUS\napi-7cbd6f9d4b-qx2n8   0/1     Running\n", command="kubectl get pods")
+    c.item("stdout", "NAME                   READY   STATUS\n", keep("api-7cbd6f9d4b-qx2n8", "resource_name"), "   0/1     Running\n", command="kubectl get pods")
 
     c.session("08-prompt-agents", "프롬프트와 자동 로드 파일의 채널 누락")
     pw = password("natural-ko")
@@ -187,7 +187,7 @@ def build() -> Corpus:
     c.item("prompt", "설정 문서에서 필요한 환경 변수와 공개 식별자 목록을 정리해줘.")
     c.item("stdout", "DB_PASSWORD=", keep("${DB_PASSWORD}", "variable_reference"), "\nAPI_TOKEN=", keep("<API_TOKEN>", "unfilled_placeholder"),
            "\nSECRET_NAME=", keep("service-config", "resource_name"), "\npassword=\n", command="cat config.template")
-    c.item("stdout", "# Runtime metrics\ntoken_count=", keep("2048", "token_count"), "\nmax_tokens=8192\nchecksum=", keep(value("checksum", 64, "0123456789abcdef"), "checksum"),
+    c.item("stdout", "# Runtime metrics\ntoken_count=", keep("2048", "token_count"), "\nmax_tokens=", keep("8192", "token_count"), "\nchecksum=", keep(value("checksum", 64, "0123456789abcdef"), "checksum"),
            "\nasset_id=", keep("1af68b2a-3e30-41f7-a825-bcc4e8c5c6d1", "uuid"), "\n")
     c.item("stdout", "Reference variables are substituted by the deployment environment.\nNo literal credentials are defined in this template.\n")
 

@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 import sys
 
-from build_metric1_v0 import build, validate, write_jsonl
+from build_dataset import build, validate, write_jsonl
 
 
 def main():
@@ -56,7 +56,6 @@ def main():
             ("m1-01-node-env/03", "42:9"): "stack_trace_line_and_column",
             ("m1-03-compose/02", "8:const"): "rg_line_number_and_source_keyword",
             ("m1-03-compose/02", "9:const"): "rg_line_number_and_source_keyword",
-            ("m1-11-negative-config/02", "8192"): "max_tokens_count",
         }
         for item in corpus.bases:
             for start, end in scanner.detect(item["text"]):
@@ -65,12 +64,20 @@ def main():
                     negative_values.get(detected) or reviewed_context.get((item["item_id"], detected)) or "needs_review")
                 findings.append({"item_id": item["item_id"], "start": start, "end": end,
                                  "value": detected, "agent_review": disposition})
+        # The human sign-off lives in its own hand-edited file so that rerunning this scan keeps it.
+        # A sign-off recorded against another dataset hash no longer applies.
+        review_path = root / "carrier_human_review.json"
+        human_review = (json.loads(review_path.read_text(encoding="utf-8")) if review_path.is_file()
+                        else {"status": "pending"})
+        if human_review["status"] != "pending" and human_review.get("dataset_sha256") != digest:
+            human_review = {**human_review, "status": "stale"}
         carrier_result = {"scanner": "CredSweeper 1.18.5, ML off",
             "scope": "Authored carrier text; MASK slots replaced by <REDACTED>, KEEP slots retained",
-            "findings": findings, "human_review": "pending"}
+            "findings": findings, "human_review": human_review}
         (root / "carrier_scan.json").write_text(json.dumps(carrier_result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         result["carrier_scan_findings"] = len(findings)
         result["unresolved_carrier_findings"] = sum(f["agent_review"] == "needs_review" for f in findings)
+        result["carrier_human_review"] = human_review["status"]
     (root / "validation.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

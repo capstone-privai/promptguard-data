@@ -4,7 +4,7 @@
   "sessions": 12,
   "items": 51,
   "gold_spans": 32,
-  "annotated_negative_spans": 17,
+  "annotated_negative_spans": 19,
   "negative_only_sessions": 2,
   "lines": 151,
   "gold_per_1000_lines": 211.9205298013245,

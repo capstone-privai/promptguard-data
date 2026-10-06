@@ -328,6 +328,7 @@ api-7cbd6f9d4b-qx2n8   0/1     Running
 
 ```
 
+- **KEEP** [38, 58) `api-7cbd6f9d4b-qx2n8` — NON_SECRET; resource_name; direct
 
 ## m1-08-prompt-agents · 프롬프트와 자동 로드 파일의 채널 누락
 
@@ -497,6 +498,7 @@ asset_id=1af68b2a-3e30-41f7-a825-bcc4e8c5c6d1
 ```
 
 - **KEEP** [30, 34) `2048` — NON_SECRET; token_count; direct
+- **KEEP** [46, 50) `8192` — NON_SECRET; token_count; direct
 - **KEEP** [60, 124) `46b649cd499551dd10378e5c4522a72e6d1bb2578b65aab29d01c4df026974f7` — NON_SECRET; checksum; direct
 - **KEEP** [134, 170) `1af68b2a-3e30-41f7-a825-bcc4e8c5c6d1` — NON_SECRET; uuid; direct
 
