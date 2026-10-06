@@ -4,3 +4,5 @@ __pycache__/
 .DS_Store
 :memory:.ses
 runs/
+.python-version
+metric-1/claude/
