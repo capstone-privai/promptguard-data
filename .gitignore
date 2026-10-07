@@ -11,3 +11,7 @@ metric-1/claude/
 metric-1/**/*_from_CredData.jsonl
 # privesc-llm-data conversion (~50MB); regenerate with metric-1/scripts/convert_privesc.py
 metric-1/**/*_from_privesc-llm-data.jsonl
+# Every metric 1 dataset is a build output. The synthetic sets hold fake credentials in real formats,
+# which push protection rejects; regenerate them with metric-1/scripts/dataset_build.py
+metric-1/data_test/
+metric-1/data_answer/

@@ -28,6 +28,8 @@
 
 합성 데이터의 비밀값은 모두 결정적으로 만든 가짜 값이다. 정답은 탐지기 결과와 상관없이, 값을 끼워 넣는 순간에 위치를 기록해 만든다.
 
+`data_test/`와 `data_answer/`는 git에 올리지 않는다(`.gitignore`). 저장소를 받은 뒤 [생성과 검증](#생성과-검증)의 명령으로 각자 만든다. 합성 데이터도 올리지 않는 이유는, 비밀값이 실제 형식(예: AWS 키 ID와 시크릿 키 쌍)을 따르는 가짜 값이라 GitHub push protection이 진짜 비밀로 보고 push를 막기 때문이다. 생성은 결정적이므로 누가 만들어도 바이트 단위로 같은 파일이 나온다.
+
 ## 형식
 
 데이터는 세션 → item → span의 세 층이다. 세션 하나는 `session_id`, `items`, `meta`로 이루어진다. item은 에이전트와 오간 텍스트 한 덩어리다.
@@ -78,8 +80,12 @@
 저장소 루트에서 실행한다.
 
 ```bash
+# 합성 데이터 (외부 파일 없이 바로 만든다)
 python metric-1/scripts/dataset_build.py                       # 내장 코퍼스
 python metric-1/scripts/dataset_build.py --template metric-1/templates/example.jsonl --origin authored
+python metric-1/scripts/dataset_build.py --template metric-1/templates/agent_sessions_2.jsonl --origin authored --name 2
+
+# 외부 데이터 (원본을 먼저 받는다: README_CredData.md, README_privesc-llm-data.md)
 python metric-1/scripts/convert_creddata.py --creddata ../CredData
 python metric-1/scripts/convert_privesc.py --privesc ../privesc-llm-data
 
@@ -88,7 +94,7 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 
 검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, 정답 누락(같은 비밀값이 그 세션의 다른 곳에도 나오는데 정답에서 빠졌는지), 재생성 시 바이트 단위 일치다. 누락 검사는 세션 안에서만 본다. 정답은 세션별 출처에서 나오므로, 같은 사용자명이나 흔한 비밀번호가 아무것도 심지 않은 다른 세션에 나오는 것은 비밀이 아니다.
 
-생성 스크립트는 세션을 `metric-1/data_test/`, 정답을 `metric-1/data_answer/`에 쓴다. 검증 스크립트는 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 자동으로 찾는다.
+생성 스크립트는 세션을 `metric-1/data_test/`, 정답을 `metric-1/data_answer/`에 쓰고, 폴더가 없으면 만든다. 채점기의 기본 입력(`data_test/sessions.jsonl`)도 내장 코퍼스를 만들어야 생긴다. 검증 스크립트는 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 자동으로 찾는다.
 
 ## 정답의 정의
 
