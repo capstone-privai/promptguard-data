@@ -10,7 +10,7 @@
 |---|---|
 | `data_test/` | 평가기 입력(세션). 정답은 들어 있지 않다 |
 | `data_answer/` | 정답 span(gold) |
-| `scripts/` | 생성(`dataset_build.py`, `convert_creddata.py`, `convert_privesc.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), gitleaks 탐지(`run_gitleaks.py`) |
+| `scripts/` | 생성(`dataset_build.py`, `convert_creddata.py`, `convert_privesc.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), 전체 조합 채점(`run_all.py`), gitleaks 탐지(`run_gitleaks.py`) |
 | [`evaluation/`](evaluation/README.md) | 채점기: 시스템 어댑터, span 채점, 지표 집계, 결과 파일 |
 | `templates/` | placeholder로 세션을 쓰는 템플릿과 [작성법](templates/README.md) |
 | [`README_CredData.md`](README_CredData.md) | CredData 변환 방법, 변환 규칙, 우리 라벨 기준과 다른 점 |
@@ -24,7 +24,7 @@
 | `sessions_from_example.jsonl` | `gold_from_example.jsonl` | 2 | 9 | 10 | authored |
 | `sessions_2.jsonl` | `gold_2.jsonl` | 43 | 152 | 78 | authored |
 | `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 15,596 | external |
-| `sessions_from_privesc-llm-data.jsonl` | `gold_from_privesc-llm-data.jsonl` | 2,200 | 122,286 | 10,546 | recorded |
+| `sessions_from_privesc-llm-data.jsonl` | `gold_from_privesc-llm-data.jsonl` | 2,200 | 122,286 | 10,624 | recorded |
 
 - **내장 코퍼스**(`sessions.jsonl`): `dataset_build.py`에 직접 쓴 합성 세션이다. 환경 파일, 트레이스백, HTTP 헤더, git 이력, Kubernetes Secret, PEM 키, 비밀이 없는 음성 예시 등 12개 상황을 담았다.
 - **템플릿 예시**(`sessions_from_example.jsonl`): [templates/example.jsonl](templates/example.jsonl)의 placeholder를 채워 만든 세션이다.
@@ -92,7 +92,7 @@ python metric-1/scripts/convert_privesc.py --privesc ../privesc-llm-data
 python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일>] [--creddata ../CredData] [--privesc ../privesc-llm-data]
 ```
 
-검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, 정답 누락(같은 비밀값이 다른 곳에도 나오는데 정답에서 빠졌는지), 재생성 시 바이트 단위 일치다.
+검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, 정답 누락(같은 비밀값이 그 세션의 다른 곳에도 나오는데 정답에서 빠졌는지), 재생성 시 바이트 단위 일치다. 누락 검사는 세션 안에서만 본다. 정답은 세션별 출처에서 나오므로, 같은 사용자명이나 흔한 비밀번호가 아무것도 심지 않은 다른 세션에 나오는 것은 비밀이 아니다.
 
 생성 스크립트는 세션을 `metric-1/data_test/`, 정답을 `metric-1/data_answer/`에 쓴다. 검증 스크립트는 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 자동으로 찾는다.
 

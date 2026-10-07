@@ -20,6 +20,19 @@ python metric-1/scripts/evaluate.py run --system promptguard --sessions metric-1
 python metric-1/scripts/evaluate.py run --system credsweeper --channels all --sessions metric-1/data_test/sessions_from_privesc-llm-data.jsonl
 ```
 
+### 전체 조합 한 번에 돌리기
+
+`scripts/run_all.py`는 데이터셋(`data_test/sessions*.jsonl` 전부) × 시스템 5개 × CredSweeper ML on/off × 등록된 predictor 전부 × 임계값(기본 실행과 `--sweeps`, 기본 `0:1:0.1`)을 모두 펼쳐 돌린다. `--no-sweep`을 주면 sweep을 뺀다. CredSweeper와 gitleaks는 항상 네 채널을 모두 검사하고(`--channels all`), 채널별 결과는 각 실행의 `recall_by_channel`로 본다. gitleaks는 데이터셋마다 `run_gitleaks.py --channels all`을 먼저 돌린다. 데이터셋이 허용하지 않는 용도이거나 의존성(credsweeper, gitleaks, PromptGuard 체크아웃)이 없는 조합은 이유를 남기고 건너뛴다.
+
+```bash
+python metric-1/scripts/run_all.py --dry-run                 # 조합 목록만 출력
+python metric-1/scripts/run_all.py --jobs 4                  # 전부 실행
+python metric-1/scripts/run_all.py --no-sweep                # sweep 제외
+python metric-1/scripts/run_all.py --datasets sessions_2 --systems credsweeper gitleaks
+```
+
+결과는 `runs/all_<YYYYmmdd-HHMMSS>/`에 모인다. 조합마다 실행 폴더 하나, `logs/`에 각 조합의 출력, `gitleaks/`에 탐지 결과, `summary.csv`와 `summary.md`에 조합별 상태와 주요 지표가 있다. sweep 행의 recall·precision·F2는 F2가 가장 높은 임계값의 값이다. 모든 조합이 성공하면 종료 코드 0, 실패하거나 건너뛴 조합이 있으면 1이다. 축을 좁히는 옵션은 `--help`에 있다.
+
 각 데이터셋의 특성과 점수를 읽을 때 주의할 점은 [데이터셋별 해석](#데이터셋별-해석)에 있다.
 
 `--gold`를 생략하면 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 쓴다(`dataset_verify.py`와 같은 규칙). `data_test/` 밖에 있는 `sessions*.jsonl`은 같은 폴더의 `gold*.jsonl`과 짝짓는다.
@@ -75,12 +88,12 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 
 실제 에이전트 궤적에 심어 둔 값을 찾아 정답을 자동으로 만든 데이터다([README_privesc-llm-data.md](../README_privesc-llm-data.md)). 점수를 읽을 때 다음을 본다.
 
-- **`tool_output`만 처리하는 시스템은 recall 상한이 약 0.43이다.** 정답 10,546개 중 `tool_output`에 4,565개가 있고, 나머지는 시스템 프롬프트(`instructions` 2,200개)와 에이전트가 쓴 명령(`tool_input` 3,781개)에 있다. 같은 비밀번호가 세 채널에 반복해서 나오므로, 채널별 recall(`recall_by_channel`)을 함께 본다. CredSweeper와 gitleaks를 PromptGuard와 같은 조건에서 비교하려면 기본 채널(`tool_output`)로 돌리고, 탐지기 자체의 성능을 보려면 `--channels all`로 돌린다.
+- **`tool_output`만 처리하는 시스템은 recall 상한이 약 0.43이다.** 정답 10,624개 중 `tool_output`에 4,604개가 있고, 나머지는 시스템 프롬프트(`instructions` 2,200개)와 에이전트가 쓴 명령(`tool_input` 3,820개)에 있다. 같은 비밀번호가 세 채널에 반복해서 나오므로, 채널별 recall(`recall_by_channel`)을 함께 본다. CredSweeper와 gitleaks를 PromptGuard와 같은 조건에서 비교하려면 기본 채널(`tool_output`)로 돌리고, 탐지기 자체의 성능을 보려면 `--channels all`로 돌린다.
 - **`prompt` 채널에는 정답이 없다.** `prompt` item은 모든 세션에 같은 시작 지시문이라 PromptGuard의 task context도 세션마다 같다. 과제 설명과 로그인 계정은 `instructions`에 있다.
 - **줄 단위 지표는 다른 데이터셋과 비교하지 않는다.** `tool_input`과 `tool_output`의 text는 도구 호출 인자와 도구 결과의 JSON 문자열이라, 그 안의 줄바꿈이 실제 줄바꿈이 아니라 `\n` 두 글자다. 그래서 이 두 채널의 item 117,886개는 모두 한 줄로 세고, `lines_total`(192,686)이 작게 잡힌다. 이를 분모로 쓰는 `fp_per_1k_lines`와 `density_per_1k_lines`는 이 데이터 안에서만 비교한다.
 - **같은 이유로 줄 단위로 동작하는 탐지 규칙에 불리할 수 있다.** 도구 결과 전체가 한 줄이고 비밀 주변에 JSON 따옴표와 escape가 붙는다. 실제 에이전트의 셸 출력과 모양이 다르다는 점을 결과에 적는다.
-- **유형별 recall은 PASSWORD와 PRIVATE_KEY만 나온다.** 나머지 유형은 `None`이다. PASSWORD는 12자 무작위 영숫자나 16자 hex라 키 이름이나 맥락 없이 값만 보고는 찾기 어렵다.
-- **과잉 마스킹의 출처는 labels 파일로 나눈다.** `metric-1/labels_from_privesc-llm-data.jsonl`에는 정답에서 뺀 `password_hash`(`/etc/shadow` 해시)와 `attempted_password`(에이전트가 시도했지만 심은 값이 아닌 비밀번호)의 좌표가 있다. `per_edit.jsonl`에서 `overlaps_gold`가 false인 edit를 이 좌표와 맞추면, 과잉 마스킹이 이런 비밀번호성 문자열에서 나왔는지 다른 텍스트에서 나왔는지 나눠 볼 수 있다.
+- **유형별 recall은 PASSWORD와 PRIVATE_KEY만 나온다.** 나머지 유형은 `None`이다. PASSWORD는 대부분 12자 무작위 영숫자나 16자 hex라 키 이름이나 맥락 없이 값만 보고는 찾기 어렵다.
+- **과잉 마스킹의 출처는 labels 파일로 나눈다.** `metric-1/labels_from_privesc-llm-data.jsonl`에는 정답에서 뺀 `password_hash`(`/etc/shadow` 해시), `username_occurrence`(사용자 이름과 같은 비밀번호가 경로나 사용자명 필드에 나온 것), `attempted_password`(에이전트가 시도했지만 심은 값이 아닌 비밀번호)의 좌표가 있다. `per_edit.jsonl`에서 `overlaps_gold`가 false인 edit를 이 좌표와 맞추면, 과잉 마스킹이 이런 비밀번호성 문자열에서 나왔는지 다른 텍스트에서 나왔는지 나눠 볼 수 있다.
 - **규모.** 세션 2,200개, item 122,286개다. 모든 채널을 검사할 때 gitleaks는 `run_gitleaks.py` 전체가 약 30초, CredSweeper(`--ml off`)는 약 40초 걸린다(Apple Silicon 노트북 기준).
 - origin이 `recorded`라 `rule_eval`, `ml_eval`, `ml_train` 모두 허용된다. CredSweeper `--ml on`과 PromptGuard의 ML predictor로도 평가할 수 있다.
 
@@ -166,4 +179,4 @@ cd metric-1 && python -m unittest discover -s evaluation/tests -t .
 
 - sweep은 임계값마다 탐지를 다시 돌린다. 단순하지만 큰 데이터에서는 느리다. 탐지 결과를 캐시하려면 시스템 변경이 필요하므로 `SYSTEM_REQUESTS.md`를 거친다.
 - 과제 맥락에 따른 KEEP 판단을 끈 상태("KEEP disabled")의 지표 1은 시스템이 그 모드를 제공할 때까지 잴 수 없다.
-- 실행 폴더 이름은 초 단위 현지 시각이다. 동시에 실행하면 `-2`, `-3`, …이 붙는다.
+- 실행 폴더 이름은 초 단위 현지 시각이다. 같은 초에 같은 설정으로 실행하면 `-2`, `-3`, …이 붙는다.

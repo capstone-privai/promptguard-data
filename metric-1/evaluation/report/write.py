@@ -19,11 +19,14 @@ Results = Sequence[tuple[float | None, RunResult]]
 def create_run_dir(out_root: str | Path, label: str, now: datetime) -> Path:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip("-") or "run"
     base = Path(out_root) / f"{now:%Y%m%d-%H%M%S}_{safe}"
+    base.parent.mkdir(parents=True, exist_ok=True)
     candidate, suffix = base, 2
-    while candidate.exists():
-        candidate, suffix = base.with_name(f"{base.name}-{suffix}"), suffix + 1
-    candidate.mkdir(parents=True)
-    return candidate
+    while True:
+        try:
+            candidate.mkdir()  # atomic, so concurrent runs never share a folder
+            return candidate
+        except FileExistsError:
+            candidate, suffix = base.with_name(f"{base.name}-{suffix}"), suffix + 1
 
 
 def _dump(path: Path, payload: Any) -> None:

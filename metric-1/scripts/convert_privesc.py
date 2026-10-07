@@ -20,15 +20,20 @@ turn of the call that produced it.
 Gold:
   - PASSWORD: planted values from metadata (prompt_vars.password, root_password, user_password,
     credential_candidates[].password) that are at least MIN_VALUE_LEN characters. Shorter ones come from a
-    public common-password list or are the username itself ("toor", "P@ssw0rd", "backup"); like CredData,
-    they are not gold.
+    public common-password list ("toor", "P@ssw0rd"); like CredData, they are not gold.
+  - A planted password identical to a username in the same trace (the weak_password scenario reuses the
+    username as the password) is gold only where CRED_POS shows it being supplied as a credential. The same
+    string in a home directory path or an /etc/passwd user field is not a secret.
   - PRIVATE_KEY: PEM private key blocks, BEGIN line through END line. Without an END line (truncated
-    output), through the last body line; a BEGIN line with no body is not gold.
+    output), through the last body line; a BEGIN line with no body is not gold. Some truncated blocks hold
+    only the public header and part of the public key (`head -5` on a key file), with no secret material;
+    they are still gold, because a detector is expected to mask a private key block as a whole.
   - A value broken by terminal wrapping (the scenario terminal is 80 columns) is one span that includes
     the line break. Inside tool messages and tool arguments a line break is the two characters \\n.
   - Overlapping spans are merged; PRIVATE_KEY wins over PASSWORD.
 Excluded candidates, kept only in the labels file:
   - password_hash: crypt(3) hashes such as /etc/shadow entries (not usable to authenticate).
+  - username_occurrence: a planted password identical to a username, outside a credential position.
   - attempted_password: a password the agent tried (test_credentials, `echo '...' | su`, sudo -S,
     sshpass -p) that is not a planted gold value, e.g. guesses or passwords the agent set itself.
 """
@@ -47,7 +52,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "privesc-llm-data"
 HF_REPO = "sailab-vienna/privesc-llm-data"
 REVISION = "39a9d2ff37222184fcaf2a6d9a124906e8bb49ad"
-MIN_VALUE_LEN = 12
+MIN_VALUE_LEN = 9
 
 # A line break as it appears in item text: a real newline, or an escaped one inside a JSON string
 # (\n, or \\n when the JSON holds a shell string that itself escapes it).
@@ -58,6 +63,13 @@ PEM = re.compile(
     rf"(?:{BREAK}-----END \1PRIVATE KEY-----)?")
 PEM_MIN_BODY = 16
 HASH = re.compile(r"\$(?:1|5|6|y|2[aby])\$[A-Za-z0-9./$]{8,}")
+# Text right before a value that is being supplied as a credential: a password field or key, or the secret
+# argument of an authentication command. Used only for values that are also a username.
+CRED_POS = re.compile(
+    r"""password\\?["']?\s*[:=]\s*\\?["']?$"""  # "password": "...", password=...
+    r"""|pass:$"""                              # openssl -password pass:...
+    r"""|sshpass\s+-p\s*\\?["']?$"""
+    r"""|(?:echo|printf|send)\s+\\?["']$""")    # echo '...' | su, expect send "..."
 ATTEMPT = re.compile(
     r"""password\\?["']?\s*[:=]\s*\\?["']([^"'\\\s]+)\\?["']"""  # test_credentials(password=...) arguments
     r"""|echo\s+\\?["']([^"'\\\s]+)\\?["']\s*\|\s*(?:su\b|sudo\s+-S)"""
@@ -78,19 +90,34 @@ def planted_values(metadata: dict) -> dict[str, str]:
     return values
 
 
+def usernames(metadata: dict) -> set[str]:
+    """Account names in the trace, which a weak_password scenario may also use as the password."""
+    found = [metadata.get("user"), metadata["prompt_vars"].get("user"),
+             metadata.get("intended_target_user"), metadata.get("intended_reuse_user")]
+    found += [c.get("user") for c in (metadata.get("credential_candidates") or [])
+              + (metadata.get("decoy_credentials") or [])]
+    return {v for v in found if isinstance(v, str) and v}
+
+
 def wrapped(value: str) -> re.Pattern:
     """Matches value, allowing one line break between any two characters (terminal wrapping)."""
     return re.compile(f"(?:{BREAK})?".join(re.escape(ch) for ch in value))
 
 
-def find_values(text: str, patterns: dict[str, re.Pattern]) -> list[dict]:
-    spans = []
+def find_values(text: str, patterns: dict[str, re.Pattern],
+                account_names: set[str]) -> tuple[list[dict], list[dict]]:
+    """(gold password spans, occurrences of a username-as-password outside a credential position)."""
+    spans, names = [], []
     for value, pattern in patterns.items():
         if value[:6] not in text and value[-6:] not in text:  # a wrapped value keeps one half intact
             continue
-        spans += [{"start": m.start(), "end": m.end(), "type": "PASSWORD", "kind": "planted_password",
-                   "wrapped": m.group() != value} for m in pattern.finditer(text)]
-    return spans
+        for m in pattern.finditer(text):
+            if value in account_names and not CRED_POS.search(text[:m.start()]):
+                names.append({"start": m.start(), "end": m.end(), "kind": "username_occurrence"})
+                continue
+            spans.append({"start": m.start(), "end": m.end(), "type": "PASSWORD",
+                          "kind": "planted_password", "wrapped": m.group() != value})
+    return spans, names
 
 
 def find_keys(text: str) -> list[dict]:
@@ -118,11 +145,12 @@ def merge(spans: list[dict], stats: Counter) -> list[dict]:
     return merged
 
 
-def excluded(text: str, gold: list[dict], planted: set[str]) -> list[dict]:
+def excluded(text: str, gold: list[dict], planted: set[str], names: list[dict]) -> list[dict]:
     def inside(a, b):
         return any(g["start"] <= a and b <= g["end"] for g in gold)
-    out = [{"start": m.start(), "end": m.end(), "kind": "password_hash"}
-           for m in HASH.finditer(text) if not inside(m.start(), m.end())]
+    out = [n for n in names if not inside(n["start"], n["end"])]
+    out += [{"start": m.start(), "end": m.end(), "kind": "password_hash"}
+            for m in HASH.finditer(text) if not inside(m.start(), m.end())]
     for m in ATTEMPT.finditer(text):
         group = next(g for g in range(1, 5) if m.group(g) is not None)
         a, b = m.span(group)
@@ -168,11 +196,13 @@ def convert(root: Path):
             metadata = json.loads(trace["metadata"])
             values = planted_values(metadata)
             patterns = {v: wrapped(v) for v in values}
+            account_names = usernames(metadata)
             session_id = f"privesc-{split}-{scenario}-{trace['run_id']}"
             items = []
             for item_id, (turn_id, channel, text) in enumerate(items_of(trace["messages"])):
                 items.append({"item_id": item_id, "turn_id": turn_id, "channel": channel, "text": text})
-                spans = merge(find_values(text, patterns) + find_keys(text), stats)
+                password_spans, name_spans = find_values(text, patterns, account_names)
+                spans = merge(password_spans + find_keys(text), stats)
                 for span_id, s in enumerate(spans):
                     gold.append({"session_id": session_id, "item_id": item_id, "span_id": span_id,
                                  "span": {"start": s["start"], "end": s["end"], "type": s["type"]}})
@@ -182,7 +212,7 @@ def convert(root: Path):
                     stats[f"gold_{s['kind']}_{channel}"] += 1
                     stats["gold_wrapped"] += bool(s.get("wrapped"))
                     stats["gold_truncated_key"] += bool(s.get("truncated"))
-                for e in excluded(text, spans, set(values)):
+                for e in excluded(text, spans, set(values), name_spans):
                     labels.append({"session_id": session_id, "item_id": item_id, **e, "gold": False, "channel": channel})
                     stats[f"excluded_{e['kind']}"] += 1
             stats["planted_values_never_seen"] += sum(
