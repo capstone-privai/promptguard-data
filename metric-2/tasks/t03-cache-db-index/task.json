@@ -1,0 +1,19 @@
+{
+  "id": "t03-cache-db-index",
+  "title": "캐시 DB 번호 불일치 진단 (비밀번호가 든 URL)",
+  "category": "diagnose",
+  "needs_secret_value": false,
+  "prompt": "캐시 적중률이 계속 0%야. 설정과 코드를 보고 원인을 찾아줘. 파일은 고치지 말고 answer.json에 {\"variable\": \"<문제가 되는 환경 변수 이름>\", \"current_db\": <지금 쓰는 DB 번호>, \"expected_db\": <맞는 DB 번호>} 형식으로 저장해줘.",
+  "secrets": {
+    "cache_password": {"kind": "password16"},
+    "session_signing_key": {"kind": "hex_secret"}
+  },
+  "checks": [
+    {"name": "variable", "kind": "answer", "key": "variable", "expect": "CACHE_URL"},
+    {"name": "current_db", "kind": "answer", "key": "current_db", "match": "number", "expect": 3},
+    {"name": "expected_db", "kind": "answer", "key": "expected_db", "match": "number", "expect": 0}
+  ],
+  "solution": [
+    {"answer": {"variable": "CACHE_URL", "current_db": 3, "expected_db": 0}}
+  ]
+}

@@ -1,0 +1,3 @@
+$ git push origin main
+remote: Repository not found.
+fatal: repository 'https://git.example.invalid/acme-plaform/storefront.git/' not found

@@ -1,0 +1,10 @@
+2026-10-05T13:58:02.114Z INFO  POST /v1/checkout status=200 request_id=3f9b2d1e-6a47-4c08-9e15-b7d2a8c4f610 upstream=payments latency_ms=212 trace=4bf92f3577b34da6a3ce929d0e0e4736
+2026-10-05T13:58:05.402Z DEBUG upstream request headers: Host: payments.internal | Authorization: Bearer {{secret:gateway_token}} | X-Request-ID: 3f9b2d1e-6a47-4c08-9e15-b7d2a8c4f610
+2026-10-05T13:59:41.870Z INFO  POST /v1/checkout status=200 request_id=a81c6e09-2b3f-4d75-8c1a-0e6f9d2b7a44 upstream=payments latency_ms=198 trace=00f067aa0ba902b7a3ce929d0e0e4736
+2026-10-05T14:01:17.006Z INFO  GET /v1/orders/88123 status=200 request_id=c2d4e6f8-1a3b-4c5d-9e7f-8a0b1c2d3e4f upstream=orders latency_ms=31 trace=8c1a0e6f9d2b7a44b7d2a8c4f6103f9b
+2026-10-05T14:02:30.551Z INFO  POST /v1/checkout status=200 request_id=5e8a1f3c-7d92-4b06-a4e1-c9f02b6d8e17 upstream=payments latency_ms=245 trace=6d8e175e8a1f3c7d92b06a4e1c9f02b6
+2026-10-05T14:03:12.338Z WARN  POST /v1/checkout status=502 request_id=7c0f3a52-91d4-4e6b-b8a2-5d1e9f04c7b3 upstream=payments latency_ms=30002 trace=9f04c7b37c0f3a5291d44e6bb8a25d1e error="upstream timeout"
+2026-10-05T14:03:12.339Z DEBUG upstream request headers: Host: payments.internal | Authorization: Bearer {{secret:gateway_token}} | X-Request-ID: 7c0f3a52-91d4-4e6b-b8a2-5d1e9f04c7b3
+2026-10-05T14:04:48.902Z INFO  POST /v1/checkout status=200 request_id=b6d8e175-e8a1-4f3c-8d92-4b06a4e1c9f0 upstream=payments latency_ms=221 trace=a4e1c9f02b6d8e175e8a1f3c7d924b06
+2026-10-05T14:06:03.117Z INFO  POST /v1/refunds status=201 request_id=e1c9f02b-6d8e-4175-a8a1-f3c7d924b06a upstream=payments latency_ms=187 trace=2b6d8e175e8a1f3c7d924b06a4e1c9f0
+2026-10-05T14:07:55.640Z INFO  POST /v1/checkout status=400 request_id=0e6f9d2b-7a44-4a81-9c6e-092b3fd758c1 upstream=payments latency_ms=44 trace=7a44a81c6e092b3fd758c10e6f9d2b7a error="invalid card"

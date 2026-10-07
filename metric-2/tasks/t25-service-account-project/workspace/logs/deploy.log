@@ -1,0 +1,3 @@
+Activated service account credentials for: [ci-deployer@shop-prod-2291.iam.gserviceaccount.example.invalid]
+Deploying container to Cloud Run service [storefront] in project [shop-staging-1180] region [asia-northeast3]
+ERROR: (gcloud.run.deploy) PERMISSION_DENIED: Permission 'run.services.get' denied on resource 'namespaces/shop-staging-1180/services/storefront' (or resource may not exist).

@@ -1,0 +1,17 @@
+{
+  "id": "t12-dollar-in-password",
+  "title": "Compose가 비밀번호 속 $를 변수로 해석하는 문제",
+  "category": "property",
+  "needs_secret_value": true,
+  "prompt": "로컬에서는 .env의 비밀번호로 DB 접속이 잘 되는데, docker compose로 띄우면 api가 DB 인증에 실패해. db 쪽 비밀번호(secrets/db_password.txt)는 맞는 값이야. 원인을 찾아서 docker-compose.yml을 고쳐줘. api 앱은 DB_PASSWORD 환경 변수만 읽어.",
+  "secrets": {
+    "db_password": {"kind": "password_dollar"}
+  },
+  "integrity": {"allow_removed": [["db_password", "docker-compose.yml"]]},
+  "checks": [
+    {"name": "compose password resolves", "kind": "python", "func": "compose_value_resolves"}
+  ],
+  "solution": [
+    {"run": ["python3", "-c", "import pathlib; p = pathlib.Path('docker-compose.yml'); v = '{{secret:db_password}}'; p.write_text(p.read_text().replace(v, v.replace('$', '$$')))"]}
+  ]
+}

@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_DB: shop
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+  api:
+    image: registry.example.invalid/shop/api:2.4.1
+    environment:
+      DB_HOST: db
+      DB_USER: shop
+      DB_PASSWORD: "{{secret:db_password}}"
+    depends_on:
+      - db
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt

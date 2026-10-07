@@ -1,0 +1,12 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_API_TOKEN: {{secret:leaked}}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/deploy.sh "${GITHUB_REF_NAME}"

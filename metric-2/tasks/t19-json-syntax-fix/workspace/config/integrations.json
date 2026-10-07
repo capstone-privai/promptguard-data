@@ -1,0 +1,20 @@
+{
+  "slack": {
+    "webhook_url": "https://hooks.slack.example.invalid/services/T01ABCD2E/B07XYZ9K2/{{secret:slack_hook}}",
+    "bot_token": "{{secret:slack_bot}}",
+    "channel": "#alerts"
+  },
+  "sentry": {
+    "dsn": "https://{{secret:sentry_key}}@o450123.ingest.sentry.example.invalid/5531207",
+    "environment": "production",
+    "traces_sample_rate": 0.2,
+  },
+  "pagerduty": {
+    "routing_key": "{{secret:pagerduty_key}}",
+    "severity": "error"
+  },
+  "retry": {
+    "max_attempts": 3
+    "backoff_ms": 200
+  }
+}

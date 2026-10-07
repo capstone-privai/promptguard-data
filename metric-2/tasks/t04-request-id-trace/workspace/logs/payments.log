@@ -1,0 +1,8 @@
+2026-10-05T13:58:02.090Z request_id=3f9b2d1e-6a47-4c08-9e15-b7d2a8c4f610 charge result=succeeded acquirer=kbank amount=48000
+2026-10-05T13:59:41.850Z request_id=a81c6e09-2b3f-4d75-8c1a-0e6f9d2b7a44 charge result=succeeded acquirer=kbank amount=12900
+2026-10-05T14:02:30.520Z request_id=5e8a1f3c-7d92-4b06-a4e1-c9f02b6d8e17 charge result=succeeded acquirer=shinhan amount=32000
+2026-10-05T14:02:42.310Z db pool reconnect user=payments password={{secret:payments_db_password}} host=payments-db.internal
+2026-10-05T14:03:12.301Z request_id=7c0f3a52-91d4-4e6b-b8a2-5d1e9f04c7b3 charge result=failed code=ACQUIRER_TIMEOUT acquirer=shinhan amount=56000 waited_ms=30000
+2026-10-05T14:04:48.880Z request_id=b6d8e175-e8a1-4f3c-8d92-4b06a4e1c9f0 charge result=succeeded acquirer=kbank amount=9900
+2026-10-05T14:06:03.100Z request_id=e1c9f02b-6d8e-4175-a8a1-f3c7d924b06a refund result=succeeded amount=12900
+2026-10-05T14:07:55.630Z request_id=0e6f9d2b-7a44-4a81-9c6e-092b3fd758c1 charge result=failed code=CARD_DECLINED_INVALID_NUMBER acquirer=kbank amount=21000

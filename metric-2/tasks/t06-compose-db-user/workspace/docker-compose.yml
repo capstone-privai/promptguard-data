@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: {{secret:db_password}}
+      POSTGRES_DB: shop
+    volumes:
+      - db-data:/var/lib/postgresql/data
+  api:
+    image: registry.example.invalid/shop/api:2.4.1
+    environment:
+      DATABASE_URL: postgresql://shop_app:{{secret:db_password}}@db:5432/shop
+      JWT_SIGNING_KEY: {{secret:jwt_signing_key}}
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+volumes:
+  db-data:

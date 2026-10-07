@@ -1,0 +1,11 @@
+{
+  "type": "service_account",
+  "project_id": "shop-prod-2291",
+  "private_key_id": "3f2a9c41d07e8b5f6a1c2d3e4f5a6b7c8d9e0f12",
+  "private_key": "{{secret:sa_key_json}}\n",
+  "client_email": "ci-deployer@shop-prod-2291.iam.gserviceaccount.example.invalid",
+  "client_id": "104857392011223344556",
+  "auth_uri": "https://accounts.example.invalid/o/oauth2/auth",
+  "token_uri": "https://oauth2.example.invalid/token",
+  "universe_domain": "example.invalid"
+}

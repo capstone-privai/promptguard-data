@@ -1,0 +1,14 @@
+Name:             orders-6d9f7c8b5-xk2lp
+Namespace:        shop
+Status:           Pending
+Containers:
+  orders:
+    Image:          registry.example.invalid/shop/orders:2.8.0
+    State:          Waiting
+      Reason:       CreateContainerConfigError
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Scheduled  2m                 default-scheduler  Successfully assigned shop/orders-6d9f7c8b5-xk2lp to node-3
+  Normal   Pulled     2m (x9 over 2m)    kubelet            Container image "registry.example.invalid/shop/orders:2.8.0" already present on machine
+  Warning  Failed     2m (x9 over 2m)    kubelet            Error: couldn't find key db-password in Secret shop/orders-secrets

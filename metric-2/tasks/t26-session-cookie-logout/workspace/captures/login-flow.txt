@@ -1,0 +1,39 @@
+# curl -v capture, 2026-10-06 14:20 KST (browser session replayed with curl)
+
+> POST /api/login HTTP/1.1
+> Host: shop.example.invalid
+> Content-Type: application/json
+>
+> {"email": "qa-buyer@shop.example.invalid", "password": "{{secret:login_password}}"}
+< HTTP/1.1 200 OK
+< Set-Cookie: sessionid={{secret:session_id}}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=1209600
+< Set-Cookie: csrftoken=8f14e45fceea167a5a36dedd4bea2543; Path=/; Secure; SameSite=Lax
+< Content-Type: application/json
+<
+< {"ok": true, "user": {"id": 4411, "name": "QA Buyer"}}
+
+> GET /api/products?page=1 HTTP/1.1
+> Host: shop.example.invalid
+> Cookie: sessionid={{secret:session_id}}; csrftoken=8f14e45fceea167a5a36dedd4bea2543
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+< {"items": 24, "page": 1}
+
+> GET /api/cart HTTP/1.1
+> Host: shop.example.invalid
+> Cookie: sessionid={{secret:session_id}}; csrftoken=8f14e45fceea167a5a36dedd4bea2543
+< HTTP/1.1 200 OK
+< Set-Cookie: sessionid=; Path=/api; Max-Age=0; HttpOnly; Secure
+< Set-Cookie: cart_version=7; Path=/
+< Content-Type: application/json
+<
+< {"items": [{"sku": "TSHIRT-BLK-M", "qty": 1}]}
+
+> GET /api/orders HTTP/1.1
+> Host: shop.example.invalid
+> Cookie: csrftoken=8f14e45fceea167a5a36dedd4bea2543; cart_version=7
+< HTTP/1.1 401 Unauthorized
+< Content-Type: application/json
+<
+< {"error": "authentication required"}

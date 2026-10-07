@@ -1,0 +1,7 @@
+db-1   | PostgreSQL init process complete; ready for start up.
+db-1   | 2026-10-06 08:30:12.004 UTC [1] LOG:  database system is ready to accept connections
+api-1  | 2026-10-06T08:30:14Z INFO  connecting to db:5432/shop
+db-1   | 2026-10-06 08:30:14.551 UTC [68] FATAL:  password authentication failed for user "shop_app"
+db-1   | 2026-10-06 08:30:14.551 UTC [68] DETAIL:  Role "shop_app" does not exist.
+api-1  | 2026-10-06T08:30:14Z ERROR db connection failed: password authentication failed for user "shop_app"
+api-1 exited with code 1

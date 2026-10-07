@@ -1,0 +1,4 @@
+2026-10-06T02:00:00Z INFO  warmup: wrote 12000 keys (pattern product:*) db=0
+2026-10-06T09:00:00Z INFO  cache stats window=1h hits=0 misses=48211 hit_ratio=0.00% db=3
+2026-10-06T10:00:00Z INFO  cache stats window=1h hits=0 misses=51877 hit_ratio=0.00% db=3
+2026-10-06T10:00:00Z WARN  product page latency p95=1840ms (cache miss fallback to postgres)

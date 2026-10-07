@@ -1,0 +1,10 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: {{secret:db_password_old}}
+      POSTGRES_DB: shop
+  cache:
+    image: redis:7
+    command: ["redis-server", "--requirepass", "{{secret:redis_password}}"]

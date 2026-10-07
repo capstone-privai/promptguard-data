@@ -1,0 +1,10 @@
+{
+  "deploy": {
+    "url": "https://deploy.example.invalid/api",
+    "token": "{{secret:leaked}}"
+  },
+  "slack": {
+    "channel": "#releases",
+    "bot_token": "{{secret:slack_token}}"
+  }
+}

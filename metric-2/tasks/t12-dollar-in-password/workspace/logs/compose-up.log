@@ -1,0 +1,6 @@
+db-1   | 2026-10-06 08:41:02.881 UTC [1] LOG:  database system is ready to accept connections
+api-1  | 2026-10-06T08:41:04Z INFO  connecting to db:5432/shop as shop
+db-1   | 2026-10-06 08:41:04.512 UTC [70] FATAL:  password authentication failed for user "shop"
+db-1   | 2026-10-06 08:41:04.512 UTC [70] DETAIL:  Connection matched file "/var/lib/postgresql/data/pg_hba.conf" line 128: "host all all all scram-sha-256"
+api-1  | 2026-10-06T08:41:04Z ERROR db connection failed: password authentication failed for user "shop"
+api-1 exited with code 1
