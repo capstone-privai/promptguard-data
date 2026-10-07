@@ -17,7 +17,10 @@ python metric-1/scripts/evaluate.py run --system credsweeper --ml off
 python metric-1/scripts/run_gitleaks.py                                        # gitleaks 탐지 결과를 runs/gitleaks/에 쓴다
 python metric-1/scripts/evaluate.py run --system gitleaks --findings runs/gitleaks/sessions.jsonl
 python metric-1/scripts/evaluate.py run --system promptguard --sessions metric-1/data_test/sessions_from_CredData.jsonl
+python metric-1/scripts/evaluate.py run --system credsweeper --channels all --sessions metric-1/data_test/sessions_from_privesc-llm-data.jsonl
 ```
+
+각 데이터셋의 특성과 점수를 읽을 때 주의할 점은 [데이터셋별 해석](#데이터셋별-해석)에 있다.
 
 `--gold`를 생략하면 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 쓴다(`dataset_verify.py`와 같은 규칙). `data_test/` 밖에 있는 `sessions*.jsonl`은 같은 폴더의 `gold*.jsonl`과 짝짓는다.
 
@@ -57,6 +60,29 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 | `identity` | 아무것도 바꾸지 않는다. recall 0.0, precision N/A가 나와야 한다. |
 
 현재 PromptGuard(demo-v0)는 셸 명령 출력(stdout, stderr)만 처리한다. 따라서 `prompt`, `instructions`, `tool_input` 채널의 비밀은 항상 놓친 것으로 집계되고, 채널별 recall에 그대로 드러난다. 데이터의 `tool_output`은 stdout과 stderr를 구분하지 않으므로 시스템에는 `stdout`으로 넘긴다. 채널 대응은 `CHANNEL_MAP` 한 곳에만 있으므로, 연동할 에이전트가 정해져 시스템이 처리하는 채널이 늘어나면 그 표만 바꾸면 된다.
+
+## 데이터셋별 해석
+
+데이터셋마다 정답이 놓인 채널, 정답 유형, 음성의 성격이 다르다. 점수는 같은 데이터셋 안에서만 비교하고, 데이터셋끼리 나란히 놓을 때는 아래 차이를 같이 적는다. 만드는 방법과 정답 규칙은 [지표 1 README](../README.md#데이터셋)와 각 변환 문서에 있다.
+
+| 세션 파일 | origin | 정답 유형 | 정답이 있는 채널 | 주의 |
+|---|---|---|---|---|
+| `sessions.jsonl`, `sessions_from_example.jsonl`, `sessions_2.jsonl` | authored | 다섯 유형 모두 | 네 채널 모두 | 합성 세션. 음성도 직접 쓴 것이다 |
+| `sessions_from_CredData.jsonl` | external | 다섯 유형 모두 | `tool_output`만 | precision은 하한값이다([README_CredData.md](../README_CredData.md#xf를-음성으로-쓸-때-유의할-점)) |
+| `sessions_from_privesc-llm-data.jsonl` | recorded | PASSWORD, PRIVATE_KEY만 | `instructions`, `tool_input`, `tool_output` | 아래 참고 |
+
+### privesc-llm-data
+
+실제 에이전트 궤적에 심어 둔 값을 찾아 정답을 자동으로 만든 데이터다([README_privesc-llm-data.md](../README_privesc-llm-data.md)). 점수를 읽을 때 다음을 본다.
+
+- **`tool_output`만 처리하는 시스템은 recall 상한이 약 0.43이다.** 정답 10,546개 중 `tool_output`에 4,565개가 있고, 나머지는 시스템 프롬프트(`instructions` 2,200개)와 에이전트가 쓴 명령(`tool_input` 3,781개)에 있다. 같은 비밀번호가 세 채널에 반복해서 나오므로, 채널별 recall(`recall_by_channel`)을 함께 본다. CredSweeper와 gitleaks를 PromptGuard와 같은 조건에서 비교하려면 기본 채널(`tool_output`)로 돌리고, 탐지기 자체의 성능을 보려면 `--channels all`로 돌린다.
+- **`prompt` 채널에는 정답이 없다.** `prompt` item은 모든 세션에 같은 시작 지시문이라 PromptGuard의 task context도 세션마다 같다. 과제 설명과 로그인 계정은 `instructions`에 있다.
+- **줄 단위 지표는 다른 데이터셋과 비교하지 않는다.** `tool_input`과 `tool_output`의 text는 도구 호출 인자와 도구 결과의 JSON 문자열이라, 그 안의 줄바꿈이 실제 줄바꿈이 아니라 `\n` 두 글자다. 그래서 이 두 채널의 item 117,886개는 모두 한 줄로 세고, `lines_total`(192,686)이 작게 잡힌다. 이를 분모로 쓰는 `fp_per_1k_lines`와 `density_per_1k_lines`는 이 데이터 안에서만 비교한다.
+- **같은 이유로 줄 단위로 동작하는 탐지 규칙에 불리할 수 있다.** 도구 결과 전체가 한 줄이고 비밀 주변에 JSON 따옴표와 escape가 붙는다. 실제 에이전트의 셸 출력과 모양이 다르다는 점을 결과에 적는다.
+- **유형별 recall은 PASSWORD와 PRIVATE_KEY만 나온다.** 나머지 유형은 `None`이다. PASSWORD는 12자 무작위 영숫자나 16자 hex라 키 이름이나 맥락 없이 값만 보고는 찾기 어렵다.
+- **과잉 마스킹의 출처는 labels 파일로 나눈다.** `metric-1/labels_from_privesc-llm-data.jsonl`에는 정답에서 뺀 `password_hash`(`/etc/shadow` 해시)와 `attempted_password`(에이전트가 시도했지만 심은 값이 아닌 비밀번호)의 좌표가 있다. `per_edit.jsonl`에서 `overlaps_gold`가 false인 edit를 이 좌표와 맞추면, 과잉 마스킹이 이런 비밀번호성 문자열에서 나왔는지 다른 텍스트에서 나왔는지 나눠 볼 수 있다.
+- **규모.** 세션 2,200개, item 122,286개다. 모든 채널을 검사할 때 gitleaks는 `run_gitleaks.py` 전체가 약 30초, CredSweeper(`--ml off`)는 약 40초 걸린다(Apple Silicon 노트북 기준).
+- origin이 `recorded`라 `rule_eval`, `ml_eval`, `ml_train` 모두 허용된다. CredSweeper `--ml on`과 PromptGuard의 ML predictor로도 평가할 수 있다.
 
 ## 데이터 형식
 

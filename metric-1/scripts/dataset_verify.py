@@ -1,9 +1,10 @@
-"""Verify a sessions/gold pair written by dataset_build.py or convert_creddata.py.
+"""Verify a sessions/gold pair written by dataset_build.py, convert_creddata.py or convert_privesc.py.
 
 Run from the repository root:
   python metric-1/scripts/dataset_verify.py                                               data_test/sessions.jsonl + data_answer/gold.jsonl
   python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_example.jsonl  + data_answer/gold_from_example.jsonl
   python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_CredData.jsonl --creddata ../CredData
+  python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_privesc-llm-data.jsonl --privesc ../privesc-llm-data
 
 Checks:
   1. sessions schema: unique session_id, item_id = 0..n-1, known channel, no gold fields
@@ -13,7 +14,7 @@ Checks:
   5. coverage: every occurrence of a long (>= 9 chars) gold value in any item is inside a gold span
      (skipped for origin=external: those labels are the source dataset's, not ours)
   6. reproduction: regenerating from the recorded source yields byte-identical files
-     (built-in corpus, meta.template, or --creddata; skipped for CredData without --creddata)
+     (built-in corpus, meta.template, --creddata or --privesc; skipped for those two without the flag)
 Exits 1 and lists every problem found if any check fails.
 """
 from __future__ import annotations
@@ -163,7 +164,8 @@ def check_coverage(spans: list[tuple], texts: dict[tuple[str, int], str], errors
                     errors.append(f"uncovered occurrence of {value[:20]!r}... in {key} at {m.start()}")
 
 
-def regenerate(sessions: list[dict], source: str | None, origin: str | None, creddata: Path | None):
+def regenerate(sessions: list[dict], source: str | None, origin: str | None, creddata: Path | None,
+               privesc: Path | None = None):
     """Rows the recorded source would produce now, or None with the reason it cannot be regenerated."""
     if source == "authored_synthetic_injection":
         c = build()
@@ -176,6 +178,12 @@ def regenerate(sessions: list[dict], source: str | None, origin: str | None, cre
             return None, "skipped (pass --creddata to regenerate)"
         from convert_creddata import convert
         new_sessions, new_gold, _, _ = convert(creddata, sessions[0]["meta"]["context_lines"])
+        return (new_sessions, new_gold), None
+    if source == "privesc-llm-data":
+        if privesc is None:
+            return None, "skipped (pass --privesc to regenerate)"
+        from convert_privesc import convert as convert_privesc
+        new_sessions, new_gold, _, _ = convert_privesc(privesc)
         return (new_sessions, new_gold), None
     return None, f"skipped (unknown source {source!r})"
 
@@ -204,6 +212,7 @@ def main():
     parser.add_argument("sessions", type=Path, nargs="?", default=Path(__file__).resolve().parents[1] / "data_test" / "sessions.jsonl")
     parser.add_argument("--gold", type=Path, help="default: data_test/sessions*.jsonl -> data_answer/gold*.jsonl")
     parser.add_argument("--creddata", type=Path, help="CredData checkout, to regenerate sessions_from_CredData.jsonl")
+    parser.add_argument("--privesc", type=Path, help="privesc-llm-data copy, to regenerate sessions_from_privesc-llm-data.jsonl")
     parser.add_argument("--skip-rebuild", action="store_true", help="skip the byte-reproduction check")
     args = parser.parse_args()
     gold_path = args.gold or gold_path_for(args.sessions)
@@ -219,7 +228,7 @@ def main():
         check_coverage(spans, texts, errors)
     reproduction = "skipped"
     if not args.skip_rebuild and sessions:
-        rows, reproduction = regenerate(sessions, source, origin, args.creddata)
+        rows, reproduction = regenerate(sessions, source, origin, args.creddata, args.privesc)
         if rows is not None:
             check_reproduction((args.sessions, gold_path), rows, errors)
             reproduction = "passed"
