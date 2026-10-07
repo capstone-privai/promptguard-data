@@ -1,4 +1,4 @@
-"""Local web page for reviewing CredData X/F rows against our label policy (MASK or KEEP).
+"""Local web page for reviewing CredData X/F rows against the metric-1 label: a working credential or not (CRED or NOT_CRED).
 
 Run from the repository root, then open the printed URL:
   python metric-1/manual_review/review_creddata.py --creddata ../CredData
@@ -7,7 +7,7 @@ Rows are grouped by value, so one decision covers every X/F occurrence of the sa
 override its group or correct its span. Every change is saved to metric-1/creddata_review.jsonl
 (CredData ids and decisions only, no file contents). "완료" saves and regenerates
 data_test/sessions_from_CredData.jsonl and data_answer/gold_from_CredData.jsonl with
-metric-1/scripts/convert_creddata.py, so MASK rows become gold.
+metric-1/scripts/convert_creddata.py, so CRED rows become gold. Unreviewed rows keep CredData's verdict (negative).
 Serves on 127.0.0.1 only: the page shows CredData file contents, which are not ours to publish.
 """
 from __future__ import annotations
@@ -76,7 +76,7 @@ def build_payload(creddata: Path, context: int) -> dict:
         # T values are obfuscated by CredData, so they cannot be matched against X/F values here.
         tags = ["placeholder"] if PLACEHOLDER.search(value) else []
         out.append({"v": value, "ids": sorted(ids, key=int), "tags": tags,
-                    "sugg": "KEEP" if tags else None})
+                    "sugg": "NOT_CRED" if tags else None})
     out.sort(key=lambda g: (-len(g["ids"]), g["v"]))
     return {"groups": out, "rows": rows}
 
@@ -95,8 +95,12 @@ def save_review(decisions: dict[str, dict], path: Path, known: dict[str, dict]):
         lines.append(json.dumps(rec, ensure_ascii=False) + "\n")
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as f:
         f.write("".join(lines))
+    try:
+        load_review(Path(f.name))  # same validation the converter applies, before the saved file is replaced
+    except Exception:
+        os.unlink(f.name)
+        raise
     os.replace(f.name, path)
-    load_review(path)  # same validation the converter applies
 
 
 def main():

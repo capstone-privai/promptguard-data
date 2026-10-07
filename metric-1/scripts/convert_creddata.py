@@ -8,14 +8,15 @@ EVALUATION ONLY. origin=external, allowed_use=[rule_eval, ml_eval]: never train 
 Writes, under --out (default metric-1/):
   data_test/sessions_from_CredData.jsonl  one session per labeled file; each item is a window of the file
                                 (labeled lines +- --context-lines, overlapping windows merged), channel tool_output
-  data_answer/gold_from_CredData.jsonl  CredData T rows, plus X/F rows reviewed as MASK, as gold spans (same schema as gold.jsonl)
+  data_answer/gold_from_CredData.jsonl  CredData T rows, plus X/F rows reviewed as CRED, as gold spans (same schema as gold.jsonl)
   labels_from_CredData.jsonl    every CredData row (T/F/X) mapped to item offsets, with its review decision, for analysis
 
 Review (metric-1/creddata_review.jsonl, written by review_creddata.py; ids and decisions only, no file contents):
-  CredData X (test value / example / placeholder) and some F are secrets under our label policy
-  (2026-10-02: test values and weak default passwords are MASK). A reviewer marks value-level X/F rows
-  MASK or KEEP; MASK rows become gold. A decision may also correct the row's ValueStart/ValueEnd.
-  Unreviewed X/F rows stay out of gold, as in CredData.
+  Metric-1 gold is "is this value a working credential" (metric-1/README.md), regardless of the task.
+  CredData X (template / placeholder) and F mostly agree, but CredData also calls working test values and
+  default passwords X/F, which are credentials to us. A reviewer marks value-level X/F rows CRED or NOT_CRED;
+  CRED rows become gold. A decision may also correct the row's ValueStart/ValueEnd.
+  Unreviewed X/F rows keep CredData's verdict: they are in the sessions as negatives, not in gold.
 
 Conversion rules:
   - Lines are split the way CredData does: \\r\\n and \\r become \\n, then split on \\n.
@@ -42,6 +43,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "CredData"
 REVIEW_PATH = Path(__file__).resolve().parents[1] / "creddata_review.jsonl"
 REVIEW_KEYS = {"creddata_id", "action", "scope", "value_start", "value_end"}
+ACTIONS = ("CRED", "NOT_CRED")  # metric-1 label: a working credential or not (task relevance is metric-3's)
 
 PRIVATE_KEY_CATEGORIES = {"PEM Private Key", "BASE64 Private Key", "BASE64 encoded PEM Private Key",
                           "JWK", "PASERK Keys", "NKEY Seed"}
@@ -154,8 +156,8 @@ def load_review(path: Path) -> dict[str, dict]:
     review = {}
     for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         d = json.loads(line)
-        if set(d) - REVIEW_KEYS or not isinstance(d.get("creddata_id"), str) or d.get("action") not in ("MASK", "KEEP") or d.get("scope") not in ("group", "row"):
-            raise ValueError(f"{path.name}:{n}: expected {sorted(REVIEW_KEYS)} with action MASK|KEEP, scope group|row; got {d}")
+        if set(d) - REVIEW_KEYS or not isinstance(d.get("creddata_id"), str) or d.get("action") not in ACTIONS or d.get("scope") not in ("group", "row"):
+            raise ValueError(f"{path.name}:{n}: expected {sorted(REVIEW_KEYS)} with action CRED|NOT_CRED, scope group|row; got {d}")
         if ("value_start" in d) != ("value_end" in d) or ("value_start" in d and not 0 <= d["value_start"] < d["value_end"]):
             raise ValueError(f"{path.name}:{n}: value_start/value_end must come together with 0 <= start < end")
         if d["creddata_id"] in review:
@@ -222,7 +224,7 @@ def convert(creddata: Path, context: int, review_path: Path = REVIEW_PATH):
                 stats[f"rows_{row.truth}"] += 1
                 if action:
                     stats[f"review_{row.truth}_{action}"] += 1
-                if row.truth == "T" or action == "MASK":
+                if row.truth == "T" or action == "CRED":
                     spans.append({"start": start, "end": end, "type": kind, "category": row.raw["Category"]})
             for span_id, s in enumerate(resolve_overlaps(spans, stats)):
                 gold.append({"session_id": session_id, "item_id": item_id, "span_id": span_id,

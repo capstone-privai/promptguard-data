@@ -23,7 +23,7 @@
 | `sessions.jsonl` | `gold.jsonl` | 12 | 51 | 32 | authored |
 | `sessions_from_example.jsonl` | `gold_from_example.jsonl` | 2 | 9 | 10 | authored |
 | `sessions_2.jsonl` | `gold_2.jsonl` | 43 | 152 | 78 | authored |
-| `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 15,596 | external |
+| `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 17,133 | external |
 
 - **내장 코퍼스**(`sessions.jsonl`): `dataset_build.py`에 직접 쓴 합성 세션이다. 환경 파일, 트레이스백, HTTP 헤더, git 이력, Kubernetes Secret, PEM 키, 비밀이 없는 음성 예시 등 12개 상황을 담았다.
 - **템플릿 예시**(`sessions_from_example.jsonl`): [templates/example.jsonl](templates/example.jsonl)의 placeholder를 채워 만든 세션이다.
@@ -92,6 +92,25 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, 정답 누락(같은 비밀값이 다른 곳에도 나오는데 정답에서 빠졌는지), 재생성 시 바이트 단위 일치다.
 
 생성 스크립트는 세션을 `metric-1/data_test/`, 정답을 `metric-1/data_answer/`에 쓴다. 검증 스크립트는 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 자동으로 찾는다.
+
+## 정답의 정의
+
+지표 1의 정답 span은 **실제로 인증에 쓰이는 자격증명 값**이다. 과제에 필요한 값인지는 보지 않는다. 과제에 필요해서 남길지(MASK/KEEP)는 [지표 3](../metric-3/README.md)에서 따로 라벨링한다. 이렇게 나누면 탐지기가 규칙 기반이든 ML이든 같은 정답으로 채점하고, ML을 붙여도 정답을 다시 매기지 않는다.
+
+| 경우 | 정답 | 예 |
+|---|---|---|
+| 실제 값, 또는 실제 값을 같은 모양으로 바꾼 합성·난독화 값 | 자격증명 | API 키, 토큰, CredData T |
+| 테스트·개발용이지만 실제로 동작하는 값 | 자격증명 | `x-pack-test-password` |
+| 설정에 들어간 기본·약한 비밀번호 | 자격증명 | `DB_PASSWORD=admin` |
+| 공개용 키 | 자격증명 | 클라이언트에 넣는 publishable key |
+| placeholder, 지운 흔적 | 아님 | `<your-token>`, `YOUR_API_KEY`, `login_and_password_removed`, `***`, `xxxx` |
+| 변수 참조 | 아님 | `${TOKEN}`, `os.environ["KEY"]`, 따옴표 없는 식별자 |
+| 문서에 나오는 예시 값 | 아님 | `AKIAIOSFODNN7EXAMPLE` |
+| 해시, UUID, request id, 이름 | 아님 | 커밋 해시, `x-request-id` |
+
+- 값이 자격증명 자리(예: `Authorization: Basic …`)에 있어도, 값 자체가 placeholder면 정답이 아니다. 규칙 기반 탐지기가 이런 값을 가리면 과잉 마스킹으로 센다. recall은 줄지 않고 precision만 내려간다. ML 검증이 이 과잉 마스킹을 얼마나 줄이는지는 CredSweeper `--ml off`와 `--ml on`을 비교해 본다.
+- 이 정의는 시스템이 과제에 필요한 값을 남기는 판단(KEEP)을 하지 않는다고 보고 잰다. KEEP 판단을 켠 시스템은 남긴 자격증명이 놓친 것으로 잡힌다([알려진 한계](evaluation/README.md#알려진-한계)).
+- CredData를 이 정의에 맞추는 방법은 [README_CredData.md](README_CredData.md#xf-검수)에 있다.
 
 ## 채점 기준
 
