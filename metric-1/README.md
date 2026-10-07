@@ -15,6 +15,7 @@
 | `templates/` | placeholder로 세션을 쓰는 템플릿과 [작성법](templates/README.md) |
 | [`README_CredData.md`](README_CredData.md) | CredData 변환 방법, 변환 규칙, 우리 라벨 기준과 다른 점 |
 | [`README_privesc-llm-data.md`](README_privesc-llm-data.md) | privesc-llm-data 변환 방법, 채널 대응, 자동 정답 규칙, 한계 |
+| [`README_baseline-recall.md`](README_baseline-recall.md) | 기존 시스템(CredSweeper, gitleaks)과 PromptGuard 데모의 recall이 낮은 이유 분석 |
 
 ## 데이터셋
 
