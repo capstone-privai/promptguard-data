@@ -1,11 +1,12 @@
 """Build session corpora with gold spans recorded at insertion time, independently of any detector.
 
 Run from the repository root:
-  python metric-1/scripts/build_dataset.py                       built-in corpus below
-  python metric-1/scripts/build_dataset.py --template T.jsonl --origin authored|injected
+  python metric-1/scripts/dataset_build.py                       built-in corpus below
+  python metric-1/scripts/dataset_build.py --template T.jsonl --origin authored|injected [--name N]
 This is normalized evaluation input, NOT a captured agent session; channels follow opencode's hooks.
 
-Writes two files under --out (default metric-1/; with --template T.jsonl: sessions_from_T.jsonl, gold_from_T.jsonl):
+Writes two files under --out (default metric-1/; with --template T.jsonl: sessions_from_T.jsonl, gold_from_T.jsonl,
+or sessions_N.jsonl, gold_N.jsonl with --name N):
   data_test/sessions.jsonl  one session per line: session_id, items, meta (no gold)
   data_answer/gold.jsonl    one gold span per line: session_id, item_id, span_id, span
                             (span = {start, end, type}; items without spans are omitted)
@@ -234,6 +235,11 @@ def ed25519_pem(seed: str) -> str:
     return "-----BEGIN PRIVATE KEY-----\n" + base64.b64encode(der).decode() + "\n-----END PRIVATE KEY-----"
 
 
+def uuid_key(seed: str) -> str:
+    h = value(seed, 32, "0123456789abcdef")
+    return f"{h[:8]}-{h[8:12]}-4{h[13:16]}-{'89ab'[int(h[16], 16) % 4]}{h[17:20]}-{h[20:]}"
+
+
 DIGITS = "0123456789"
 UPPER_ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 AWS_SECRET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/+"
@@ -247,6 +253,8 @@ GENERATORS = {
     "jwt": ("TOKEN", jwt),
     "api_key": ("SECRET", lambda s: value(s, 40)),
     "secret": ("SECRET", lambda s: value(s, 48)),
+    "hex_secret": ("SECRET", lambda s: value(s, 64, "0123456789abcdef")),
+    "uuid_key": ("SECRET", uuid_key),
     "aws_access_key": ("ACCESS_KEY", lambda s: "AKIA" + value(s, 16, UPPER_ALNUM)),
     "aws_secret_key": ("SECRET", lambda s: value(s, 40, AWS_SECRET)),
     "publishable_key": ("ACCESS_KEY", lambda s: "pk_test_" + value(s, 24)),
@@ -261,6 +269,9 @@ def transform(text: str, name: str, arg: str | None) -> tuple[str, str | None]:
         return base64.b64encode(text.encode()).decode(), None
     if name == "url":
         return quote(text, safe=""), None
+    if name == "json":
+        # Body of a JSON string literal, e.g. a PEM inside a service-account file ("\n" escapes).
+        return json.dumps(text, ensure_ascii=False)[1:-1], None
     if name == "basic":
         # HTTP Basic credential: base64("user:secret"), labeled as a token like the built-in corpus.
         return base64.b64encode(f"{arg or 'user'}:{text}".encode()).decode(), "TOKEN"
@@ -354,8 +365,8 @@ def from_template(path: Path, origin: str) -> Corpus:
     return c
 
 
-def output_paths(out: Path, template: Path | None) -> tuple[Path, Path]:
-    suffix = "" if template is None else f"_from_{template.stem}"
+def output_paths(out: Path, template: Path | None, name: str | None = None) -> tuple[Path, Path]:
+    suffix = f"_{name}" if name else "" if template is None else f"_from_{template.stem}"
     return out / "data_test" / f"sessions{suffix}.jsonl", out / "data_answer" / f"gold{suffix}.jsonl"
 
 
@@ -382,17 +393,21 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--template", type=Path, help="session template JSONL with {{...}} placeholders")
+    parser.add_argument("--name", help="with --template: write sessions_NAME.jsonl / gold_NAME.jsonl "
+                                       "instead of sessions_from_<template>.jsonl")
     parser.add_argument("--origin", choices=sorted(ALLOWED_USE),
                         help="required with --template: authored if the secrets fit the context they were written in, "
                              "injected if placeholders were added to a trajectory not written for them (rule_eval only)")
     args = parser.parse_args()
     if args.template and not args.origin:
         parser.error("--template requires --origin")
-    if args.origin and not args.template:
-        parser.error("--origin only applies to --template")
+    if (args.origin or args.name) and not args.template:
+        parser.error("--origin and --name only apply to --template")
+    if args.name and not re.fullmatch(r"[A-Za-z0-9_-]+", args.name):
+        parser.error("--name may contain only letters, digits, '_' and '-'")
     c = from_template(args.template, args.origin) if args.template else build()
     validate(c)
-    sessions_path, gold_path = output_paths(args.out, args.template)
+    sessions_path, gold_path = output_paths(args.out, args.template, args.name)
     sessions_path.parent.mkdir(parents=True, exist_ok=True)
     gold_path.parent.mkdir(parents=True, exist_ok=True)
     write_jsonl(sessions_path, c.sessions)

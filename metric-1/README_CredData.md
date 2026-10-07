@@ -25,7 +25,7 @@ hdiutil detach /Volumes/CredDataCS && rm CredData-cs.sparseimage
 
 # 3. 변환과 검증 (이 저장소 루트에서). metric-1/creddata_review.jsonl의 판정이 gold에 반영된다
 python metric-1/scripts/convert_creddata.py --creddata ../CredData
-python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_CredData.jsonl --creddata ../CredData
+python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_CredData.jsonl --creddata ../CredData
 ```
 
 ## X/F 검수

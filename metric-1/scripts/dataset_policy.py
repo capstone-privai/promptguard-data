@@ -1,7 +1,7 @@
 """Which purposes each kind of session may be used for.
 
 Every session carries meta.origin and meta.allowed_use. allowed_use is derived from origin
-here and nowhere else; verify_dataset.py rejects sessions whose allowed_use differs.
+here and nowhere else; dataset_verify.py rejects sessions whose allowed_use differs.
 
   authored  secrets written where they naturally belong (built-in corpus, authored templates)
   recorded  real agent runs whose secrets were planted in the environment before the run
@@ -10,6 +10,8 @@ here and nowhere else; verify_dataset.py rejects sessions whose allowed_use diff
   external  third-party benchmark (CredData); evaluation only, never training
 
 Code that consumes sessions should call require_use(sessions, purpose) before using them.
+
+ml_eval includes CredSweeper with ML validation enabled (--ml on).
 """
 from __future__ import annotations
 

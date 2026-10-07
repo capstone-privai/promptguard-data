@@ -1,6 +1,6 @@
 """Collect every format error in a sessions/gold pair instead of stopping at the first one.
 
-This checks only what scoring relies on. scripts/verify_dataset.py checks the full data contract
+This checks only what scoring relies on. scripts/dataset_verify.py checks the full data contract
 (key sets, span_id order, origin/allowed_use policy, coverage, reproduction).
 """
 

@@ -35,7 +35,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from build_dataset import write_jsonl
+from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

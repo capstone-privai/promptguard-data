@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-# Where the text passes through opencode. Must equal scripts/build_dataset.py CHANNELS;
+# Where the text passes through opencode. Must equal scripts/dataset_build.py CHANNELS;
 # test_system_contract checks this.
 CHANNELS: tuple[str, ...] = ("prompt", "instructions", "tool_input", "tool_output")
 
-# Must equal scripts/build_dataset.py TYPES and promptguard.common.schema.CandidateType;
+# Must equal scripts/dataset_build.py TYPES and promptguard.common.schema.CandidateType;
 # test_system_contract checks both.
 GOLD_TYPES: tuple[str, ...] = ("PASSWORD", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY", "SECRET")
 

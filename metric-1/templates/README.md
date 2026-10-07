@@ -1,11 +1,12 @@
 # 세션 템플릿
 
-`sessions.jsonl`과 같은 모양의 파일에서 비밀값 자리에 placeholder를 쓰면, `build_dataset.py`가 결정적 합성값으로 채운다. 이때 넣은 위치를 그대로 gold로 기록한다.
+`sessions.jsonl`과 같은 모양의 파일에서 비밀값 자리에 placeholder를 쓰면, `dataset_build.py`가 결정적 합성값으로 채운다. 이때 넣은 위치를 그대로 gold로 기록한다.
 
 ```bash
-python metric-1/scripts/build_dataset.py --template metric-1/templates/example.jsonl --origin authored
+python metric-1/scripts/dataset_build.py --template metric-1/templates/example.jsonl --origin authored
 # -> metric-1/data_test/sessions_from_example.jsonl, metric-1/data_answer/gold_from_example.jsonl
-python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_example.jsonl
+# --name N 을 주면 sessions_N.jsonl, gold_N.jsonl 로 쓴다
+python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_example.jsonl
 ```
 
 ## `--origin`: 필수, 파일 단위
@@ -15,7 +16,7 @@ python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_examp
 | `authored` | 비밀이 그 맥락에 자연스럽게 있도록 직접 쓴 세션 | rule_eval, ml_eval, ml_train |
 | `injected` | 원래 비밀용으로 쓰지 않은 궤적(공개 에이전트 로그 등)에 placeholder를 끼워 넣은 세션 | **rule_eval만** |
 
-`injected` 데이터는 비밀과 주변 맥락이 맞지 않는다. ML 필터가 이 데이터로 학습하면 비밀이 아니라 "끼워 넣은 흔적"을 배운다. 그래서 규칙기반 검출기 평가에만 쓴다. 한 파일에는 한 origin만 둔다. `meta.origin`과 `meta.allowed_use`는 빌더가 채우며, verify는 [dataset_policy.py](../scripts/dataset_policy.py)의 표와 다르면 실패한다. 데이터를 쓰는 쪽은 `require_use(sessions, "ml_train")`처럼 용도를 확인한 뒤 써야 한다.
+`injected` 데이터는 비밀과 주변 맥락이 맞지 않는다. ML 필터가 이 데이터로 학습하면 비밀이 아니라 "끼워 넣은 흔적"을 배운다. 그래서 규칙기반 검출기 평가에만 쓴다. CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이므로 `injected`에서는 허용하지 않는다. 한 파일에는 한 origin만 둔다. `meta.origin`과 `meta.allowed_use`는 빌더가 채우며, verify는 [dataset_policy.py](../scripts/dataset_policy.py)의 표와 다르면 실패한다. 데이터를 쓰는 쪽은 `require_use(sessions, "ml_train")`처럼 용도를 확인한 뒤 써야 한다.
 
 ## 파일 형식
 
@@ -49,6 +50,8 @@ python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_examp
 | `jwt` | TOKEN | HS256 JWT |
 | `api_key` | SECRET | 영숫자 40자 |
 | `secret` | SECRET | 영숫자 48자 |
+| `hex_secret` | SECRET | 소문자 hex 64자 |
+| `uuid_key` | SECRET | UUID v4 모양의 키 |
 | `aws_access_key` | ACCESS_KEY | `AKIA` + 16자 |
 | `aws_secret_key` | SECRET | 40자 (`/+` 포함) |
 | `publishable_key` | ACCESS_KEY | `pk_test_` + 24자 |
@@ -59,6 +62,7 @@ python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_examp
 |---|---|
 | `base64` | base64 인코딩 (type 유지) |
 | `url` | 퍼센트 인코딩 (type 유지) |
+| `json` | JSON 문자열 안의 표현(개행은 `\n`) (type 유지). 예: 서비스 계정 JSON의 PEM |
 | `basic=user` | `base64("user:값")`, type은 TOKEN |
 
 변환은 왼쪽부터 차례로 적용한다. 예: `{{password:db|url|base64}}`.

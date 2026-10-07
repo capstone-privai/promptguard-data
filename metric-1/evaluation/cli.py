@@ -16,7 +16,7 @@ from typing import Any, TextIO
 from evaluation.adapters.base import SystemUnderTest
 from evaluation.adapters.system_root import SystemRootError, use_system_root
 from evaluation.dataset.io import gold_path_for, load_sessions
-from evaluation.dataset.schema import USES
+from evaluation.dataset.schema import CHANNELS, USES
 from evaluation.dataset.validate import validate_dataset
 from evaluation.report.meta import build_run_meta
 from evaluation.report.sweep import curve_points, parse_range, run_thresholds, summarize
@@ -56,12 +56,15 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--system-root", help="PromptGuard checkout for --system promptguard "
                                            "(default: $PROMPTGUARD_ROOT, else ../promptguard-demo-v0)")
     run.add_argument("--use", choices=USES, help="purpose every session's meta.allowed_use must include "
-                                                 "(default: ml_eval for a non-mock predictor, else rule_eval)")
+                                                 "(default: ml_eval for credsweeper --ml on or a "
+                                                 "non-mock predictor, else rule_eval)")
     run.add_argument("--predictor", help="predictor name for --system promptguard (default: mock)")
     thresholds = run.add_mutually_exclusive_group()
     thresholds.add_argument("--threshold", type=float, help="MASK iff confidence >= T (promptguard only)")
     thresholds.add_argument("--sweep", metavar="START:STOP:STEP", help="run once per threshold (promptguard only)")
     run.add_argument("--ml", choices=("on", "off"), help="CredSweeper ML validation (credsweeper only; default: off)")
+    run.add_argument("--channels", help="comma-separated channels to scan, or 'all' "
+                                        "(credsweeper only; default: tool_output, the channels PromptGuard processes)")
     run.add_argument("--out", default="runs", help="parent folder for run folders (default: runs)")
     run.add_argument("--debug", action="store_true", help="also write debug/ with raw candidates (contains secrets)")
     return parser
@@ -80,16 +83,21 @@ def resolve_gold(args: argparse.Namespace) -> str:
 
 
 def default_use(args: argparse.Namespace) -> str:
-    # An ML predictor must not be scored on sessions that are only fit for rule evaluation.
-    return args.use or ("ml_eval" if args.system == "promptguard" and args.predictor not in (None, "mock") else "rule_eval")
+    if args.use is not None:
+        return args.use
+    if args.system == "credsweeper" and args.ml == "on":
+        return "ml_eval"
+    if args.system == "promptguard" and args.predictor not in (None, "mock"):
+        return "ml_eval"
+    return "rule_eval"
 
 
 def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path | None]:
     """Return a threshold → adapter factory, the run folder label and the system checkout (if any)."""
     if args.system != "promptguard" and (args.predictor or args.threshold is not None or args.sweep or args.system_root):
         raise ConfigError("--predictor, --threshold, --sweep and --system-root apply to --system promptguard only")
-    if args.system != "credsweeper" and args.ml:
-        raise ConfigError("--ml applies to --system credsweeper only")
+    if args.system != "credsweeper" and (args.ml or args.channels):
+        raise ConfigError("--ml and --channels apply to --system credsweeper only")
     if args.system == "promptguard":
         try:
             root = use_system_root(args.system_root)
@@ -101,10 +109,23 @@ def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path
         return ((lambda threshold: PromptGuardAdapter(predictor, threshold=threshold, debug=args.debug)),
                 f"promptguard_{predictor}", root)
     if args.system == "credsweeper":
-        from evaluation.adapters.credsweeper_adapter import CredSweeperAdapter
-
         ml = args.ml == "on"
-        return (lambda _threshold: CredSweeperAdapter(ml=ml)), f"credsweeper_ml-{'on' if ml else 'off'}", None
+        label = f"credsweeper_ml-{'on' if ml else 'off'}"
+        channels = (("tool_output",) if not args.channels else
+                    CHANNELS if args.channels == "all" else tuple(dict.fromkeys(args.channels.split(","))))
+        if unknown := [channel for channel in channels if channel not in CHANNELS]:
+            raise ConfigError(f"unknown channel(s) {unknown}; expected 'all' or some of {list(CHANNELS)}")
+        if args.channels:
+            suffix = "all" if set(channels) == set(CHANNELS) else "+".join(channels)
+            label = f"{label}_{suffix}"
+
+        def make_credsweeper(_threshold: float | None) -> SystemUnderTest:
+            # Check the dataset's purpose before loading the detector and its ML dependencies.
+            from evaluation.adapters.credsweeper_adapter import CredSweeperAdapter
+
+            return CredSweeperAdapter(ml=ml, channels=channels)
+
+        return make_credsweeper, label, None
     if args.system == "oracle":
         from evaluation.adapters.reference import OracleAdapter
 

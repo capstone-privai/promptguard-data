@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from evaluation.dataset.io import load_sessions
-from evaluation.dataset.schema import CHANNELS, GOLD_TYPES
+from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, USES
 from evaluation.scorer.edits import Edit
 from evaluation.tests.support import GOLD, HAS_PROMPTGUARD, SESSIONS, SKIP_REASON
 
@@ -17,14 +17,29 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 
 
 class DataContractTests(unittest.TestCase):
-    def test_channels_and_types_match_build_dataset(self) -> None:
+    def test_channels_and_types_match_dataset_build(self) -> None:
         sys.path.insert(0, str(SCRIPTS))
         try:
-            import build_dataset
+            import dataset_build
         finally:
             sys.path.remove(str(SCRIPTS))
-        self.assertEqual(set(CHANNELS), build_dataset.CHANNELS)
-        self.assertEqual(set(GOLD_TYPES), build_dataset.TYPES)
+        self.assertEqual(set(CHANNELS), dataset_build.CHANNELS)
+        self.assertEqual(set(GOLD_TYPES), dataset_build.TYPES)
+
+    def test_evaluation_uses_match_dataset_policy(self) -> None:
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            import dataset_policy
+        finally:
+            sys.path.remove(str(SCRIPTS))
+        self.assertEqual(set(USES), set(dataset_policy.USES) - {"ml_train"})
+        self.assertEqual(set(dataset_policy.USES), {"rule_eval", "ml_eval", "ml_train"})
+        for origin in ("authored", "recorded", "external"):
+            dataset_policy.require_use([{"session_id": origin, "meta": {
+                "allowed_use": dataset_policy.ALLOWED_USE[origin]}}], "ml_eval")
+        with self.assertRaises(PermissionError):
+            dataset_policy.require_use([{"session_id": "injected", "meta": {
+                "allowed_use": dataset_policy.ALLOWED_USE["injected"]}}], "ml_eval")
 
 
 @unittest.skipUnless(HAS_PROMPTGUARD, SKIP_REASON)

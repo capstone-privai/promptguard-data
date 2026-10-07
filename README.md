@@ -18,7 +18,7 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표
 |---|---|
 | `metric-1/data_test/` | 평가기 입력(세션). 정답은 들어 있지 않다 |
 | `metric-1/data_answer/` | 정답 span(gold) |
-| `metric-1/scripts/` | 생성(`build_dataset.py`, `convert_creddata.py`), 검증(`verify_dataset.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`) |
+| `metric-1/scripts/` | 생성(`dataset_build.py`, `convert_creddata.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`) |
 | [`metric-1/evaluation/`](metric-1/evaluation/README.md) | 채점기: 시스템 어댑터, span 채점, 지표 집계, 결과 파일 |
 | `metric-1/templates/` | placeholder로 세션을 쓰는 템플릿과 [작성법](metric-1/templates/README.md) |
 | `metric-1/manual_review/` | CredData X/F 행을 다시 판정하는 로컬 검수 페이지 |
@@ -30,10 +30,12 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표
 |---|---|---|---|---|---|
 | `sessions.jsonl` | `gold.jsonl` | 12 | 51 | 32 | authored |
 | `sessions_from_example.jsonl` | `gold_from_example.jsonl` | 2 | 9 | 10 | authored |
+| `sessions_2.jsonl` | `gold_2.jsonl` | 43 | 152 | 78 | authored |
 | `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 15,596 | external |
 
-- **내장 코퍼스**(`sessions.jsonl`): `build_dataset.py`에 직접 쓴 합성 세션이다. 환경 파일, 트레이스백, HTTP 헤더, git 이력, Kubernetes Secret, PEM 키, 비밀이 없는 음성 예시 등 12개 상황을 담았다.
+- **내장 코퍼스**(`sessions.jsonl`): `dataset_build.py`에 직접 쓴 합성 세션이다. 환경 파일, 트레이스백, HTTP 헤더, git 이력, Kubernetes Secret, PEM 키, 비밀이 없는 음성 예시 등 12개 상황을 담았다.
 - **템플릿 예시**(`sessions_from_example.jsonl`): [templates/example.jsonl](metric-1/templates/example.jsonl)의 placeholder를 채워 만든 세션이다.
+- **에이전트 세션 v2**(`sessions_2.jsonl`): [templates/agent_sessions_2.jsonl](metric-1/templates/agent_sessions_2.jsonl)로 만든 세션이다. 설정 파일 읽기, 명령 출력, 로그, 에이전트가 쓴 명령(`tool_input`), 자연어 속 비밀, 약한·테스트 비밀번호, 비밀 없는 고엔트로피 출력의 7개 범주(`meta.category`)로 나뉜다. `python metric-1/scripts/dataset_build.py --template metric-1/templates/agent_sessions_2.jsonl --origin authored --name 2`로 다시 만든다.
 - **CredData**(`sessions_from_CredData.jsonl`): [Samsung CredData](https://github.com/Samsung/CredData)의 파일 조각을 세션 형식으로 바꾼 것이다. **평가 전용이며 학습에 쓰지 않는다.** 파일 본문은 원본 저장소의 라이선스를 따르므로 git에 올리지 않고 각자 다시 만든다([README_CredData.md](metric-1/README_CredData.md)).
 
 합성 데이터의 비밀값은 모두 결정적으로 만든 가짜 값이다. 정답은 탐지기 결과와 상관없이, 값을 끼워 넣는 순간에 위치를 기록해 만든다.
@@ -78,16 +80,18 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표
 | `injected` | 비밀용으로 쓰지 않은 궤적에 비밀을 끼워 넣은 세션 | rule_eval |
 | `external` | 외부 벤치마크(CredData) | rule_eval, ml_eval |
 
+`ml_eval`에는 CredSweeper의 ML 검증을 켠 평가(`credsweeper --ml on`)도 포함한다. `injected`는 `rule_eval`만 허용한다.
+
 ### 생성과 검증
 
 저장소 루트에서 실행한다.
 
 ```bash
-python metric-1/scripts/build_dataset.py                       # 내장 코퍼스
-python metric-1/scripts/build_dataset.py --template metric-1/templates/example.jsonl --origin authored
+python metric-1/scripts/dataset_build.py                       # 내장 코퍼스
+python metric-1/scripts/dataset_build.py --template metric-1/templates/example.jsonl --origin authored
 python metric-1/scripts/convert_creddata.py --creddata ../CredData
 
-python metric-1/scripts/verify_dataset.py <sessions 파일> [--gold <gold 파일>] [--creddata ../CredData]
+python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일>] [--creddata ../CredData]
 ```
 
 검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, 정답 누락(같은 비밀값이 다른 곳에도 나오는데 정답에서 빠졌는지), 재생성 시 바이트 단위 일치다.
@@ -102,4 +106,4 @@ python metric-1/scripts/evaluate.py run --system promptguard [--sessions <sessio
 python metric-1/scripts/evaluate.py run --system credsweeper|oracle|identity [--sessions <sessions 파일>]
 ```
 
-결과는 `runs/<시각>_<system>/`에 쌓인다. 세션의 `meta.allowed_use`에 실행 용도(`rule_eval`, ML predictor면 `ml_eval`)가 없으면 실행하지 않는다. 옵션, 채널 대응, 지표 정의는 [metric-1/evaluation/README.md](metric-1/evaluation/README.md)에 있다.
+결과는 `runs/<시각>_<system>/`에 쌓인다. 세션의 `meta.allowed_use`에 실행 용도(기본 `rule_eval`, CredSweeper ML 검증이나 PromptGuard의 ML predictor면 `ml_eval`)가 없으면 실행하지 않는다. 옵션, 채널 대응, 지표 정의는 [metric-1/evaluation/README.md](metric-1/evaluation/README.md)에 있다.

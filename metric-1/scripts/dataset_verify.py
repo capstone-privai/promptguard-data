@@ -1,9 +1,9 @@
-"""Verify a sessions/gold pair written by build_dataset.py or convert_creddata.py.
+"""Verify a sessions/gold pair written by dataset_build.py or convert_creddata.py.
 
 Run from the repository root:
-  python metric-1/scripts/verify_dataset.py                                               data_test/sessions.jsonl + data_answer/gold.jsonl
-  python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_example.jsonl  + data_answer/gold_from_example.jsonl
-  python metric-1/scripts/verify_dataset.py metric-1/data_test/sessions_from_CredData.jsonl --creddata ../CredData
+  python metric-1/scripts/dataset_verify.py                                               data_test/sessions.jsonl + data_answer/gold.jsonl
+  python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_example.jsonl  + data_answer/gold_from_example.jsonl
+  python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_CredData.jsonl --creddata ../CredData
 
 Checks:
   1. sessions schema: unique session_id, item_id = 0..n-1, known channel, no gold fields
@@ -26,7 +26,7 @@ import re
 import sys
 import tempfile
 
-from build_dataset import CHANNELS, REPO_ROOT, TYPES, build, from_template, write_jsonl
+from dataset_build import CHANNELS, REPO_ROOT, TYPES, build, from_template, write_jsonl
 from dataset_policy import ALLOWED_USE
 
 SESSION_KEYS = {"session_id", "items", "meta"}

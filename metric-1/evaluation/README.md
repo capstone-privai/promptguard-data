@@ -17,7 +17,7 @@ python metric-1/scripts/evaluate.py run --system credsweeper --ml off
 python metric-1/scripts/evaluate.py run --system promptguard --sessions metric-1/data_test/sessions_from_CredData.jsonl
 ```
 
-`--gold`를 생략하면 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 쓴다(`verify_dataset.py`와 같은 규칙). `data_test/` 밖에 있는 `sessions*.jsonl`은 같은 폴더의 `gold*.jsonl`과 짝짓는다.
+`--gold`를 생략하면 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 쓴다(`dataset_verify.py`와 같은 규칙). `data_test/` 밖에 있는 `sessions*.jsonl`은 같은 폴더의 `gold*.jsonl`과 짝짓는다.
 
 `--system promptguard`는 PromptGuard 체크아웃을 다음 순서로 찾는다: `--system-root DIR`, 환경 변수 `PROMPTGUARD_ROOT`, 이 저장소 옆의 `../promptguard-demo-v0`. 그 체크아웃이 지금 가리키는 브랜치의 코드가 평가된다.
 
@@ -29,16 +29,19 @@ python metric-1/scripts/evaluate.py run --system promptguard --sessions metric-1
 |---|---|---|
 | `--sessions PATH` | 전부 | 세션 파일 (기본 `metric-1/data_test/sessions.jsonl`) |
 | `--gold PATH` | 전부 | 정답 파일 (기본: 위의 짝짓기 규칙) |
-| `--use rule_eval\|ml_eval` | run | 모든 세션의 `meta.allowed_use`에 이 용도가 있어야 실행한다. 기본은 mock이 아닌 predictor면 `ml_eval`, 그 밖에는 `rule_eval` |
+| `--use rule_eval\|ml_eval` | run | 모든 세션의 `meta.allowed_use`에 이 용도가 있어야 실행한다. 기본은 `credsweeper --ml on` 또는 PromptGuard의 mock이 아닌 predictor면 `ml_eval`, 그 밖에는 `rule_eval` |
 | `--system-root DIR` | promptguard | PromptGuard 체크아웃 경로 |
 | `--predictor NAME` | promptguard | `promptguard.decision.registry`의 predictor (기본 `mock`) |
 | `--threshold T` | promptguard | 모든 판단을 `confidence >= T`이면 MASK로 다시 정한다 |
 | `--sweep START:STOP:STEP` | promptguard | 임계값마다 한 번씩 전체를 돌리고(양 끝 포함), PR-AUC와 고정 recall에서의 precision을 낸다 |
 | `--ml on\|off` | credsweeper | CredSweeper ML 검증 (기본 off, 데모 탐지기 설정과 같음) |
+| `--channels LIST\|all` | credsweeper | 검사할 채널(쉼표 구분). 기본은 PromptGuard가 처리하는 `tool_output` |
 | `--out DIR` | run | 실행 폴더를 만들 상위 폴더 (기본 `runs`) |
 | `--debug` | run | 원본 후보와 예측을 담은 `debug/`도 쓴다. **비밀값이 들어 있다.** |
 
 종료 코드: `0` 정상, `1` 데이터 검증 실패 또는 용도 불일치, `2` edit 검증 실패(결과를 쓰지 않음), `3` 설정 오류.
+
+CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded`, `external`에서는 허용하고, `injected`에서는 허용하지 않는다. 자동으로 선택한 용도는 `run_meta.json`의 `dataset.use`에 기록한다. `--use`를 지정하면 그 용도를 우선한다.
 
 ## 평가 대상
 
@@ -62,7 +65,7 @@ python metric-1/scripts/evaluate.py run --system promptguard --sessions metric-1
 - 위치는 item `text`의 Python 문자열(코드 포인트) 인덱스이며 `start`는 포함, `end`는 포함하지 않는다. 비어 있으면 안 된다. 한 item 안의 정답 span은 겹치면 안 되고, 맞닿는 것은 괜찮다.
 - `meta`는 `run_meta.json`에 요약되어 남으므로 비밀값을 넣지 않는다.
 
-`validate`는 문제를 한꺼번에 `session / item / 메시지` 형태로 보여 준다. `run`은 항상 먼저 검증하고, 형식이 틀리거나 용도가 맞지 않으면 아무것도 실행하지 않는다. 키 집합, `span_id` 순서, origin과 용도의 일치, 정답 누락, 재생성 일치처럼 데이터 계약 전체는 `scripts/verify_dataset.py`가 검사한다.
+`validate`는 문제를 한꺼번에 `session / item / 메시지` 형태로 보여 준다. `run`은 항상 먼저 검증하고, 형식이 틀리거나 용도가 맞지 않으면 아무것도 실행하지 않는다. 키 집합, `span_id` 순서, origin과 용도의 일치, 정답 누락, 재생성 일치처럼 데이터 계약 전체는 `scripts/dataset_verify.py`가 검사한다.
 
 ## 채점
 
@@ -117,7 +120,7 @@ metric-1/
 ```
 
 - `evaluation/adapters/`는 `promptguard.pipeline`, `promptguard.redaction.engine`, `promptguard.redaction.placeholders`, `promptguard.decision.registry`, `promptguard.decision.base`, `promptguard.common.schema`만 import할 수 있다. `promptguard/`는 `evaluation`을 import하지 않는다. `evaluation/` 어디서도 `subprocess`나 네트워크 모듈을 import하지 않는다. `tests/test_dependency_rules.py`가 이 규칙을 검사한다.
-- 채점기는 자체 `Edit` 타입을 쓴다. 어댑터가 시스템 edit를 필드 단위로 옮기고, `tests/test_system_contract.py`가 필드 이름, `GOLD_TYPES`, `CHANNELS`가 시스템 및 `build_dataset.py`와 같은지 확인한다. 의미가 바뀌면 edit 검증이 잡아낸다.
+- 채점기는 자체 `Edit` 타입을 쓴다. 어댑터가 시스템 edit를 필드 단위로 옮기고, `tests/test_system_contract.py`가 필드 이름, `GOLD_TYPES`, `CHANNELS`가 시스템 및 `dataset_build.py`와 같은지 확인한다. 의미가 바뀌면 edit 검증이 잡아낸다.
 - 여기서 PromptGuard 코드를 고치지 않는다. 평가에 시스템 변경이 필요하면 [SYSTEM_REQUESTS.md](SYSTEM_REQUESTS.md)에 적는다.
 - 테스트 fixture에는 실제 서비스 형식의 비밀(클라우드 키, API 키 접두사, PEM 블록)을 넣지 않는다. `DB_PASSWORD=mysecret123` 같은 값을 쓴다.
 
