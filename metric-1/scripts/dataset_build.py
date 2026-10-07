@@ -136,7 +136,7 @@ def build() -> Corpus:
     c.item("tool_output", "DEBUG retrying with Authorization: Basic ", basic, "\nERROR upstream status=403\n")
 
     c.session("05-git-history", "Git 이력에 남은 클라우드 키")
-    access = Slot("AKIA" + value("aws-access", 16, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"), "ACCESS_KEY")
+    access = Slot("AKIA" + value("aws-access", 16, AWS_ACCESS_ID), "ACCESS_KEY")
     secret = Slot(value("aws-secret", 40, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/+"), "SECRET")
     c.item("prompt", "현재 설정에는 없는 AWS 인증 오류의 원인이 최근 변경에 있는지 살펴봐줘.")
     c.item("tool_output", "commit " + value("commit", 40, "0123456789abcdef") +
@@ -242,7 +242,7 @@ def uuid_key(seed: str) -> str:
 
 
 DIGITS = "0123456789"
-UPPER_ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+AWS_ACCESS_ID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"  # real access key IDs are base32 after the prefix
 AWS_SECRET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/+"
 
 # kind -> (gold type, generator(seed) -> value)
@@ -256,7 +256,7 @@ GENERATORS = {
     "secret": ("SECRET", lambda s: value(s, 48)),
     "hex_secret": ("SECRET", lambda s: value(s, 64, "0123456789abcdef")),
     "uuid_key": ("SECRET", uuid_key),
-    "aws_access_key": ("ACCESS_KEY", lambda s: "AKIA" + value(s, 16, UPPER_ALNUM)),
+    "aws_access_key": ("ACCESS_KEY", lambda s: "AKIA" + value(s, 16, AWS_ACCESS_ID)),
     "aws_secret_key": ("SECRET", lambda s: value(s, 40, AWS_SECRET)),
     "publishable_key": ("ACCESS_KEY", lambda s: "pk_test_" + value(s, 24)),
     "db_uri": ("SECRET", lambda s: f"postgresql://service:{quote(strong_password(s), safe='')}@db.example.invalid:5432/app"),
