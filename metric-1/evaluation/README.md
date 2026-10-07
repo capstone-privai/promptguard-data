@@ -1,6 +1,6 @@
 # 지표 1 채점기
 
-`data_test/`의 세션을 평가 대상 시스템에 통과시키고, `data_answer/`의 정답 span과 비교해 비밀값을 얼마나 잘 가렸는지 채점한다. PromptGuard는 별도 저장소([promptguard-demo-v0](https://github.com/capstone-privai/promptguard-demo-v0))에 있고, 채점기는 그 저장소의 `promptguard.pipeline.process_output`을 그대로 불러 쓴다. runner 코드를 복사하지 않으며 Codex, hook, daemon, PowerShell은 띄우지 않는다. macOS와 Linux에서 Python 3.10 이상, 표준 라이브러리, 고정 버전 `credsweeper`로 돈다.
+`data_test/`의 세션을 평가 대상 시스템에 통과시키고, `data_answer/`의 정답 span과 비교해 비밀값을 얼마나 잘 가렸는지 채점한다. PromptGuard는 별도 저장소([promptguard-demo-v0](https://github.com/capstone-privai/promptguard-demo-v0))에 있고, 채점기는 그 저장소의 `promptguard.pipeline.process_output`을 그대로 불러 쓴다. 시스템의 실행 코드를 복사하지 않으며, 에이전트나 훅, 데몬 같은 실행 환경은 띄우지 않는다. macOS와 Linux에서 Python 3.10 이상, 표준 라이브러리, 고정 버전 `credsweeper`로 돈다.
 
 데이터를 만드는 일(비밀 주입, 원문 수집)은 [scripts/](../scripts/)가 맡고, 이 패키지는 그 결과물을 읽기만 한다.
 
@@ -47,16 +47,16 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 
 | system | 동작 |
 |---|---|
-| `promptguard` | 세션마다 `PlaceholderRegistry` 하나를 두고 item을 순서대로 `process_output`에 넣는다. `prompt` item이 오면 daemon처럼 task context를 바꾼다(`build_task_context(text, turn_id)`). 첫 prompt 전에는 빈 context다. 데이터 채널은 `CHANNEL_MAP`(현재 `tool_output → stdout`)으로 시스템 채널에 대응시키고, 대응 채널이 `PROCESSED_CHANNELS`에 있을 때만 처리한다. 나머지는 그대로 통과한다. |
+| `promptguard` | 세션마다 `PlaceholderRegistry` 하나를 두고 item을 순서대로 `process_output`에 넣는다. `prompt` item이 오면 실제 런타임처럼 task context를 바꾼다(`build_task_context(text, turn_id)`). 첫 prompt 전에는 빈 context다. 데이터 채널은 `CHANNEL_MAP`(현재 `tool_output → stdout`)으로 시스템 채널에 대응시키고, 대응 채널이 `PROCESSED_CHANNELS`에 있을 때만 처리한다. 나머지는 그대로 통과한다. |
 | `credsweeper` | 같은 채널(`tool_output`)을 CredSweeper만으로 검사해 탐지 결과를 전부 `[SECRET]`으로 가린다. PromptGuard의 URI 후처리는 일부러 적용하지 않는다. |
 | `oracle` | 정답 span을 정확히 가린다. recall 1.0, precision 1.0이 나와야 한다. |
 | `identity` | 아무것도 바꾸지 않는다. recall 0.0, precision N/A가 나와야 한다. |
 
-현재 PromptGuard(demo-v0)는 Codex의 Bash 출력만 처리한다. 따라서 `prompt`, `instructions`, `tool_input` 채널의 비밀은 항상 놓친 것으로 집계되고, 채널별 recall에 그대로 드러난다. opencode의 bash는 stdout과 stderr를 합쳐 `tool_output` 하나로 돌려주므로, 시스템에는 `stdout`으로 넘긴다.
+현재 PromptGuard(demo-v0)는 셸 명령 출력(stdout, stderr)만 처리한다. 따라서 `prompt`, `instructions`, `tool_input` 채널의 비밀은 항상 놓친 것으로 집계되고, 채널별 recall에 그대로 드러난다. 데이터의 `tool_output`은 stdout과 stderr를 구분하지 않으므로 시스템에는 `stdout`으로 넘긴다. 채널 대응은 `CHANNEL_MAP` 한 곳에만 있으므로, 연동할 에이전트가 정해져 시스템이 처리하는 채널이 늘어나면 그 표만 바꾸면 된다.
 
 ## 데이터 형식
 
-[저장소 README](../../README.md#형식)의 형식을 그대로 읽는다. 채점에 쓰는 규칙은 다음과 같다.
+[지표 1 README](../README.md#형식)의 형식을 그대로 읽는다. 채점에 쓰는 규칙은 다음과 같다.
 
 - 세션 파일: 한 줄에 세션 하나(`session_id`, `items`, `meta`). `session_id`는 파일 안에서 유일하고, `item_id`는 세션 안에서만 유일한 0 이상의 정수다. item은 시간 순서다.
 - `channel`은 `prompt`, `instructions`, `tool_input`, `tool_output` 중 하나.
@@ -71,7 +71,7 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 
 - 정답은 데이터셋에서만 온다. 시스템이 보지 못한 비밀도 놓친 것으로 센다.
 - 채점에는 시스템이 보고한 edit(원문 좌표의 `start`, `end`, `replacement`)만 쓴다. item을 채점하기 전에 edit를 원문에 적용해 보고, 결과가 시스템의 실제 출력과 한 글자라도 다르면 종료 코드 2로 멈춘다. 후보, 예측, 감사 로그는 채점에 쓰지 않고, 출력 텍스트끼리 diff하지도 않는다.
-- 정답 span의 모든 글자가 edit 합집합 안에 있으면 `full`, 한 글자도 없으면 `missed`, 그 사이면 `partial`이다. edit는 정답 span과 조금이라도 겹치면 참양성이다. 대체 문자열의 내용은 보지 않는다.
+- 정답 span의 모든 글자가 edit 합집합 안에 있으면 `full`, 한 글자도 없으면 `missed`, 그 사이면 `partial`이다. edit는 정답 span과 조금이라도 겹치면 참양성이다. 대체 문자열의 내용은 보지 않는다. 판정 예시는 [지표 1 README](../README.md#판정)에 있다.
 
 ## 지표
 

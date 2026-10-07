@@ -19,8 +19,8 @@ from promptguard.redaction.placeholders import PlaceholderRegistry
 
 _WARMUP_TEXT = "DB_PASSWORD=warmup123\n"
 
-# Dataset channel (opencode) → the system's channel name. The system (Codex Bash hook) sees
-# stdout and stderr separately; opencode's bash tool returns them merged as one tool_output.
+# Dataset channel → the system's channel name. The system sees shell stdout and stderr
+# separately; the dataset's tool_output does not distinguish them, so it is passed as stdout.
 # Channels without an entry, or whose target the system does not process, pass through.
 CHANNEL_MAP: dict[str, str] = {"tool_output": "stdout"}
 

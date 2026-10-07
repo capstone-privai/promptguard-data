@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-# Where the text passes through opencode. Must equal scripts/dataset_build.py CHANNELS;
+# Where the text sits in the model's input/output (agent-agnostic). Must equal scripts/dataset_build.py CHANNELS;
 # test_system_contract checks this.
 CHANNELS: tuple[str, ...] = ("prompt", "instructions", "tool_input", "tool_output")
 

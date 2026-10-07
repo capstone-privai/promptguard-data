@@ -3,7 +3,7 @@
 Run from the repository root:
   python metric-1/scripts/dataset_build.py                       built-in corpus below
   python metric-1/scripts/dataset_build.py --template T.jsonl --origin authored|injected [--name N]
-This is normalized evaluation input, NOT a captured agent session; channels follow opencode's hooks.
+This is normalized evaluation input, NOT a captured agent session; channels are agent-agnostic.
 
 Writes two files under --out (default metric-1/; with --template T.jsonl: sessions_from_T.jsonl, gold_from_T.jsonl,
 or sessions_N.jsonl, gold_N.jsonl with --name N):
@@ -32,11 +32,12 @@ from dataset_policy import ALLOWED_USE
 
 VERSION = "metric1-v0.1"
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Where the text passes through opencode (plugin hook):
-#   prompt        user message                        chat.message
-#   instructions  AGENTS.md / CLAUDE.md / config      experimental.chat.system.transform
-#   tool_input    tool arguments written by the model tool.execute.before (e.g. a bash command)
-#   tool_output   tool result returned to the model   tool.execute.after (bash merges stdout and stderr)
+# Where the text sits in the model's input/output, independent of any particular agent:
+#   prompt        user message
+#   instructions  instructions placed in the system prompt (agent instruction files, config)
+#   tool_input    tool arguments written by the model (e.g. a shell command)
+#   tool_output   tool result returned to the model (shell stdout and stderr as one text)
+# Which hook or interception point carries each channel is up to the system integration.
 CHANNELS = {"prompt", "instructions", "tool_input", "tool_output"}
 TYPES = {"PASSWORD", "SECRET", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY"}
 

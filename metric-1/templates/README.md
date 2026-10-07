@@ -29,7 +29,7 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_examp
 
 - `session_id`, `items` 필수. `meta`는 선택이며 `group_id`(기본값 session_id)와 자유 필드를 넣을 수 있다.
 - item: `channel`, `text` 필수. `turn_id`(기본값 `t0`), `item_id`(넣는다면 0부터 순서대로)는 선택.
-- channel: `prompt`(사용자 메시지), `instructions`(AGENTS.md 등), `tool_input`(모델이 쓴 도구 인자, 예: bash 명령), `tool_output`(도구 결과. bash는 stdout과 stderr가 합쳐져 나온다).
+- channel: `prompt`(사용자 메시지), `instructions`(시스템 프롬프트에 들어가는 지침), `tool_input`(모델이 쓴 도구 인자, 예: 셸 명령), `tool_output`(도구 결과. 셸 명령의 stdout과 stderr는 구분하지 않고 한 텍스트로 담는다). 자세한 정의는 [지표 1 README](../README.md#형식)에 있다.
 
 ## placeholder
 
