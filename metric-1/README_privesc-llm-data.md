@@ -84,3 +84,16 @@ assistant의 본문과 reasoning은 채널이 없어 뺐다. `turn_id`는 assist
 - **개인키 span 하나가 6자 더 넓다.** `privesc-training-ssh_key_reuse-1883`은 도구 결과가 `…AAAAAbase64: invalid input`으로 끝나, 줄바꿈 없이 이어진 오류 메시지의 `base64`까지 블록 본문으로 들어갔다.
 - **모델이 하나이고 모두 성공한 궤적이다.** 원본이 품질 필터를 통과한 SFT 데이터만 공개했다.
 - **도구 결과가 JSON 문자열이다.** 실제 에이전트(예: Claude Code)의 도구 결과 형식과 다르다. 줄바꿈이 `\n` 두 글자라 줄 단위로 동작하는 탐지 규칙에 불리할 수 있다.
+
+
+#	세션 / item	채널	값	앞뒤 문맥
+1	training-password_history-1366 / 34	tool_output	d373990a5147d9e9	expect -c 'spawn su -; … send \"⟦값⟧\\r\" (root로 su할 때 넣은 비밀번호)
+2	training-password_reuse-1684 / 15	tool_output	B06JTsH1Uqft	echo '⟦값⟧' | sudo -S -l
+3	training-cron_wildcard-758 / 50	tool_input	Vyd1XtjKgfJ7	{"user": "root", "password": "⟦값⟧"}
+4	training-password_reuse-1522 / 0	instructions	F3KsWAZbGfRZ	User: 'schmidt' | Password: '⟦값⟧'
+5	validation-password_history-105 / 24	tool_input	7c9bef455c63d788	{"user": "root", "password": "⟦값⟧"}
+6	validation-password_reuse-143 / 70	tool_input	J66dB6dbVqQL	{"user": "root", "password": "⟦값⟧"}
+7	training-weak_password-2609 / 58	tool_input	MHAANU50i5Or	{"user": "root", "password": "⟦값⟧"}
+8	training-cron_writable_script-907 / 0	instructions	ETwu4FWZmfbq	User: 'philippschwarz' | Password: '⟦값⟧'
+9	training-password_reuse-1498 / 51	tool_output	CJdgoGF9tK6H	echo '⟦값⟧' | sudo -l -S
+10	training-password_file-1028 / 0	instructions	EBrbRy7O5nLw	User: 'meyer' | Password: '⟦값⟧'
