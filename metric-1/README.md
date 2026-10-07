@@ -18,19 +18,13 @@
 
 ## 데이터셋
 
-| 입력 (`data_test/`) | 정답 (`data_answer/`) | 세션 | item | gold span | origin |
-|---|---|---|---|---|---|
-| `sessions.jsonl` | `gold.jsonl` | 12 | 51 | 32 | authored |
-| `sessions_from_example.jsonl` | `gold_from_example.jsonl` | 2 | 9 | 10 | authored |
-| `sessions_2.jsonl` | `gold_2.jsonl` | 43 | 152 | 78 | authored |
-| `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 15,596 | external |
-| `sessions_from_privesc-llm-data.jsonl` | `gold_from_privesc-llm-data.jsonl` | 2,200 | 122,286 | 10,624 | recorded |
-
-- **내장 코퍼스**(`sessions.jsonl`): `dataset_build.py`에 직접 쓴 합성 세션이다. 환경 파일, 트레이스백, HTTP 헤더, git 이력, Kubernetes Secret, PEM 키, 비밀이 없는 음성 예시 등 12개 상황을 담았다.
-- **템플릿 예시**(`sessions_from_example.jsonl`): [templates/example.jsonl](templates/example.jsonl)의 placeholder를 채워 만든 세션이다.
-- **에이전트 세션 v2**(`sessions_2.jsonl`): [templates/agent_sessions_2.jsonl](templates/agent_sessions_2.jsonl)로 만든 세션이다. 설정 파일 읽기, 명령 출력, 로그, 에이전트가 쓴 명령(`tool_input`), 자연어 속 비밀, 약한·테스트 비밀번호, 비밀 없는 고엔트로피 출력의 7개 범주(`meta.category`)로 나뉜다. `python metric-1/scripts/dataset_build.py --template metric-1/templates/agent_sessions_2.jsonl --origin authored --name 2`로 다시 만든다.
-- **CredData**(`sessions_from_CredData.jsonl`): [Samsung CredData](https://github.com/Samsung/CredData)의 파일 조각을 세션 형식으로 바꾼 것이다. **평가 전용이며 학습에 쓰지 않는다.** 파일 본문은 원본 저장소의 라이선스를 따르므로 git에 올리지 않고 각자 다시 만든다([README_CredData.md](README_CredData.md)).
-- **privesc-llm-data**(`sessions_from_privesc-llm-data.jsonl`): [sailab-vienna/privesc-llm-data](https://huggingface.co/datasets/sailab-vienna/privesc-llm-data)의 리눅스 권한 상승 에이전트 궤적을 세션 형식으로 바꾼 것이다. 실행 전에 환경에 심어 둔 비밀번호와 SSH 키를 원본 metadata에서 가져와, 텍스트에서 그 위치를 찾아 정답을 자동으로 만든다. 정답 유형은 PASSWORD와 PRIVATE_KEY뿐이다. 용량 때문에 git에 올리지 않고 각자 다시 만든다([README_privesc-llm-data.md](README_privesc-llm-data.md)).
+| 데이터셋 | 입력 (`data_test/`) | 정답 (`data_answer/`) | 세션 | item | gold span | origin | 설명 |
+|---|---|---|---|---|---|---|---|
+| 내장 코퍼스 | `sessions.jsonl` | `gold.jsonl` | 12 | 51 | 32 | authored | `dataset_build.py`에 직접 쓴 합성 세션이다. 환경 파일, 트레이스백, HTTP 헤더, git 이력, Kubernetes Secret, PEM 키, 비밀이 없는 음성 예시 등 12개 상황을 담았다. |
+| 템플릿 예시 | `sessions_from_example.jsonl` | `gold_from_example.jsonl` | 2 | 9 | 10 | authored | [templates/example.jsonl](templates/example.jsonl)의 placeholder를 채워 만든 세션이다. |
+| 에이전트 세션 v2 | `sessions_2.jsonl` | `gold_2.jsonl` | 43 | 152 | 78 | authored | [templates/agent_sessions_2.jsonl](templates/agent_sessions_2.jsonl)로 만든 세션이다. 설정 파일 읽기, 명령 출력, 로그, 에이전트가 쓴 명령(`tool_input`), 자연어 속 비밀, 약한·테스트 비밀번호, 비밀 없는 고엔트로피 출력의 7개 범주(`meta.category`)로 나뉜다. `python metric-1/scripts/dataset_build.py --template metric-1/templates/agent_sessions_2.jsonl --origin authored --name 2`로 다시 만든다. |
+| CredData | `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 15,596 | external | [Samsung CredData](https://github.com/Samsung/CredData)의 파일 조각을 세션 형식으로 바꾼 것이다. **평가 전용이며 학습에 쓰지 않는다.** 파일 본문은 원본 저장소의 라이선스를 따르므로 git에 올리지 않고 각자 다시 만든다([README_CredData.md](README_CredData.md)). |
+| privesc-llm-data | `sessions_from_privesc-llm-data.jsonl` | `gold_from_privesc-llm-data.jsonl` | 2,200 | 122,286 | 10,624 | recorded | [sailab-vienna/privesc-llm-data](https://huggingface.co/datasets/sailab-vienna/privesc-llm-data)의 리눅스 권한 상승 에이전트 궤적을 세션 형식으로 바꾼 것이다. 실행 전에 환경에 심어 둔 비밀번호와 SSH 키를 원본 metadata에서 가져와, 텍스트에서 그 위치를 찾아 정답을 자동으로 만든다. 정답 유형은 PASSWORD와 PRIVATE_KEY뿐이다. 용량 때문에 git에 올리지 않고 각자 다시 만든다([README_privesc-llm-data.md](README_privesc-llm-data.md)). |
 
 합성 데이터의 비밀값은 모두 결정적으로 만든 가짜 값이다. 정답은 탐지기 결과와 상관없이, 값을 끼워 넣는 순간에 위치를 기록해 만든다.
 
