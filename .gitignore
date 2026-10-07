@@ -15,3 +15,9 @@ metric-1/**/*_from_privesc-llm-data.jsonl
 # which push protection rejects; regenerate them with metric-1/scripts/dataset_build.py
 metric-1/data_test/
 metric-1/data_answer/
+# Nemotron-PII, openhands-feedback, SWE-Gym and Nosey Parker conversions; regenerate with their convert_*.py
+# (metric-1/reviews/ holds the hand-made verdicts without values and stays in git)
+metric-1/**/*_from_Nemotron-PII.jsonl
+metric-1/**/*_from_openhands-feedback.jsonl
+metric-1/**/*_from_SWE-Gym.jsonl
+metric-1/**/*_from_noseyparker.jsonl

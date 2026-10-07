@@ -1,10 +1,14 @@
-"""Verify a sessions/gold pair written by dataset_build.py, convert_creddata.py or convert_privesc.py.
+"""Verify a sessions/gold pair written by dataset_build.py or one of the convert_*.py converters.
 
 Run from the repository root:
   python metric-1/scripts/dataset_verify.py                                               data_test/sessions.jsonl + data_answer/gold.jsonl
   python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_example.jsonl  + data_answer/gold_from_example.jsonl
   python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_CredData.jsonl --creddata ../CredData
   python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_privesc-llm-data.jsonl --privesc ../privesc-llm-data
+  python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_Nemotron-PII.jsonl --nemotron ../Nemotron-PII
+  python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_openhands-feedback.jsonl --openhands ../openhands-feedback
+  python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_SWE-Gym.jsonl --swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories
+  python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_noseyparker.jsonl --noseyparker ../noseyparker
 
 Checks:
   1. sessions schema: unique session_id, item_id = 0..n-1, known channel, no gold fields
@@ -16,7 +20,7 @@ Checks:
      (deliberately not gold)
      (skipped for origin=external: those labels are the source dataset's, not ours)
   6. reproduction: regenerating from the recorded source yields byte-identical files
-     (built-in corpus, meta.template, --creddata or --privesc; skipped for those two without the flag)
+     (built-in corpus, meta.template, or the converter's source folder flag; skipped without the flag)
 Exits 1 and lists every problem found if any check fails.
 """
 from __future__ import annotations
@@ -194,7 +198,7 @@ def excluded_on_purpose(sessions_path: Path) -> dict[tuple[str, int], list[tuple
 
 
 def regenerate(sessions: list[dict], source: str | None, origin: str | None, creddata: Path | None,
-               privesc: Path | None = None):
+               privesc: Path | None = None, upstream: dict[str, Path | None] | None = None):
     """Rows the recorded source would produce now, or None with the reason it cannot be regenerated."""
     if source == "authored_synthetic_injection":
         c = build()
@@ -213,6 +217,24 @@ def regenerate(sessions: list[dict], source: str | None, origin: str | None, cre
             return None, "skipped (pass --privesc to regenerate)"
         from convert_privesc import convert as convert_privesc
         new_sessions, new_gold, _, _ = convert_privesc(privesc)
+        return (new_sessions, new_gold), None
+    upstream = upstream or {}
+    if source == "nemotron-pii":
+        if upstream.get("nemotron") is None:
+            return None, "skipped (pass --nemotron to regenerate)"
+        from convert_nemotron_pii import convert as convert_nemotron
+        sample = sessions[0]["meta"]["sample"]
+        new_sessions, new_gold, _, _ = convert_nemotron(upstream["nemotron"], sample["positives"],
+                                                        sample["negatives"], sample["channel"])
+        return (new_sessions, new_gold), None
+    converters = {"openhands-feedback": ("openhands", "convert_openhands_feedback"),
+                  "swe-gym": ("swe_gym", "convert_swe_gym"),
+                  "noseyparker": ("noseyparker", "convert_noseyparker")}
+    if source in converters:
+        flag, module = converters[source]
+        if upstream.get(flag) is None:
+            return None, f"skipped (pass --{flag.replace('_', '-')} to regenerate)"
+        new_sessions, new_gold, _, _ = __import__(module).convert(upstream[flag])
         return (new_sessions, new_gold), None
     return None, f"skipped (unknown source {source!r})"
 
@@ -242,6 +264,10 @@ def main():
     parser.add_argument("--gold", type=Path, help="default: data_test/sessions*.jsonl -> data_answer/gold*.jsonl")
     parser.add_argument("--creddata", type=Path, help="CredData checkout, to regenerate sessions_from_CredData.jsonl")
     parser.add_argument("--privesc", type=Path, help="privesc-llm-data copy, to regenerate sessions_from_privesc-llm-data.jsonl")
+    parser.add_argument("--nemotron", type=Path, help="Nemotron-PII copy, to regenerate sessions_from_Nemotron-PII.jsonl")
+    parser.add_argument("--openhands", type=Path, help="openhands-feedback copy, to regenerate sessions_from_openhands-feedback.jsonl")
+    parser.add_argument("--swe-gym", type=Path, help="SWE-Gym trajectories copy, to regenerate sessions_from_SWE-Gym.jsonl")
+    parser.add_argument("--noseyparker", type=Path, help="noseyparker checkout, to regenerate sessions_from_noseyparker.jsonl")
     parser.add_argument("--skip-rebuild", action="store_true", help="skip the byte-reproduction check")
     args = parser.parse_args()
     gold_path = args.gold or gold_path_for(args.sessions)
@@ -257,7 +283,9 @@ def main():
         check_coverage(spans, texts, errors, excluded_on_purpose(args.sessions))
     reproduction = "skipped"
     if not args.skip_rebuild and sessions:
-        rows, reproduction = regenerate(sessions, source, origin, args.creddata, args.privesc)
+        rows, reproduction = regenerate(sessions, source, origin, args.creddata, args.privesc,
+                                        {"nemotron": args.nemotron, "openhands": args.openhands,
+                                         "swe_gym": args.swe_gym, "noseyparker": args.noseyparker})
         if rows is not None:
             check_reproduction((args.sessions, gold_path), rows, errors)
             reproduction = "passed"
