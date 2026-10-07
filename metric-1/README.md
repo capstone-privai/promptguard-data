@@ -10,10 +10,9 @@
 |---|---|
 | `data_test/` | 평가기 입력(세션). 정답은 들어 있지 않다 |
 | `data_answer/` | 정답 span(gold) |
-| `scripts/` | 생성(`dataset_build.py`, `convert_creddata.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`) |
+| `scripts/` | 생성(`dataset_build.py`, `convert_creddata.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), gitleaks 탐지(`run_gitleaks.py`) |
 | [`evaluation/`](evaluation/README.md) | 채점기: 시스템 어댑터, span 채점, 지표 집계, 결과 파일 |
 | `templates/` | placeholder로 세션을 쓰는 템플릿과 [작성법](templates/README.md) |
-| `manual_review/` | CredData X/F 행을 다시 판정하는 로컬 검수 페이지 |
 | [`README_CredData.md`](README_CredData.md) | CredData 변환 방법, 변환 규칙, 우리 라벨 기준과 다른 점 |
 
 ## 데이터셋
@@ -23,7 +22,7 @@
 | `sessions.jsonl` | `gold.jsonl` | 12 | 51 | 32 | authored |
 | `sessions_from_example.jsonl` | `gold_from_example.jsonl` | 2 | 9 | 10 | authored |
 | `sessions_2.jsonl` | `gold_2.jsonl` | 43 | 152 | 78 | authored |
-| `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 17,133 | external |
+| `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 15,596 | external |
 
 - **내장 코퍼스**(`sessions.jsonl`): `dataset_build.py`에 직접 쓴 합성 세션이다. 환경 파일, 트레이스백, HTTP 헤더, git 이력, Kubernetes Secret, PEM 키, 비밀이 없는 음성 예시 등 12개 상황을 담았다.
 - **템플릿 예시**(`sessions_from_example.jsonl`): [templates/example.jsonl](templates/example.jsonl)의 placeholder를 채워 만든 세션이다.
@@ -110,7 +109,7 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 
 - 값이 자격증명 자리(예: `Authorization: Basic …`)에 있어도, 값 자체가 placeholder면 정답이 아니다. 규칙 기반 탐지기가 이런 값을 가리면 과잉 마스킹으로 센다. recall은 줄지 않고 precision만 내려간다. ML 검증이 이 과잉 마스킹을 얼마나 줄이는지는 CredSweeper `--ml off`와 `--ml on`을 비교해 본다.
 - 이 정의는 시스템이 과제에 필요한 값을 남기는 판단(KEEP)을 하지 않는다고 보고 잰다. KEEP 판단을 켠 시스템은 남긴 자격증명이 놓친 것으로 잡힌다([알려진 한계](evaluation/README.md#알려진-한계)).
-- CredData를 이 정의에 맞추는 방법은 [README_CredData.md](README_CredData.md#xf-검수)에 있다.
+- CredData 변환본은 CredData의 T만 정답으로 쓴다. 테스트 값과 약한 비밀번호처럼 이 정의와 어긋나는 부분은 [README_CredData.md](README_CredData.md#정답)에 있다.
 
 ## 채점 기준
 
@@ -170,6 +169,10 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 pip install -r metric-1/evaluation/requirements.txt
 python metric-1/scripts/evaluate.py run --system promptguard [--sessions <sessions 파일>] [--system-root ../promptguard-demo-v0]
 python metric-1/scripts/evaluate.py run --system credsweeper|oracle|identity [--sessions <sessions 파일>]
+
+# gitleaks: 먼저 탐지 결과를 만들고(gitleaks 설치 필요, 예: brew install gitleaks), 그 결과로 채점한다
+python metric-1/scripts/run_gitleaks.py --sessions <sessions 파일>
+python metric-1/scripts/evaluate.py run --system gitleaks --findings runs/gitleaks/<sessions 이름>.jsonl --sessions <sessions 파일>
 ```
 
 결과는 `runs/<시각>_<system>/`에 쌓인다. 세션의 `meta.allowed_use`에 실행 용도(기본 `rule_eval`, CredSweeper ML 검증이나 PromptGuard의 ML predictor면 `ml_eval`)가 없으면 실행하지 않는다. `oracle`은 recall 1.0, precision 1.0이, `identity`는 recall 0.0, precision `N/A`가 나와야 하므로 채점기 점검용으로 쓴다. 옵션, 채널 대응, 결과 파일은 [evaluation/README.md](evaluation/README.md)에 있다.

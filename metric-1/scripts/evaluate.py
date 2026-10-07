@@ -2,7 +2,7 @@
 
 Run from the repository root:
   python metric-1/scripts/evaluate.py validate [--sessions S] [--gold G]
-  python metric-1/scripts/evaluate.py run --system promptguard|credsweeper|oracle|identity [options]
+  python metric-1/scripts/evaluate.py run --system promptguard|credsweeper|gitleaks|oracle|identity [options]
 """
 from __future__ import annotations
 

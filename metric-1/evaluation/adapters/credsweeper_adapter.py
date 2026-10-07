@@ -14,7 +14,7 @@ import credsweeper
 from credsweeper import CredSweeper
 from credsweeper.file_handler.string_content_provider import StringContentProvider
 
-from evaluation.adapters.base import ItemOutput, passthrough
+from evaluation.adapters.base import ItemOutput, passthrough, select_non_overlapping
 from evaluation.dataset.schema import Session
 from evaluation.scorer.edits import Edit, apply_edits
 
@@ -39,15 +39,6 @@ def _line_layout(text: str) -> tuple[list[str], list[int]]:
 def _is_private_key(rule: str) -> bool:
     lowered = rule.lower()
     return "pem" in lowered or "private key" in lowered
-
-
-def select_non_overlapping(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """Keep the longest span among overlaps, then the earliest; return them sorted by start."""
-    selected: list[tuple[int, int]] = []
-    for start, end in sorted(set(spans), key=lambda span: (-(span[1] - span[0]), span[0])):
-        if not any(start < prior_end and prior_start < end for prior_start, prior_end in selected):
-            selected.append((start, end))
-    return sorted(selected)
 
 
 class CredSweeperAdapter:

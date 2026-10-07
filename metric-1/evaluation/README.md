@@ -14,6 +14,8 @@ python metric-1/scripts/evaluate.py run --system oracle
 python metric-1/scripts/evaluate.py run --system promptguard
 python metric-1/scripts/evaluate.py run --system promptguard --sweep 0:1:0.1
 python metric-1/scripts/evaluate.py run --system credsweeper --ml off
+python metric-1/scripts/run_gitleaks.py                                        # gitleaks 탐지 결과를 runs/gitleaks/에 쓴다
+python metric-1/scripts/evaluate.py run --system gitleaks --findings runs/gitleaks/sessions.jsonl
 python metric-1/scripts/evaluate.py run --system promptguard --sessions metric-1/data_test/sessions_from_CredData.jsonl
 ```
 
@@ -36,6 +38,7 @@ python metric-1/scripts/evaluate.py run --system promptguard --sessions metric-1
 | `--sweep START:STOP:STEP` | promptguard | 임계값마다 한 번씩 전체를 돌리고(양 끝 포함), PR-AUC와 고정 recall에서의 precision을 낸다 |
 | `--ml on\|off` | credsweeper | CredSweeper ML 검증 (기본 off, 데모 탐지기 설정과 같음) |
 | `--channels LIST\|all` | credsweeper | 검사할 채널(쉼표 구분). 기본은 PromptGuard가 처리하는 `tool_output` |
+| `--findings PATH` | gitleaks (필수) | `scripts/run_gitleaks.py`가 쓴 탐지 결과. 채점하는 세션 파일에서 만든 것이어야 한다(SHA-256 확인) |
 | `--out DIR` | run | 실행 폴더를 만들 상위 폴더 (기본 `runs`) |
 | `--debug` | run | 원본 후보와 예측을 담은 `debug/`도 쓴다. **비밀값이 들어 있다.** |
 
@@ -49,6 +52,7 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 |---|---|
 | `promptguard` | 세션마다 `PlaceholderRegistry` 하나를 두고 item을 순서대로 `process_output`에 넣는다. `prompt` item이 오면 실제 런타임처럼 task context를 바꾼다(`build_task_context(text, turn_id)`). 첫 prompt 전에는 빈 context다. 데이터 채널은 `CHANNEL_MAP`(현재 `tool_output → stdout`)으로 시스템 채널에 대응시키고, 대응 채널이 `PROCESSED_CHANNELS`에 있을 때만 처리한다. 나머지는 그대로 통과한다. |
 | `credsweeper` | 같은 채널(`tool_output`)을 CredSweeper만으로 검사해 탐지 결과를 전부 `[SECRET]`으로 가린다. PromptGuard의 URI 후처리는 일부러 적용하지 않는다. |
+| `gitleaks` | `scripts/run_gitleaks.py`가 미리 돌린 gitleaks(기본 설정) 탐지 결과를 읽어 전부 `[SECRET]`으로 가린다. 채점기는 하위 프로세스를 띄우지 않으므로 gitleaks는 채점 전에 따로 돌린다. 검사 채널은 그 스크립트의 `--channels`(기본 `tool_output`)를 따른다. gitleaks는 item 전체를 한 번에 검사하므로 item별 지연 시간은 없고, 전체 검사 시간은 `run_meta.json`의 `scan_seconds`에 남는다. |
 | `oracle` | 정답 span을 정확히 가린다. recall 1.0, precision 1.0이 나와야 한다. |
 | `identity` | 아무것도 바꾸지 않는다. recall 0.0, precision N/A가 나와야 한다. |
 

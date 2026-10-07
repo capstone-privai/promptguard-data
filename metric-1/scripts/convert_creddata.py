@@ -8,15 +8,10 @@ EVALUATION ONLY. origin=external, allowed_use=[rule_eval, ml_eval]: never train 
 Writes, under --out (default metric-1/):
   data_test/sessions_from_CredData.jsonl  one session per labeled file; each item is a window of the file
                                 (labeled lines +- --context-lines, overlapping windows merged), channel tool_output
-  data_answer/gold_from_CredData.jsonl  CredData T rows, plus X/F rows reviewed as CRED, as gold spans (same schema as gold.jsonl)
-  labels_from_CredData.jsonl    every CredData row (T/F/X) mapped to item offsets, with its review decision, for analysis
+  data_answer/gold_from_CredData.jsonl  CredData T rows as gold spans (same schema as gold.jsonl)
+  labels_from_CredData.jsonl    every CredData row (T/F/X) mapped to item offsets, for analysis
 
-Review (metric-1/creddata_review.jsonl, written by review_creddata.py; ids and decisions only, no file contents):
-  Metric-1 gold is "is this value a working credential" (metric-1/README.md), regardless of the task.
-  CredData X (template / placeholder) and F mostly agree, but CredData also calls working test values and
-  default passwords X/F, which are credentials to us. A reviewer marks value-level X/F rows CRED or NOT_CRED;
-  CRED rows become gold. A decision may also correct the row's ValueStart/ValueEnd.
-  Unreviewed X/F rows keep CredData's verdict: they are in the sessions as negatives, not in gold.
+Gold is CredData's own verdict: T rows only. X and F rows stay in the sessions as negatives.
 
 Conversion rules:
   - Lines are split the way CredData does: \\r\\n and \\r become \\n, then split on \\n.
@@ -31,7 +26,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 import csv
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import subprocess
@@ -41,9 +36,6 @@ from dataset_policy import ALLOWED_USE
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "CredData"
-REVIEW_PATH = Path(__file__).resolve().parents[1] / "creddata_review.jsonl"
-REVIEW_KEYS = {"creddata_id", "action", "scope", "value_start", "value_end"}
-ACTIONS = ("CRED", "NOT_CRED")  # metric-1 label: a working credential or not (task relevance is metric-3's)
 
 PRIVATE_KEY_CATEGORIES = {"PEM Private Key", "BASE64 Private Key", "BASE64 encoded PEM Private Key",
                           "JWK", "PASERK Keys", "NKEY Seed"}
@@ -145,50 +137,13 @@ def resolve_overlaps(spans: list[dict], stats: Counter) -> list[dict]:
     return merged
 
 
-def reviewable(row: Row) -> bool:
-    """X/F rows that point at a value (not whole-line markup) on one line."""
-    return row.truth in ("X", "F") and row.start_col is not None and row.first == row.last
-
-
-def load_review(path: Path) -> dict[str, dict]:
-    if not path.is_file():
-        return {}
-    review = {}
-    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        d = json.loads(line)
-        if set(d) - REVIEW_KEYS or not isinstance(d.get("creddata_id"), str) or d.get("action") not in ACTIONS or d.get("scope") not in ("group", "row"):
-            raise ValueError(f"{path.name}:{n}: expected {sorted(REVIEW_KEYS)} with action CRED|NOT_CRED, scope group|row; got {d}")
-        if ("value_start" in d) != ("value_end" in d) or ("value_start" in d and not 0 <= d["value_start"] < d["value_end"]):
-            raise ValueError(f"{path.name}:{n}: value_start/value_end must come together with 0 <= start < end")
-        if d["creddata_id"] in review:
-            raise ValueError(f"{path.name}:{n}: duplicate creddata_id {d['creddata_id']}")
-        review[d["creddata_id"]] = d
-    return review
-
-
-def apply_review(row: Row, decision: dict | None, line_len: int) -> Row:
-    if decision is None:
-        return row
-    if not reviewable(row):
-        raise ValueError(f"review of CredData row {row.raw['Id']}: only value-level single-line X/F rows can be reviewed")
-    if "value_start" not in decision:
-        return row
-    if decision["value_end"] > line_len:
-        raise ValueError(f"review of CredData row {row.raw['Id']}: value_end {decision['value_end']} past the line end")
-    return replace(row, start_col=decision["value_start"], end_col=decision["value_end"])
-
-
-def convert(creddata: Path, context: int, review_path: Path = REVIEW_PATH):
+def convert(creddata: Path, context: int):
     commit = subprocess.run(["git", "-C", str(creddata), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     by_file: dict[str, list[Row]] = defaultdict(list)
     for meta_path in sorted((creddata / "meta").glob("*.csv")):
         with meta_path.open(encoding="utf-8", newline="") as f:
             for r in csv.DictReader(f):
                 by_file[r["FilePath"]].append(parse_row(r))
-    review = load_review(review_path)
-    seen_ids = {r.raw["Id"] for rows in by_file.values() for r in rows}
-    if unknown := sorted(set(review) - seen_ids):
-        raise ValueError(f"{review_path.name}: {len(unknown)} creddata_id(s) not in CredData meta: {unknown[:5]}")
 
     sessions, gold, labels = [], [], []
     stats = Counter()
@@ -198,7 +153,6 @@ def convert(creddata: Path, context: int, review_path: Path = REVIEW_PATH):
         if not path.is_file():
             raise FileNotFoundError(f"{path} is missing; run CredData's download_data.py first")
         lines = read_lines(path)
-        rows = [apply_review(r, review.get(r.raw["Id"]), len(lines[r.first - 1])) for r in rows]
         repo, file_id = rows[0].raw["RepoName"], rows[0].raw["FileID"]
         session_id = f"creddata-{repo}-{file_id}"
         items, item_lines = [], []
@@ -216,15 +170,11 @@ def convert(creddata: Path, context: int, review_path: Path = REVIEW_PATH):
                     stats[f"empty_{row.truth}"] += 1
                     continue
                 kind = gold_type(row.raw["Category"], row.raw["CryptographyKey"])
-                action = review.get(row.raw["Id"], {}).get("action")
                 labels.append({"session_id": session_id, "item_id": item_id, "start": start, "end": end,
                                "ground_truth": row.truth, "category": row.raw["Category"],
-                               "mapped_type": kind, "creddata_id": row.raw["Id"],
-                               "reviewable": reviewable(row), "review": action})
+                               "mapped_type": kind, "creddata_id": row.raw["Id"]})
                 stats[f"rows_{row.truth}"] += 1
-                if action:
-                    stats[f"review_{row.truth}_{action}"] += 1
-                if row.truth == "T" or action == "CRED":
+                if row.truth == "T":
                     spans.append({"start": start, "end": end, "type": kind, "category": row.raw["Category"]})
             for span_id, s in enumerate(resolve_overlaps(spans, stats)):
                 gold.append({"session_id": session_id, "item_id": item_id, "span_id": span_id,
@@ -248,13 +198,12 @@ def main():
                         help="CredData checkout with data/ built by its download_data.py")
     parser.add_argument("--context-lines", type=int, default=10, help="lines kept on each side of a labeled line")
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--review", type=Path, default=REVIEW_PATH, help="X/F review decisions (review_creddata.py)")
     args = parser.parse_args()
-    print(json.dumps(write_outputs(args.creddata, args.context_lines, args.out, args.review), indent=2))
+    print(json.dumps(write_outputs(args.creddata, args.context_lines, args.out), indent=2))
 
 
-def write_outputs(creddata: Path, context: int, out: Path, review_path: Path = REVIEW_PATH) -> dict:
-    sessions, gold, labels, stats = convert(creddata, context, review_path)
+def write_outputs(creddata: Path, context: int, out: Path) -> dict:
+    sessions, gold, labels, stats = convert(creddata, context)
     for sub in ("data_test", "data_answer"):
         (out / sub).mkdir(parents=True, exist_ok=True)
     write_jsonl(out / "data_test" / f"sessions_from_{NAME}.jsonl", sessions)

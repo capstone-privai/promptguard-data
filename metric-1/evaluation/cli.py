@@ -28,7 +28,7 @@ EXIT_DATASET = 1
 EXIT_SCORING = 2
 EXIT_CONFIG = 3
 
-SYSTEMS = ("promptguard", "credsweeper", "oracle", "identity")
+SYSTEMS = ("promptguard", "credsweeper", "gitleaks", "oracle", "identity")
 DEFAULT_SESSIONS = Path(__file__).resolve().parents[1] / "data_test" / "sessions.jsonl"
 
 AdapterFactory = Callable[[float | None], SystemUnderTest]
@@ -65,6 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--ml", choices=("on", "off"), help="CredSweeper ML validation (credsweeper only; default: off)")
     run.add_argument("--channels", help="comma-separated channels to scan, or 'all' "
                                         "(credsweeper only; default: tool_output, the channels PromptGuard processes)")
+    run.add_argument("--findings", help="findings file from metric-1/scripts/run_gitleaks.py (gitleaks only, required)")
     run.add_argument("--out", default="runs", help="parent folder for run folders (default: runs)")
     run.add_argument("--debug", action="store_true", help="also write debug/ with raw candidates (contains secrets)")
     return parser
@@ -98,6 +99,9 @@ def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path
         raise ConfigError("--predictor, --threshold, --sweep and --system-root apply to --system promptguard only")
     if args.system != "credsweeper" and (args.ml or args.channels):
         raise ConfigError("--ml and --channels apply to --system credsweeper only")
+    if (args.system == "gitleaks") != bool(args.findings):
+        raise ConfigError("--system gitleaks needs --findings (from metric-1/scripts/run_gitleaks.py), "
+                          "and --findings applies to --system gitleaks only")
     if args.system == "promptguard":
         try:
             root = use_system_root(args.system_root)
@@ -126,6 +130,10 @@ def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path
             return CredSweeperAdapter(ml=ml, channels=channels)
 
         return make_credsweeper, label, None
+    if args.system == "gitleaks":
+        from evaluation.adapters.gitleaks_adapter import GitleaksAdapter
+
+        return (lambda _threshold: GitleaksAdapter(args.findings, args.sessions)), "gitleaks", None
     if args.system == "oracle":
         from evaluation.adapters.reference import OracleAdapter
 

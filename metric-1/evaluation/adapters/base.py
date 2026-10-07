@@ -34,3 +34,12 @@ class SystemUnderTest(Protocol):
 
 def passthrough(item_id: int, text: str) -> ItemOutput:
     return ItemOutput(item_id=item_id, text=text, edits=[])
+
+
+def select_non_overlapping(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Keep the longest span among overlaps, then the earliest; return them sorted by start."""
+    selected: list[tuple[int, int]] = []
+    for start, end in sorted(set(spans), key=lambda span: (-(span[1] - span[0]), span[0])):
+        if not any(start < prior_end and prior_start < end for prior_start, prior_end in selected):
+            selected.append((start, end))
+    return sorted(selected)
