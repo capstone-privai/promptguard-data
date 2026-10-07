@@ -10,12 +10,14 @@
 |---|---|
 | `data_test/` | 평가기 입력(세션). 정답은 들어 있지 않다 |
 | `data_answer/` | 정답 span(gold) |
-| `scripts/` | 생성(`dataset_build.py`, `convert_creddata.py`, `convert_privesc.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), 전체 조합 채점(`run_all.py`), gitleaks 탐지(`run_gitleaks.py`) |
+| `scripts/` | 생성(`dataset_build.py`, `convert_*.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), 전체 조합 채점(`run_all.py`), gitleaks 탐지(`run_gitleaks.py`), 후보 검토(`review_candidates.py`) |
 | [`evaluation/`](evaluation/README.md) | 채점기: 시스템 어댑터, span 채점, 지표 집계, 결과 파일 |
 | `templates/` | placeholder로 세션을 쓰는 템플릿과 [작성법](templates/README.md) |
 | [`README_CredData.md`](README_CredData.md) | CredData 변환 방법, 변환 규칙, 우리 라벨 기준과 다른 점 |
 | [`README_privesc-llm-data.md`](README_privesc-llm-data.md) | privesc-llm-data 변환 방법, 채널 대응, 자동 정답 규칙, 한계 |
 | [`README_baseline-recall.md`](README_baseline-recall.md) | 기존 시스템(CredSweeper, gitleaks)과 PromptGuard 데모의 recall이 낮은 이유 분석 |
+| [`README_Nemotron-PII.md`](README_Nemotron-PII.md), [`README_openhands-feedback.md`](README_openhands-feedback.md), [`README_SWE-Gym.md`](README_SWE-Gym.md), [`README_noseyparker.md`](README_noseyparker.md) | 2026-10-08에 더한 외부 소스 4개의 변환 방법, 정답 규칙, 기존 데이터와 맞춘 점, 기준 점수 |
+| [`reviews/`](reviews/README.md) | 라벨이 없는 소스(openhands-feedback, SWE-Gym)의 정답 판정. 값 없이 해시와 위치만 둔다 |
 
 ## 데이터셋
 
@@ -26,10 +28,22 @@
 | 에이전트 세션 v2 | `sessions_2.jsonl` | `gold_2.jsonl` | 43 | 152 | 78 | authored | [templates/agent_sessions_2.jsonl](templates/agent_sessions_2.jsonl)로 만든 세션이다. 설정 파일 읽기, 명령 출력, 로그, 에이전트가 쓴 명령(`tool_input`), 자연어 속 비밀, 약한·테스트 비밀번호, 비밀 없는 고엔트로피 출력의 7개 범주(`meta.category`)로 나뉜다. `python metric-1/scripts/dataset_build.py --template metric-1/templates/agent_sessions_2.jsonl --origin authored --name 2`로 다시 만든다. |
 | CredData | `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 15,596 | external | [Samsung CredData](https://github.com/Samsung/CredData)의 파일 조각을 세션 형식으로 바꾼 것이다. **평가 전용이며 학습에 쓰지 않는다.** 파일 본문은 원본 저장소의 라이선스를 따르므로 git에 올리지 않고 각자 다시 만든다([README_CredData.md](README_CredData.md)). |
 | privesc-llm-data | `sessions_from_privesc-llm-data.jsonl` | `gold_from_privesc-llm-data.jsonl` | 2,200 | 122,286 | 10,624 | recorded | [sailab-vienna/privesc-llm-data](https://huggingface.co/datasets/sailab-vienna/privesc-llm-data)의 리눅스 권한 상승 에이전트 궤적을 세션 형식으로 바꾼 것이다. 실행 전에 환경에 심어 둔 비밀번호와 SSH 키를 원본 metadata에서 가져와, 텍스트에서 그 위치를 찾아 정답을 자동으로 만든다. 정답 유형은 PASSWORD와 PRIVATE_KEY뿐이다. 용량 때문에 git에 올리지 않고 각자 다시 만든다([README_privesc-llm-data.md](README_privesc-llm-data.md)). |
+| Nemotron-PII | `sessions_from_Nemotron-PII.jsonl` | `gold_from_Nemotron-PII.jsonl` | 6,000 | 6,000 | 3,866 | external | [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII)의 합성 업무 문서(설정 파일, API 문서, 비밀번호 안내 메일, 양식 등). `password`, `api_key`, 인증 쿠키 값을 정답으로 쓴다. 정답 있는 문서와 없는 문서가 3,000개씩이고, 비정형 문서는 `prompt`(사용자가 붙여 넣은 글), 정형 문서는 `tool_output`에 둔다([README_Nemotron-PII.md](README_Nemotron-PII.md)). |
+| openhands-feedback | `sessions_from_openhands-feedback.jsonl` | `gold_from_openhands-feedback.jsonl` | 275 | 12,526 | 47 | external | [all-hands/openhands-feedback](https://huggingface.co/datasets/all-hands/openhands-feedback)의 실제 사용자 세션. 업스트림이 민감정보를 지워 거의 음성이다. 정답은 후보를 검토해 정했다([README_openhands-feedback.md](README_openhands-feedback.md), [reviews/](reviews/README.md)). |
+| SWE-Gym | `sessions_from_SWE-Gym.jsonl` | `gold_from_SWE-Gym.jsonl` | 491 | 18,900 | 2 | external | [SWE-Gym/OpenHands-SFT-Trajectories](https://huggingface.co/datasets/SWE-Gym/OpenHands-SFT-Trajectories)의 코딩 에이전트 궤적(moto, MONAI, pandas …). 실제 코딩 트래픽의 과잉 마스킹을 재는 음성 데이터다([README_SWE-Gym.md](README_SWE-Gym.md)). |
+| Nosey Parker | `sessions_from_noseyparker.jsonl` | `gold_from_noseyparker.jsonl` | 573 | 573 | 351 | external | [Nosey Parker](https://github.com/praetorian-inc/noseyparker) 내장 규칙 189개의 예시와 음성 예시. 수백 종 서비스의 토큰 형식을 시험한다([README_noseyparker.md](README_noseyparker.md)). |
 
 합성 데이터의 비밀값은 모두 결정적으로 만든 가짜 값이다. 정답은 탐지기 결과와 상관없이, 값을 끼워 넣는 순간에 위치를 기록해 만든다.
 
 `data_test/`와 `data_answer/`는 git에 올리지 않는다(`.gitignore`). 저장소를 받은 뒤 [생성과 검증](#생성과-검증)의 명령으로 각자 만든다. 합성 데이터도 올리지 않는 이유는, 비밀값이 실제 형식(예: AWS 키 ID와 시크릿 키 쌍)을 따르는 가짜 값이라 GitHub push protection이 진짜 비밀로 보고 push를 막기 때문이다. 생성은 결정적이므로 누가 만들어도 바이트 단위로 같은 파일이 나온다.
+
+### 검토했지만 쓰지 않은 소스
+
+| 소스 | 이유 |
+|---|---|
+| [ai4privacy/pii-masking-400k](https://huggingface.co/datasets/ai4privacy/pii-masking-400k) | 6개 언어의 짧은 글에 PASSWORD 라벨이 있지만, 라이선스가 학술 목적이라도 파생물 생성에 서면 허가를 요구한다 |
+| [SecretBench](https://github.com/setu1421/SecretBench) | 사람이 검증한 비밀 15,084개지만, 저자에게 연락해 데이터 보호 계약을 맺어야 BigQuery 접근 권한을 준다 |
+| SWE-rebench, SWE-smith, Nemotron-SWE 궤적 | 수 GB~11GB라 노트북 용량에 비해 크다. 같은 성격의 SWE-Gym(10MB)을 대신 썼다 |
 
 ## 형식
 
@@ -86,11 +100,16 @@ python metric-1/scripts/dataset_build.py                       # 내장 코퍼�
 python metric-1/scripts/dataset_build.py --template metric-1/templates/example.jsonl --origin authored
 python metric-1/scripts/dataset_build.py --template metric-1/templates/agent_sessions_2.jsonl --origin authored --name 2
 
-# 외부 데이터 (원본을 먼저 받는다: README_CredData.md, README_privesc-llm-data.md)
+# 외부 데이터 (원본을 먼저 받는다: 각 README_<소스>.md)
 python metric-1/scripts/convert_creddata.py --creddata ../CredData
 python metric-1/scripts/convert_privesc.py --privesc ../privesc-llm-data
+python metric-1/scripts/convert_nemotron_pii.py --nemotron ../Nemotron-PII                         # pyarrow 필요
+python metric-1/scripts/convert_openhands_feedback.py --openhands ../openhands-feedback            # pyarrow 필요
+python metric-1/scripts/convert_swe_gym.py --swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories        # pyarrow 필요
+python metric-1/scripts/convert_noseyparker.py --noseyparker ../noseyparker
 
-python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일>] [--creddata ../CredData] [--privesc ../privesc-llm-data]
+python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일>] [--creddata ../CredData] [--privesc ../privesc-llm-data] \
+    [--nemotron ../Nemotron-PII] [--openhands ../openhands-feedback] [--swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories] [--noseyparker ../noseyparker]
 ```
 
 검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, 정답 누락(같은 비밀값이 그 세션의 다른 곳에도 나오는데 정답에서 빠졌는지), 재생성 시 바이트 단위 일치다. 누락 검사는 세션 안에서만 본다. 정답은 세션별 출처에서 나오므로, 같은 사용자명이나 흔한 비밀번호가 아무것도 심지 않은 다른 세션에 나오는 것은 비밀이 아니다.
@@ -115,6 +134,7 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 - 값이 자격증명 자리(예: `Authorization: Basic …`)에 있어도, 값 자체가 placeholder면 정답이 아니다. 규칙 기반 탐지기가 이런 값을 가리면 과잉 마스킹으로 센다. recall은 줄지 않고 precision만 내려간다. ML 검증이 이 과잉 마스킹을 얼마나 줄이는지는 CredSweeper `--ml off`와 `--ml on`을 비교해 본다.
 - 이 정의는 시스템이 과제에 필요한 값을 남기는 판단(KEEP)을 하지 않는다고 보고 잰다. KEEP 판단을 켠 시스템은 남긴 자격증명이 놓친 것으로 잡힌다([알려진 한계](evaluation/README.md#알려진-한계)).
 - CredData 변환본은 CredData의 T만 정답으로 쓴다. 테스트 값과 약한 비밀번호처럼 이 정의와 어긋나는 부분은 [README_CredData.md](README_CredData.md#정답)에 있다.
+- 2026-10-08에 더한 외부 소스 4개(Nemotron-PII, openhands-feedback, SWE-Gym, Nosey Parker)도 CredData, privesc와 같은 기준으로 맞췄다: 9자 미만과 흔한 비밀번호, placeholder, 문서 예시 값, 해시, 식별자는 정답이 아니고, 무작위 모양으로 실제 동작하는 값은 테스트용이어도 정답이며, 같은 값의 모든 등장 위치가 정답이다. 소스별로 정한 것은 각 `README_<소스>.md`의 "기존 두 데이터와 같은 기준으로 맞춘 점"에 있다.
 
 ## 채점 기준
 

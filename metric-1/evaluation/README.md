@@ -83,6 +83,10 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 | `sessions.jsonl`, `sessions_from_example.jsonl`, `sessions_2.jsonl` | authored | 다섯 유형 모두 | 네 채널 모두 | 합성 세션. 음성도 직접 쓴 것이다 |
 | `sessions_from_CredData.jsonl` | external | 다섯 유형 모두 | `tool_output`만 | precision은 하한값이다([README_CredData.md](../README_CredData.md#xf를-음성으로-쓸-때-유의할-점)) |
 | `sessions_from_privesc-llm-data.jsonl` | recorded | PASSWORD, PRIVATE_KEY만 | `instructions`, `tool_input`, `tool_output` | 아래 참고 |
+| `sessions_from_Nemotron-PII.jsonl` | external | PASSWORD, SECRET, TOKEN | `prompt`, `tool_output` (반씩) | 자연어 문서 속 비밀. `tool_output`만 처리하는 시스템은 `prompt` 절반을 놓친다([README_Nemotron-PII.md](../README_Nemotron-PII.md)) |
+| `sessions_from_openhands-feedback.jsonl` | external | 다섯 유형 (47개) | `tool_input`, `tool_output` | 실제 사용자 세션. 정답 후보를 CredSweeper와 gitleaks가 냈으므로 recall은 상한값이다. 과잉 마스킹을 본다([README_openhands-feedback.md](../README_openhands-feedback.md)) |
+| `sessions_from_SWE-Gym.jsonl` | external | TOKEN (2개) | `tool_output` | 거의 음성. 실제 코딩 에이전트 트래픽의 1,000줄당 과잉 마스킹을 본다([README_SWE-Gym.md](../README_SWE-Gym.md)) |
+| `sessions_from_noseyparker.jsonl` | external | 다섯 유형 | `tool_output` | 한두 줄짜리 예시라 줄 단위 지표는 크게 나온다. 형식별 recall을 본다([README_noseyparker.md](../README_noseyparker.md)) |
 
 ### privesc-llm-data
 
