@@ -85,6 +85,7 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_nosey
 
 - **Nosey Parker 자신은 평가하지 않는다.** 이 예시는 Nosey Parker의 규칙 테스트라 그 도구는 거의 다 맞힌다. 여기서 보는 것은 CredSweeper, gitleaks, PromptGuard가 Nosey Parker가 아는 형식을 얼마나 아는가다.
 - 예시가 한두 줄짜리라 `fp_per_1k_lines`(PromptGuard 88, gitleaks 26)는 크게 나온다. 다른 데이터와 비교하지 않는다.
+- 어느 형식을 어느 도구가 놓쳤는지는 [새 외부 소스로 본 기존 시스템의 약점](../docs/README_baseline-new-sources.md#4-서비스-형식-규칙의-범위)에 있다.
 
 ## 알려진 한계
 

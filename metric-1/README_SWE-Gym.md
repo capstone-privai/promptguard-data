@@ -96,7 +96,7 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_SWE-G
 | CredSweeper ml=on | 1.000 | 0.008 | 0.44 | 264 |
 | gitleaks | 1.000 | 0.091 | 0.03 | 20 |
 
-정답이 2개뿐이라 recall과 precision은 의미가 적다. **1,000줄당 과잉 마스킹을 본다.** 코딩 에이전트가 오픈소스 저장소를 고치는 동안, CredSweeper(ML off)는 1,000줄마다 약 1.2번 비밀이 아닌 것(코드 표현식, request id, 테스트 값)을 가린다. 지표 2에서 본 것처럼 이런 과잉 마스킹은 과제에 필요한 값을 가려 작업을 막을 수 있다.
+정답이 2개뿐이라 recall과 precision은 의미가 적다. **1,000줄당 과잉 마스킹을 본다.** 코딩 에이전트가 오픈소스 저장소를 고치는 동안, CredSweeper(ML off)는 1,000줄마다 약 1.2번 비밀이 아닌 것(코드 표현식, request id, 테스트 값)을 가린다. 지표 2에서 본 것처럼 이런 과잉 마스킹은 과제에 필요한 값을 가려 작업을 막을 수 있다. 어떤 규칙이 무엇을 가렸는지는 [새 외부 소스로 본 기존 시스템의 약점](../docs/README_baseline-new-sources.md#6-키워드-규칙이-코드-조각을-값으로-잡음)에 있다.
 
 ## 알려진 한계
 

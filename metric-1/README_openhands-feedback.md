@@ -100,7 +100,7 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_openh
 | gitleaks | 0.106 | 0.714 | 0.128 | 0.006 |
 
 - **recall은 상한값이다.** 정답 후보를 CredSweeper와 gitleaks가 냈으므로, 이 둘이 놓친 자격증명은 정답에 들어갈 수 없다(정규식으로 일부 보충). 이 데이터의 recall을 다른 데이터와 비교하지 않는다.
-- **precision과 과잉 마스킹이 이 데이터의 핵심 수치다.** 실제 사용자 세션 34만 줄에서 CredSweeper(ML off)는 1,000줄에 0.85번, ML on은 0.19번 비밀이 아닌 것을 가린다. CredData의 과잉 마스킹(어렵게 고른 음성)과 달리 실제 트래픽의 비율이다.
+- **precision과 과잉 마스킹이 이 데이터의 핵심 수치다.** 실제 사용자 세션 34만 줄에서 CredSweeper(ML off)는 1,000줄에 0.85번, ML on은 0.19번 비밀이 아닌 것을 가린다. CredData의 과잉 마스킹(어렵게 고른 음성)과 달리 실제 트래픽의 비율이다. 어떤 규칙이 무엇을 가렸는지와 gitleaks가 놓친 이유는 [새 외부 소스로 본 기존 시스템의 약점](../docs/README_baseline-new-sources.md)에 있다.
 
 ## 알려진 한계
 

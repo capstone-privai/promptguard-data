@@ -126,7 +126,7 @@ transcript는 Mod가 바꾼 뒤의 내용을 저장하므로, 모델이 실제�
 
 - **모델 스스로 비밀을 피한다.** none에서도 Sonnet은 `.env`를 `sed 's/=.*/=<redacted>/'`로 가려 읽거나 `source .env`로 값을 넘기는 일이 많았다. none의 23%(18회)는 비밀을 한 번도 보지 않고 끝났다.
 - **가려진 값으로 Edit하면 실패하고, 모델이 우회한다.** t12에서 gold와 promptguard 모두 `old_string`에 placeholder를 넣은 Edit가 실패했고(6회), 모델은 "화면에 보인 값은 가려진 값 같다"며 줄 번호 `sed`나 Python으로 고쳤다. 결과는 모두 정상 동작하는 수정이었다(`$$` 이스케이프, `.env` 참조, Secret 파일 주입).
-- **PromptGuard가 놓친 비밀은 실행마다 같았다**: compose의 `JWT_SIGNING_KEY`(t06), `--requirepass` 뒤 위치 인자(t13), 웹훅 URL 경로·Sentry DSN·PagerDuty 키(t19), 세션 쿠키(t26). [지표 1의 recall 분석](../metric-1/README_baseline-recall.md)에서 본 원인(키 이름 없는 자리, 규칙에 없는 키 이름, 쿠키)과 같다.
+- **PromptGuard가 놓친 비밀은 실행마다 같았다**: compose의 `JWT_SIGNING_KEY`(t06), `--requirepass` 뒤 위치 인자(t13), 웹훅 URL 경로·Sentry DSN·PagerDuty 키(t19), 세션 쿠키(t26). [지표 1의 recall 분석](../docs/README_baseline-recall.md)에서 본 원인(키 이름 없는 자리, 규칙에 없는 키 이름, 쿠키)과 같다.
 - promptguard 조건은 평균 4.7턴, 23.9초로 none(4.3턴, 18.9초)보다 조금 길었다. 탐지기 지연과 가려진 값을 확인하는 추가 호출 때문이다.
 
 ## PromptGuard Mod에서 발견한 문제

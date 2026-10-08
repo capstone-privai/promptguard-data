@@ -112,7 +112,7 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_Nemot
 | CredSweeper ml=on | 0.212 | 0.719 | 0.247 | 3.05 | 0.133 / 0.288 | 0.119 / 0.368 / 0.145 |
 | gitleaks | 0.098 | 0.757 | 0.118 | 1.15 | 0.074 / 0.120 | 0.003 / 0.215 / 0.141 |
 
-세 시스템 모두 recall이 낮다. 비밀번호가 `key=value` 꼴이 아니라 문장 속에 있기 때문이다("The password for accessing the project documents is …", "use the API key … for authentication"). [README_baseline-recall.md](README_baseline-recall.md)의 원인 1(키 이름 없는 자리의 값)이 자연어에서 그대로 드러난다.
+세 시스템 모두 recall이 낮다. 비밀번호가 `key=value` 꼴이 아니라 문장 속에 있기 때문이다("The password for accessing the project documents is …", "use the API key … for authentication"). [README_baseline-recall.md](../docs/README_baseline-recall.md)의 원인 1(키 이름 없는 자리의 값)이 자연어에서 그대로 드러난다. 값 앞 문맥별 recall과 마크다운·표·쿠키에서 놓치는 이유는 [새 외부 소스로 본 기존 시스템의 약점](../docs/README_baseline-new-sources.md)에 있다.
 
 ## 알려진 한계
 

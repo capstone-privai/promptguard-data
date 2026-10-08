@@ -1,12 +1,12 @@
 # 기존 시스템의 recall이 낮은 이유
 
-지표 1 데이터셋으로 기존 시스템(CredSweeper, gitleaks)과 PromptGuard 데모를 채점했을 때 recall이 낮게 나온 자리를 span 단위로 따라가 원인을 정리한 문서다. 놓친 정답 span마다 원문에서 채널, 값 앞 문맥, 값의 모양을 붙여 recall을 나눠 보고, 원인이 의심되면 해당 도구에 같은 값을 직접 넣어 확인했다.
+지표 1 데이터셋으로 기존 시스템(CredSweeper, gitleaks)과 PromptGuard 데모를 채점했을 때 recall이 낮게 나온 자리를 span 단위로 따라가 원인을 정리한 문서다. 놓친 정답 span마다 원문에서 채널, 값 앞 문맥, 값의 모양을 붙여 recall을 나눠 보고, 원인이 의심되면 해당 도구에 같은 값을 직접 넣어 확인했다. 2026-10-08에 더한 외부 소스 4개로 본 약점은 [새 외부 소스로 본 기존 시스템의 약점](README_baseline-new-sources.md)에 따로 정리했다.
 
 - 대상 실행
   - 합성 데이터(`sessions`, `sessions_2`, `sessions_from_example`): `runs/all_20261008-010650`. 합성 AWS 키 ID 생성을 고친 뒤([8절](#8-형식에-맞지-않는-값)) 다시 만든 데이터다.
   - CredData, privesc-llm-data: `runs/all_20261007-221606`. 그 뒤로 채점기와 이 두 데이터는 바뀌지 않았다.
 - 도구 버전: CredSweeper 1.18.5, gitleaks 8.30.1, PromptGuard `promptguard-demo-v0@915492b`(predictor=mock)
-- 판정은 [채점 기준](README.md#채점-기준)을 따른다. `partial`(일부만 가림)도 실패로 센다.
+- 판정은 [채점 기준](../metric-1/README.md#채점-기준)을 따른다. `partial`(일부만 가림)도 실패로 센다.
 - 시스템 구성: CredSweeper와 gitleaks는 네 채널을 모두 본다. PromptGuard는 `tool_output`만 처리하고, 탐지는 CredSweeper(ML off)이며 mock predictor는 후보를 모두 MASK한다.
 
 ## 요약
@@ -76,7 +76,7 @@ CredData의 진짜 누락(CS ml=off `missed` 129개)도 119개가 대입 문법 
 
 ## 2. 처리하지 않는 채널 (PromptGuard)
 
-PromptGuard는 `tool_output`만 처리하므로 나머지 채널의 정답은 항상 놓친다([채점 기준](README.md#단위)에 적힌 대로 의도된 동작이다).
+PromptGuard는 `tool_output`만 처리하므로 나머지 채널의 정답은 항상 놓친다([채점 기준](../metric-1/README.md#단위)에 적힌 대로 의도된 동작이다).
 
 | 데이터셋 | `tool_output` 밖의 정답 | `tool_output` 안 recall: PromptGuard | `tool_output` 안 recall: CS off |
 |---|---|---|---|
@@ -101,7 +101,7 @@ CredSweeper는 ML을 꺼도 규칙 뒤에 필터가 돈다(`use_filters=True`). 
 
 합성 데이터에서 이 필터 때문에 놓친 것은 9개다(`postgres` 2, `root`, `admin`, `qwer1234`, `test1234`, `dummy_token_123`, `test-api-key`, pypi 토큰). ML을 켜면 `changeme`(2), `minioadmin`, `password123`, `guest`, `Mailer#2026`도 버린다. 합성 데이터에서 ml=off → ml=on으로 떨어진 7개 중 6개가 이런 값이고, 나머지 하나는 `${SERVICE_KEY:-…}`의 기본값이다.
 
-지표 1은 [설정에 들어간 약한 비밀번호도 자격증명으로 본다](README.md#정답의-정의). CredSweeper의 필터는 "실제로 쓰일 법한 비밀인가"를 거르는 설계라 이 정의와 어긋난다.
+지표 1은 [설정에 들어간 약한 비밀번호도 자격증명으로 본다](../metric-1/README.md#정답의-정의). CredSweeper의 필터는 "실제로 쓰일 법한 비밀인가"를 거르는 설계라 이 정의와 어긋난다.
 
 ## 4. 규칙에 없는 키 이름
 
@@ -153,13 +153,13 @@ PromptGuard와 CS ml=off는 같은 CredSweeper를 쓰지만, CredData에서 Prom
 | CredData의 PEM·개인키 | 줄 전체(`$key = PublicKeyLoader::load('…');`), 여러 줄 문자열의 따옴표와 `+` | `-----BEGIN` ~ `-----END` | 138 |
 | CredData의 JWK | 객체 전체(`kty`, `n`, `e` 등 공개 필드 포함) | 비밀 필드 값만 | 65 |
 
-CredData의 CS ml=off `partial` 225개 중 203개가 위 두 경우이고, 이 때문에 CredData recall이 약 1.4%p 깎인다. CredData 쪽은 [README_CredData.md](README_CredData.md)의 변환 규칙("ValueStart가 없으면 LineStart..LineEnd")에서, 합성 쪽은 연결 문자열 전체를 SECRET 하나로 라벨링하는 방식에서 온다.
+CredData의 CS ml=off `partial` 225개 중 203개가 위 두 경우이고, 이 때문에 CredData recall이 약 1.4%p 깎인다. CredData 쪽은 [README_CredData.md](../metric-1/README_CredData.md)의 변환 규칙("ValueStart가 없으면 LineStart..LineEnd")에서, 합성 쪽은 연결 문자열 전체를 SECRET 하나로 라벨링하는 방식에서 온다.
 
 ## 8. 형식에 맞지 않는 값
 
 형식이 정해진 비밀값은 형식을 검사하는 탐지기에서만 잡히므로, 데이터의 값이 실제 형식과 다르면 recall이 실제보다 낮게 나온다.
 
-**합성 AWS 키 ID (고침).** 실제 AWS 액세스 키 ID는 `AKIA` 뒤 16자가 `A-Z`와 `2-7`(base32)로만 이루어지고, gitleaks는 이 형식을 검사한다. 생성기가 뒤 16자를 `A-Z0-9`에서 뽑아 합성 `AKIA…` 정답 7개가 모두 형식에 맞지 않았다. [dataset_build.py](scripts/dataset_build.py)의 `AWS_ACCESS_ID`로 문자 집합을 고치고 데이터를 다시 만들었다. 값의 길이와 위치는 그대로라 정답 파일은 바뀌지 않았고, 채점 결과도 이 7개만 바뀌었다.
+**합성 AWS 키 ID (고침).** 실제 AWS 액세스 키 ID는 `AKIA` 뒤 16자가 `A-Z`와 `2-7`(base32)로만 이루어지고, gitleaks는 이 형식을 검사한다. 생성기가 뒤 16자를 `A-Z0-9`에서 뽑아 합성 `AKIA…` 정답 7개가 모두 형식에 맞지 않았다. [dataset_build.py](../metric-1/scripts/dataset_build.py)의 `AWS_ACCESS_ID`로 문자 집합을 고치고 데이터를 다시 만들었다. 값의 길이와 위치는 그대로라 정답 파일은 바뀌지 않았고, 채점 결과도 이 7개만 바뀌었다.
 
 | 데이터셋 | gitleaks recall (고치기 전 → 후) | CredSweeper·PromptGuard |
 |---|---|---|
