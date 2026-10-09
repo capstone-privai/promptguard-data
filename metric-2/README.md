@@ -14,6 +14,8 @@
 
 Claude Sonnet 5.5, 과제 26개 × 조건 3개 × 3회 = 234회 (모두 유효). 자세한 표는 [results/summary.md](results/summary.md), 실행별 기록은 [results/runs.csv](results/runs.csv).
 
+세 조건의 역할, placeholder 원복 여부, 작업 성공률과 비밀 노출률을 함께 읽는 기준은 [평가 해석](EVALUATION.md)에 정리했다.
+
 | | none | gold | promptguard |
 |---|---|---|---|
 | **과제 성공률 (전체)** | **99%** (77/78) | **95%** (74/78) | **90%** (70/78) |
