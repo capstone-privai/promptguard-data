@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import csv
 import json
 import re
-from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from evaluation.dataset.schema import CHANNELS, GOLD_TYPES
 from evaluation.run import RunResult
-
-Results = Sequence[tuple[float | None, RunResult]]
 
 
 def create_run_dir(out_root: str | Path, label: str, now: datetime) -> Path:
@@ -47,56 +43,17 @@ def fmt(value: Any, digits: int = 4) -> str:
     return str(value)
 
 
-def _per_span(results: Results, sweep: bool) -> list[dict[str, Any]]:
-    rows = []
-    for threshold, result in results:
-        for score in result.scores:
-            for gold in score.gold_results:
-                row = {"session_id": gold.session_id, "item_id": gold.item_id, "span_id": gold.span_id,
-                       "start": gold.start, "end": gold.end, "type": gold.type, "channel": score.channel,
-                       "status": gold.status.value, "exposed_chars": gold.exposed_chars}
-                rows.append({"threshold": threshold, **row} if sweep else row)
-    return rows
+def _per_span(result: RunResult) -> list[dict[str, Any]]:
+    return [{"session_id": gold.session_id, "item_id": gold.item_id, "span_id": gold.span_id, "start": gold.start,
+             "end": gold.end, "type": gold.type, "channel": score.channel, "status": gold.status.value,
+             "exposed_chars": gold.exposed_chars}
+            for score in result.scores for gold in score.gold_results]
 
 
-def _per_edit(results: Results, sweep: bool) -> list[dict[str, Any]]:
-    rows = []
-    for threshold, result in results:
-        for score in result.scores:
-            for edit in score.edit_results:
-                row = {"session_id": edit.session_id, "item_id": edit.item_id, "start": edit.start, "end": edit.end,
-                       "overlaps_gold": edit.overlaps_gold}
-                rows.append({"threshold": threshold, **row} if sweep else row)
-    return rows
-
-
-def _write_curve(run_dir: Path, points: list[dict[str, Any]]) -> bool:
-    columns = ["threshold", "precision", "recall", "f2", "fp_per_1k_lines"]
-    with (run_dir / "pr_curve.csv").open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows([{key: ("" if point[key] is None else point[key]) for key in columns} for point in points])
-    try:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        return False
-    plotted = [point for point in points if point["precision"] is not None and point["recall"] is not None]
-    figure, axis = plt.subplots(figsize=(5, 4))
-    axis.plot([p["recall"] for p in plotted], [p["precision"] for p in plotted], marker="o")
-    for point in plotted:
-        axis.annotate(f"{point['threshold']:g}", (point["recall"], point["precision"]), fontsize=7)
-    axis.set_xlabel("Recall")
-    axis.set_ylabel("Precision")
-    axis.set_xlim(0, 1.02)
-    axis.set_ylim(0, 1.02)
-    axis.grid(alpha=0.3)
-    figure.tight_layout()
-    figure.savefig(run_dir / "pr_curve.png", dpi=120)
-    plt.close(figure)
-    return True
+def _per_edit(result: RunResult) -> list[dict[str, Any]]:
+    return [{"session_id": edit.session_id, "item_id": edit.item_id, "start": edit.start, "end": edit.end,
+             "overlaps_gold": edit.overlaps_gold}
+            for score in result.scores for edit in score.edit_results]
 
 
 def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
@@ -132,12 +89,12 @@ def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
     return lines
 
 
-def render_report(meta: dict[str, Any], results: Results, summary: dict[str, Any] | None) -> str:
+def render_report(meta: dict[str, Any], result: RunResult) -> str:
     system = meta["system"]
     dataset = meta["dataset"]
     git = meta["git"]
     system_git = meta.get("system_git")
-    first = results[0][1].metrics
+    metrics = result.metrics
     settings = ", ".join(f"{key}={value}" for key, value in system.items() if key != "system")
     lines = [
         "# PromptGuard metric 1 report", "",
@@ -145,7 +102,7 @@ def render_report(meta: dict[str, Any], results: Results, summary: dict[str, Any
         f"- Dataset: `{dataset['sessions_path']}` (sha256 `{dataset['sessions_sha256'][:12]}`) + "
         f"`{dataset['gold_path']}` (sha256 `{dataset['gold_sha256'][:12]}`): {dataset['sessions']} sessions, "
         f"{dataset['items']} items, {dataset['gold_spans']} gold spans; used as `{dataset['use']}`",
-        f"- Lines: {first['lines_total']}; secret density per 1,000 lines: {fmt(first['density_per_1k_lines'], 2)}",
+        f"- Lines: {metrics['lines_total']}; secret density per 1,000 lines: {fmt(metrics['density_per_1k_lines'], 2)}",
         f"- Code: commit `{(git['commit'] or 'unknown')[:12]}` on `{git['branch'] or 'unknown'}`, "
         f"evaluation {meta['versions']['evaluation']}, started {meta['started_at']}",
     ]
@@ -156,59 +113,22 @@ def render_report(meta: dict[str, Any], results: Results, summary: dict[str, Any
     if meta["debug"]:
         lines += ["> **Warning:** this run used `--debug`. `debug/` contains raw text, including secrets. "
                   "Do not share or commit it.", ""]
-    if summary is None:
-        lines += _metric_sections(first, "##")
-    else:
-        lines += ["## Threshold sweep", "",
-                  "| Threshold | Recall | Precision | F2 | Over-masking / 1k lines |", "|---|---|---|---|---|"]
-        for threshold, result in results:
-            m = result.metrics
-            lines.append(f"| {threshold:g} | {fmt(m['recall'])} | {fmt(m['precision'])} | {fmt(m['f2'])} | "
-                         f"{fmt(m['fp_per_1k_lines'], 2)} |")
-        lines += ["", "## Summary metrics", "",
-                  "Approximations that depend on the threshold grid; see `metrics.json` for the thresholds used.", "",
-                  "| Metric | Value |", "|---|---|",
-                  f"| PR-AUC | {fmt(summary['pr_auc'])} |"]
-        for target, best in summary["precision_at_recall"].items():
-            value = "N/A" if best is None else f"{fmt(best['precision'])} (threshold {best['threshold']:g})"
-            lines.append(f"| Precision at recall ≥ {target} | {value} |")
-        lines.append("")
-        for threshold, result in results:
-            lines += [f"## Threshold {threshold:g}", ""] + _metric_sections(result.metrics, "###")
+    lines += _metric_sections(metrics, "##")
     return "\n".join(lines)
 
 
-def write_run(run_dir: Path, *, meta: dict[str, Any], results: Results, summary: dict[str, Any] | None,
-              points: list[dict[str, Any]] | None = None, debug: bool = False) -> list[str]:
-    """Write every result file; return the names written. `summary` is set for sweeps only."""
-    sweep = summary is not None
+def write_run(run_dir: Path, *, meta: dict[str, Any], result: RunResult, debug: bool = False) -> list[str]:
+    """Write every result file; return the names written."""
     _dump(run_dir / "run_meta.json", meta)
-    if sweep:
-        _dump(run_dir / "metrics.json", {
-            "thresholds": [threshold for threshold, _result in results],
-            "summary": summary,
-            "points": [{"threshold": threshold, **result.metrics} for threshold, result in results],
-        })
-    else:
-        _dump(run_dir / "metrics.json", results[0][1].metrics)
-    _jsonl(run_dir / "per_span.jsonl", _per_span(results, sweep))
-    _jsonl(run_dir / "per_edit.jsonl", _per_edit(results, sweep))
-    written = ["run_meta.json", "metrics.json", "per_span.jsonl", "per_edit.jsonl"]
-    if sweep:
-        written.append("pr_curve.csv")
-        if _write_curve(run_dir, points or []):
-            written.append("pr_curve.png")
-    (run_dir / "report.md").write_text(render_report(meta, results, summary), encoding="utf-8")
-    written.append("report.md")
+    _dump(run_dir / "metrics.json", result.metrics)
+    _jsonl(run_dir / "per_span.jsonl", _per_span(result))
+    _jsonl(run_dir / "per_edit.jsonl", _per_edit(result))
+    (run_dir / "report.md").write_text(render_report(meta, result), encoding="utf-8")
+    written = ["run_meta.json", "metrics.json", "per_span.jsonl", "per_edit.jsonl", "report.md"]
     if debug:
         (run_dir / "debug").mkdir()
-        rows = [
-            {**({"threshold": threshold} if sweep else {}), "session_id": session_id, "item_id": item_id,
-             "debug": output.debug}
-            for threshold, result in results
-            for (session_id, item_id), output in result.outputs.items()
-            if output.debug is not None
-        ]
+        rows = [{"session_id": session_id, "item_id": item_id, "debug": output.debug}
+                for (session_id, item_id), output in result.outputs.items() if output.debug is not None]
         _jsonl(run_dir / "debug" / "items.jsonl", rows)
         written.append("debug/items.jsonl")
     return written

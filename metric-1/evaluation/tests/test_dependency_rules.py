@@ -4,19 +4,11 @@ import ast
 import unittest
 from pathlib import Path
 
-from evaluation.tests.support import SKIP_REASON, SYSTEM_ROOT
-
 ROOT = Path(__file__).resolve().parents[2]  # metric-1
 EVALUATION = ROOT / "evaluation"
 
-ALLOWED_PROMPTGUARD = {
-    "promptguard.pipeline",
-    "promptguard.redaction.engine",
-    "promptguard.redaction.placeholders",
-    "promptguard.decision.registry",
-    "promptguard.decision.base",
-    "promptguard.common.schema",
-}
+# Only these load the system under evaluation (promptguard-claude-demoV0) from its checkout.
+SYSTEM_MODULES = ("evaluation.adapters.system_root", "evaluation.adapters.promptguard_adapter")
 FORBIDDEN_EVERYWHERE = ("subprocess", "socket", "urllib", "http")
 
 
@@ -36,11 +28,10 @@ def imported_modules(path: Path, root: Path) -> set[str]:
             base = package[: len(package) - node.level + 1] if node.level else []
             module = ".".join(base + ([node.module] if node.module else []))
             modules.add(module)
-            # `from promptguard import pipeline` imports the submodule promptguard.pipeline.
+            # `from evaluation.adapters import system_root` imports the submodule.
             for alias in node.names:
-                dotted = f"{module}.{alias.name}"
-                if any(_is_module(base_dir, dotted) for base_dir in (root, SYSTEM_ROOT) if base_dir is not None):
-                    modules.add(dotted)
+                if _is_module(root, f"{module}.{alias.name}"):
+                    modules.add(f"{module}.{alias.name}")
     return modules
 
 
@@ -53,23 +44,18 @@ def source_files(root: Path, exclude_tests: bool = True) -> list[Path]:
 
 
 class DependencyRuleTests(unittest.TestCase):
-    def test_only_adapters_import_promptguard(self) -> None:
-        for path in source_files(EVALUATION):
-            if path.relative_to(EVALUATION).parts[0] == "adapters":
-                continue
+    def test_nothing_imports_the_promptguard_demo_v0_package(self) -> None:
+        for path in source_files(EVALUATION, exclude_tests=False):
             offending = [name for name in imported_modules(path, ROOT) if _top(name, "promptguard")]
             self.assertEqual(offending, [], str(path))
 
-    def test_adapters_import_only_allowed_promptguard_modules(self) -> None:
-        for path in source_files(EVALUATION / "adapters"):
-            offending = {name for name in imported_modules(path, ROOT) if _top(name, "promptguard")} - ALLOWED_PROMPTGUARD
-            self.assertEqual(offending, set(), str(path))
-
-    @unittest.skipIf(SYSTEM_ROOT is None, SKIP_REASON)
-    def test_promptguard_does_not_import_evaluation(self) -> None:
-        for path in source_files(SYSTEM_ROOT / "promptguard", exclude_tests=False):
-            imported = imported_modules(path, SYSTEM_ROOT)
-            self.assertEqual([name for name in imported if _top(name, "evaluation")], [], str(path))
+    def test_dataset_scorer_and_report_do_not_load_the_system(self) -> None:
+        for path in source_files(EVALUATION):
+            if path.relative_to(EVALUATION).parts[0] not in ("dataset", "scorer", "report"):
+                continue
+            offending = [name for name in imported_modules(path, ROOT)
+                         if any(_top(name, system) for system in SYSTEM_MODULES)]
+            self.assertEqual(offending, [], str(path))
 
     def test_no_subprocess_or_network(self) -> None:
         for path in source_files(EVALUATION):

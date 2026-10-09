@@ -1,8 +1,8 @@
-"""Baseline: CredSweeper alone, masking every detection. Does not go through promptguard.
+"""Baseline: CredSweeper alone with its built-in rules, masking every detection.
 
-Line/offset handling follows promptguard/detector/rules.py `_scan` (including multi-line PEM
-spans) without importing it. Its URI `_normalize` post-processing is deliberately not
-reproduced: that difference is part of what "CredSweeper alone vs PromptGuard" measures.
+PromptGuard's worker adds its own rules (rules-demo.yaml) and drops some detections (benign variable
+names, the untyped "Credential" rules). None of that is reproduced here: that difference is part of what
+"CredSweeper alone vs PromptGuard" measures.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from credsweeper import CredSweeper
 from credsweeper.file_handler.string_content_provider import StringContentProvider
 
 from evaluation.adapters.base import ItemOutput, passthrough, select_non_overlapping
+from evaluation.adapters.promptguard_adapter import CHANNEL_MAP
 from evaluation.dataset.schema import Session
 from evaluation.scorer.edits import Edit, apply_edits
 
@@ -44,11 +45,11 @@ def _is_private_key(rule: str) -> bool:
 class CredSweeperAdapter:
     name = "credsweeper"
 
-    def __init__(self, ml: bool = False, channels: tuple[str, ...] = ("tool_output",)):
-        # Default: the dataset channels PromptGuard processes (test_system_contract checks this).
+    def __init__(self, ml: bool = False, channels: tuple[str, ...] = tuple(CHANNEL_MAP)):
+        # Default: the dataset channels PromptGuard processes.
         self.ml = ml
         self.channels = tuple(channels)
-        # ml=False matches the demo detector; ml=True keeps CredSweeper's default ml_threshold (medium).
+        # ml=False matches PromptGuard's worker; ml=True keeps CredSweeper's default ml_threshold (medium).
         self._sweeper = (CredSweeper(use_filters=True, pool_count=1) if ml
                          else CredSweeper(ml_threshold=0, use_filters=True, pool_count=1))
         self.detect(_WARMUP_TEXT)  # load rules (and the ML model) outside the recorded latencies

@@ -1,4 +1,4 @@
-"""Wire dataset → adapter → scorer → aggregation. Shared by the CLI and threshold sweeps."""
+"""Wire dataset → adapter → scorer → aggregation."""
 
 from __future__ import annotations
 

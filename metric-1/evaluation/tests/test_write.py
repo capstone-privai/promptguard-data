@@ -35,8 +35,8 @@ class WriteTests(unittest.TestCase):
     def _run(self, **kwargs) -> Path:
         with open(self.root / "stdout.txt", "w", encoding="utf-8") as out:
             code = execute_run(str(SESSIONS), str(GOLD),
-                               lambda t: PromptGuardAdapter("mock", threshold=t, debug=kwargs.get("debug", False)),
-                               label="promptguard_mock", out_root=self.root / "runs", system_root=SYSTEM_ROOT,
+                               lambda: PromptGuardAdapter(debug=kwargs.get("debug", False)),
+                               label="promptguard", out_root=self.root / "runs", system_root=SYSTEM_ROOT,
                                out=out, **kwargs)
         self.assertEqual(code, EXIT_OK)
         (run_dir,) = [path for path in (self.root / "runs").iterdir()]
@@ -67,17 +67,6 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(meta["system_git"]["root"], str(SYSTEM_ROOT))
         self.assertIn("System code:", (run_dir / "report.md").read_text(encoding="utf-8"))
 
-    def test_sweep_writes_curve(self) -> None:
-        run_dir = self._run(thresholds=[0.0, 0.5, 1.0], sweep=True)
-        self.assertTrue((run_dir / "pr_curve.csv").is_file())
-        header, *rows = (run_dir / "pr_curve.csv").read_text(encoding="utf-8").splitlines()
-        self.assertEqual(header, "threshold,precision,recall,f2,fp_per_1k_lines")
-        self.assertEqual(len(rows), 3)
-        metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
-        self.assertEqual(metrics["thresholds"], [0.0, 0.5, 1.0])
-        self.assertIsNone(metrics["summary"]["pr_auc"])  # mock: one distinct point
-        self.assertIn("## Threshold sweep", (run_dir / "report.md").read_text(encoding="utf-8"))
-
     def test_debug_is_separate_and_flagged(self) -> None:
         run_dir = self._run(debug=True)
         self.assertTrue((run_dir / "debug" / "items.jsonl").is_file())
@@ -88,10 +77,10 @@ class WriteTests(unittest.TestCase):
 
     def test_run_dir_names_do_not_collide(self) -> None:
         now = datetime(2026, 10, 4, 12, 0, 0)
-        first = create_run_dir(self.root, "promptguard/mock", now)
-        second = create_run_dir(self.root, "promptguard/mock", now)
-        self.assertEqual(first.name, "20261004-120000_promptguard-mock")
-        self.assertEqual(second.name, "20261004-120000_promptguard-mock-2")
+        first = create_run_dir(self.root, "credsweeper/ml on", now)
+        second = create_run_dir(self.root, "credsweeper/ml on", now)
+        self.assertEqual(first.name, "20261004-120000_credsweeper-ml-on")
+        self.assertEqual(second.name, "20261004-120000_credsweeper-ml-on-2")
 
 
 if __name__ == "__main__":

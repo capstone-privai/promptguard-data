@@ -2,7 +2,7 @@
 
 코딩 에이전트가 주고받는 텍스트에서 비밀값을 얼마나 정확히 찾아 가리는지를 span 단위로 채점한다. 데이터는 특정 에이전트에 묶이지 않는 형식으로 만든다. 지금 데이터는 합성 파일럿 v0.1이며 사람 검토를 기다린다.
 
-평가 대상 시스템(PromptGuard)은 [promptguard-demo-v0](https://github.com/capstone-privai/promptguard-demo-v0)에 있고, 채점기가 그 체크아웃을 불러 쓴다.
+평가 대상 시스템(PromptGuard)은 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)에 있고, 채점기가 그 체크아웃의 CredSweeper worker를 불러 쓰고 Claude Code Mod의 치환 규칙을 따른다.
 
 ## 폴더
 
@@ -146,7 +146,7 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 - **정답 span**: 데이터셋이 정한, 그 item에서 가려야 할 비밀값 하나의 위치.
 - **edit**: 시스템이 실제로 바꾼 구간 하나. 원문 좌표의 `start`, `end`와 대체 문자열 `replacement`로 이루어진다.
 
-정답은 데이터셋에서만 온다. 시스템이 처리하지 않는 채널에 있는 정답도 분모에 들어가며 놓친 것으로 센다. 현재 PromptGuard는 `tool_output`만 처리하므로 `prompt`, `instructions`, `tool_input`의 정답은 항상 놓친 것이 되고, 채널별 recall에 그대로 드러난다.
+정답은 데이터셋에서만 온다. 시스템이 처리하지 않는 채널에 있는 정답도 분모에 들어가며 놓친 것으로 센다. 현재 PromptGuard는 `prompt`, `instructions`, `tool_output`을 처리하고 모델이 쓴 `tool_input`은 가리지 않으므로, `tool_input`의 정답은 항상 놓친 것이 되고 채널별 recall에 그대로 드러난다.
 
 ### 판정
 
@@ -185,7 +185,7 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 | partial, missed 비율 | `partial` / `missed` 정답 span의 비율 |
 | 유형별, 채널별 recall | 정답을 유형, 채널로 나눠 잰 recall |
 
-분모가 0이면 `N/A`다. 임계값 sweep 지표(PR-AUC, 고정 recall에서의 precision), 지연 시간, 결과 파일의 정확한 정의는 [evaluation/README.md](evaluation/README.md#지표)에 있다.
+분모가 0이면 `N/A`다. 지연 시간과 결과 파일의 정확한 정의는 [evaluation/README.md](evaluation/README.md#지표)에 있다.
 
 ## 채점 실행
 
@@ -193,7 +193,7 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 
 ```bash
 pip install -r metric-1/evaluation/requirements.txt
-python metric-1/scripts/evaluate.py run --system promptguard [--sessions <sessions 파일>] [--system-root ../promptguard-demo-v0]
+python metric-1/scripts/evaluate.py run --system promptguard [--sessions <sessions 파일>] [--system-root ../promptguard-claude-demoV0]
 python metric-1/scripts/evaluate.py run --system credsweeper|oracle|identity [--sessions <sessions 파일>]
 
 # gitleaks: 먼저 탐지 결과를 만들고(gitleaks 설치 필요, 예: brew install gitleaks), 그 결과로 채점한다
@@ -201,4 +201,4 @@ python metric-1/scripts/run_gitleaks.py --sessions <sessions 파일>
 python metric-1/scripts/evaluate.py run --system gitleaks --findings runs/gitleaks/<sessions 이름>.jsonl --sessions <sessions 파일>
 ```
 
-결과는 `runs/<시각>_<system>/`에 쌓인다. 세션의 `meta.allowed_use`에 실행 용도(기본 `rule_eval`, CredSweeper ML 검증이나 PromptGuard의 ML predictor면 `ml_eval`)가 없으면 실행하지 않는다. `oracle`은 recall 1.0, precision 1.0이, `identity`는 recall 0.0, precision `N/A`가 나와야 하므로 채점기 점검용으로 쓴다. 옵션, 채널 대응, 결과 파일은 [evaluation/README.md](evaluation/README.md)에 있다.
+결과는 `runs/<시각>_<system>/`에 쌓인다. 세션의 `meta.allowed_use`에 실행 용도(기본 `rule_eval`, CredSweeper ML 검증이면 `ml_eval`)가 없으면 실행하지 않는다. `oracle`은 recall 1.0, precision 1.0이, `identity`는 recall 0.0, precision `N/A`가 나와야 하므로 채점기 점검용으로 쓴다. 옵션, 채널 대응, 결과 파일은 [evaluation/README.md](evaluation/README.md)에 있다.

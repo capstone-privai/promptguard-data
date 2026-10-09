@@ -1,8 +1,8 @@
 """Edit records and verification.
 
-This deliberately does not import promptguard's Edit: the scorer owns its input format so
-that a system change cannot silently change scoring rules. Adapters convert field by field,
-test_system_contract checks the field names, and verify() catches changes in meaning.
+The scorer owns its input format so that a system change cannot silently change scoring
+rules. Adapters record each replacement the system made in original-text coordinates, and
+verify() checks that the records reproduce the system's actual output.
 """
 
 from __future__ import annotations

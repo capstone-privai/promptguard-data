@@ -9,7 +9,7 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표
 | [metric-3/](metric-3/) | KEEP 판단 정확도 평가 데이터 | 준비용 폴더 |
 | [docs/](docs/) | 분석 문서: [기존 시스템의 recall이 낮은 이유](docs/README_baseline-recall.md), [새 외부 소스로 본 기존 시스템의 약점](docs/README_baseline-new-sources.md) | 지표 1 채점 결과(2026-10-08) 기준 |
 
-이 저장소는 데이터, 생성·검증 도구, 채점기를 맡는다. 평가 대상 시스템(PromptGuard)은 [promptguard-demo-v0](https://github.com/capstone-privai/promptguard-demo-v0)에 있고, 지표 1 채점기가 그 체크아웃을 불러 쓴다. 지표 2는 Claude Code에 붙는 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)의 Native Mod를 그대로 쓴다.
+이 저장소는 데이터, 생성·검증 도구, 채점기를 맡는다. 평가 대상 시스템(PromptGuard)은 Claude Code에 붙는 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)이다. 지표 1 채점기는 그 체크아웃의 CredSweeper worker를 불러 쓰고 Native Mod의 치환 규칙을 따르며, 지표 2는 Native Mod를 그대로 쓴다. [metric-1/docs/](metric-1/docs/)의 분석 문서는 이전 시스템(promptguard-demo-v0)으로 잰 결과다.
 
 ## 지표 1
 

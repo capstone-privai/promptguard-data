@@ -70,8 +70,7 @@ class CliTests(unittest.TestCase):
             (["--system", "credsweeper", "--ml", "on"], "ml_eval"),
             (["--system", "credsweeper", "--ml", "off"], "rule_eval"),
             (["--system", "credsweeper"], "rule_eval"),
-            (["--system", "promptguard", "--predictor", "custom"], "ml_eval"),
-            (["--system", "promptguard", "--predictor", "mock"], "rule_eval"),
+            (["--system", "promptguard"], "rule_eval"),
             (["--system", "oracle"], "rule_eval"),
             (["--system", "identity"], "rule_eval"),
             (["--system", "credsweeper", "--ml", "on", "--use", "ml_eval"], "ml_eval"),
@@ -83,7 +82,7 @@ class CliTests(unittest.TestCase):
 
     def test_credsweeper_ml_records_ml_eval_use(self) -> None:
         # Isolate the purpose selection and run metadata from the optional detector dependency.
-        with patch("evaluation.cli.adapter_factory", return_value=(lambda _t: IdentityAdapter(),
+        with patch("evaluation.cli.adapter_factory", return_value=(lambda: IdentityAdapter(),
                                                                    "credsweeper_ml-on", None)):
             code, output = self._main("run", *DATA, "--system", "credsweeper", "--ml", "on",
                                       "--out", str(self.out_dir))
@@ -114,17 +113,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, EXIT_OK, output)
         self.assertIn("gold=12", output)
         self.assertIn("results: ", output)
-        meta = json.loads(next(self.out_dir.glob("*/run_meta.json")).read_text(encoding="utf-8"))
+        meta = json.loads(next(self.out_dir.glob("*_promptguard/run_meta.json")).read_text(encoding="utf-8"))
         self.assertEqual(meta["system_git"]["root"], str(SYSTEM_ROOT))
+        self.assertEqual(meta["system"]["processed_channels"], ["prompt", "instructions", "tool_output"])
         self.assertEqual(meta["dataset"]["use"], "rule_eval")
-
-    @unittest.skipUnless(HAS_PROMPTGUARD, SKIP_REASON)
-    def test_run_promptguard_sweep(self) -> None:
-        code, output = self._main("run", *DATA, "--system", "promptguard", "--sweep", "0:1:0.5",
-                                  "--out", str(self.out_dir))
-        self.assertEqual(code, EXIT_OK, output)
-        self.assertEqual(output.count("threshold="), 3)
-        self.assertIn("pr_auc=N/A", output)
 
     @unittest.skipUnless(HAS_CREDSWEEPER, CREDSWEEPER_REASON)
     def test_run_credsweeper(self) -> None:
@@ -132,6 +124,8 @@ class CliTests(unittest.TestCase):
             code, output = self._main("run", *DATA, "--system", "credsweeper", "--ml", ml, "--out", str(self.out_dir))
             self.assertEqual(code, EXIT_OK, output)
             self.assertIn(f"credsweeper_ml-{ml}", output)
+        meta = json.loads(next(self.out_dir.glob("*_ml-off/run_meta.json")).read_text(encoding="utf-8"))
+        self.assertEqual(meta["system"]["channels"], ["prompt", "instructions", "tool_output"])
         code, output = self._main("run", *DATA, "--system", "credsweeper", "--channels", "all", "--out", str(self.out_dir))
         self.assertEqual(code, EXIT_OK, output)
         self.assertIn("credsweeper_ml-off_all", output)
@@ -157,7 +151,7 @@ class CliTests(unittest.TestCase):
 
     def test_unverifiable_edits_exit_2_without_results(self) -> None:
         out = io.StringIO()
-        code = execute_run(str(SESSIONS), str(GOLD), lambda _threshold: LyingAdapter(), out_root=self.out_dir, out=out)
+        code = execute_run(str(SESSIONS), str(GOLD), lambda: LyingAdapter(), out_root=self.out_dir, out=out)
         self.assertEqual(code, EXIT_SCORING)
         self.assertFalse(self.out_dir.exists())
         self.assertIn("session=s-0001 item=2", out.getvalue())
@@ -171,9 +165,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, EXIT_CONFIG)
         code, _output = self._main("run", "--sessions", "other.jsonl", "--system", "oracle")
         self.assertEqual(code, EXIT_CONFIG)  # gold file cannot be derived
-        cases = [["--system", "oracle", "--threshold", "0.5"],
-                 ["--system", "oracle", "--sweep", "0:1:0.5"],
-                 ["--system", "oracle", "--system-root", "."],
+        cases = [["--system", "oracle", "--system-root", "."],
                  ["--system", "oracle", "--ml", "on"],
                  ["--system", "oracle", "--channels", "all"],
                  ["--system", "credsweeper", "--channels", "stdout"],
@@ -182,11 +174,7 @@ class CliTests(unittest.TestCase):
                  ["--system", "gitleaks", "--findings", str(Path(self._tmp.name) / "absent.jsonl")],
                  ["--system", "oracle", "--use", "train"],
                  ["--system", "promptguard", "--system-root", str(self._tmp.name)],
-                 ["--system", "promptguard", "--sweep", "1:0:0.5"],
-                 ["--system", "promptguard", "--threshold", "0.5", "--sweep", "0:1:0.5"]]
-        if HAS_PROMPTGUARD:
-            cases += [["--system", "promptguard", "--predictor", "does-not-exist"],
-                      ["--system", "promptguard", "--threshold", "1.5"]]
+                 ["--system", "promptguard", "--threshold", "0.5"]]
         for extra in cases:
             code, _output = self._main("run", *DATA, "--out", str(self.out_dir), *extra)
             self.assertEqual(code, EXIT_CONFIG, extra)

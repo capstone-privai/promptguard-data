@@ -259,7 +259,7 @@ cat runs/all_new_sources/summary.md
 다시 돌리려면:
 
 ```bash
-python3 metric-1/scripts/run_all.py --no-sweep --jobs 3 \
+python3 metric-1/scripts/run_all.py --jobs 3 \
   --datasets sessions_from_Nemotron-PII sessions_from_openhands-feedback sessions_from_SWE-Gym sessions_from_noseyparker
 ```
 

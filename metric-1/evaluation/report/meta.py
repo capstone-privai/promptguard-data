@@ -83,7 +83,6 @@ def build_run_meta(
     *,
     started_at: datetime,
     system: dict[str, Any],
-    thresholds: Sequence[float | None],
     sessions_path: str | Path,
     gold_path: str | Path,
     sessions: Sequence[Session],
@@ -97,7 +96,6 @@ def build_run_meta(
         "git": git_info(),
         "system_git": None if system_root is None else {"root": str(system_root), **git_info(system_root)},
         "system": system,
-        "thresholds": list(thresholds),
         "debug": debug,
         "dataset": {
             "sessions_path": str(sessions_path),

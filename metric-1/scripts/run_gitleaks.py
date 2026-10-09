@@ -1,7 +1,7 @@
 """Scan a sessions file with gitleaks and write where it found secrets, for `evaluate.py run --system gitleaks`.
 
 Run from the repository root (gitleaks must be on PATH, e.g. `brew install gitleaks`):
-  python metric-1/scripts/run_gitleaks.py [--sessions S] [--channels tool_output|all|a,b] [--out F]
+  python metric-1/scripts/run_gitleaks.py [--sessions S] [--channels all|a,b] [--out F]
 
 The evaluator never runs subprocesses (evaluation/tests/test_dependency_rules.py), so gitleaks runs here and
 the evaluator only reads the result. Each item in the chosen channels is written to its own file in a
@@ -34,6 +34,7 @@ import time
 
 METRIC_ROOT = Path(__file__).resolve().parents[1]
 CHANNELS = ("prompt", "instructions", "tool_input", "tool_output")
+PROMPTGUARD_CHANNELS = "prompt,instructions,tool_output"  # evaluation/adapters/promptguard_adapter.py CHANNEL_MAP
 
 
 ENCODED = re.compile(r"[A-Za-z0-9+/_-]{12,}={0,2}")  # base64 (standard or URL-safe) and hex tokens
@@ -112,8 +113,8 @@ def scan(items: list[tuple[str, int, str]], gitleaks: str) -> tuple[list[dict], 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sessions", type=Path, default=METRIC_ROOT / "data_test" / "sessions.jsonl")
-    parser.add_argument("--channels", default="tool_output",
-                        help="comma-separated channels to scan, or 'all' (default: tool_output, as PromptGuard)")
+    parser.add_argument("--channels", default=PROMPTGUARD_CHANNELS,
+                        help=f"comma-separated channels to scan, or 'all' (default: {PROMPTGUARD_CHANNELS}, as PromptGuard)")
     parser.add_argument("--out", type=Path, help="findings file (default: runs/gitleaks/<sessions name>.jsonl)")
     parser.add_argument("--gitleaks", default="gitleaks", help="gitleaks executable")
     args = parser.parse_args()
