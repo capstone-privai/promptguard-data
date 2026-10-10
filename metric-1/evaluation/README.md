@@ -13,8 +13,8 @@ python metric-1/scripts/evaluate.py validate                                   #
 python metric-1/scripts/evaluate.py run --system oracle
 python metric-1/scripts/evaluate.py run --system promptguard
 python metric-1/scripts/evaluate.py run --system credsweeper --ml off
-python metric-1/scripts/run_gitleaks.py                                        # gitleaks 탐지 결과를 runs/gitleaks/에 쓴다
-python metric-1/scripts/evaluate.py run --system gitleaks --findings runs/gitleaks/sessions.jsonl
+python metric-1/scripts/run_gitleaks.py                                        # gitleaks 탐지 결과를 metric-1/results/gitleaks/에 쓴다
+python metric-1/scripts/evaluate.py run --system gitleaks --findings metric-1/results/gitleaks/sessions.jsonl
 python metric-1/scripts/evaluate.py run --system promptguard --sessions metric-1/data_test/sessions_from_CredData.jsonl
 python metric-1/scripts/evaluate.py run --system credsweeper --channels all --sessions metric-1/data_test/sessions_from_privesc-llm-data.jsonl
 ```
@@ -29,7 +29,7 @@ python metric-1/scripts/run_all.py --jobs 4                  # 전부 실행
 python metric-1/scripts/run_all.py --datasets sessions_2 --systems credsweeper gitleaks
 ```
 
-결과는 `runs/all_<YYYYmmdd-HHMMSS>/`에 모인다. 조합마다 실행 폴더 하나, `logs/`에 각 조합의 출력, `gitleaks/`에 탐지 결과, `summary.csv`와 `summary.md`에 조합별 상태와 주요 지표가 있다. 모든 조합이 성공하면 종료 코드 0, 실패하거나 건너뛴 조합이 있으면 1이다. 축을 좁히는 옵션은 `--help`에 있다.
+결과는 `metric-1/results/all_<YYYYmmdd-HHMMSS>/`에 모인다. 조합마다 실행 폴더 하나, `logs/`에 각 조합의 출력, `gitleaks/`에 탐지 결과, `summary.csv`와 `summary.md`에 조합별 상태와 주요 지표가 있다. 모든 조합이 성공하면 종료 코드 0, 실패하거나 건너뛴 조합이 있으면 1이다. 축을 좁히는 옵션은 `--help`에 있다.
 
 각 데이터셋의 특성과 점수를 읽을 때 주의할 점은 [데이터셋별 해석](#데이터셋별-해석)에 있다.
 
@@ -37,7 +37,7 @@ python metric-1/scripts/run_all.py --datasets sessions_2 --systems credsweeper g
 
 `--system promptguard`는 PromptGuard 체크아웃을 다음 순서로 찾는다: `--system-root DIR`, 환경 변수 `PROMPTGUARD_CLAUDE_ROOT`(지표 2와 같다), 이 저장소 옆의 `../promptguard-claude-demoV0`. 그 체크아웃이 지금 가리키는 브랜치의 코드가 평가된다. 설치된 `credsweeper`가 체크아웃의 `requirements.txt`에 고정된 버전과 다르면 설정 오류로 멈춘다.
 
-실행할 때마다 `runs/<YYYYmmdd-HHMMSS>_<system>[_<설정>]/`가 생기고, 그 경로와 recall, precision, F2, 1,000줄당 과잉 마스킹, gold 수, 비밀 밀도가 출력된다. `runs/`는 git에 올리지 않는다.
+실행할 때마다 `metric-1/results/<YYYYmmdd-HHMMSS>_<system>[_<설정>]/`가 생기고, 그 경로와 recall, precision, F2, 1,000줄당 과잉 마스킹, gold 수, 비밀 밀도가 출력된다. `metric-1/results/`는 git에 올리지 않는다.
 
 ### 옵션
 
@@ -50,7 +50,7 @@ python metric-1/scripts/run_all.py --datasets sessions_2 --systems credsweeper g
 | `--ml on\|off` | credsweeper | CredSweeper ML 검증 (기본 off, PromptGuard worker 설정과 같음) |
 | `--channels LIST\|all` | credsweeper | 검사할 채널(쉼표 구분). 기본은 PromptGuard가 처리하는 `prompt,instructions,tool_output` |
 | `--findings PATH` | gitleaks (필수) | `scripts/run_gitleaks.py`가 쓴 탐지 결과. 채점하는 세션 파일에서 만든 것이어야 한다(SHA-256 확인) |
-| `--out DIR` | run | 실행 폴더를 만들 상위 폴더 (기본 `runs`) |
+| `--out DIR` | run | 실행 폴더를 만들 상위 폴더 (기본 `metric-1/results`) |
 | `--debug` | run | 시스템의 원본 탐지 결과를 담은 `debug/`도 쓴다. **비밀값이 들어 있을 수 있다.** |
 
 종료 코드: `0` 정상, `1` 데이터 검증 실패 또는 용도 불일치, `2` edit 검증 실패(결과를 쓰지 않음), `3` 설정 오류.

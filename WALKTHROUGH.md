@@ -46,8 +46,8 @@ git log --oneline -6
 | 위치 | 내용 | 크기 |
 |---|---|---|
 | `runs/metric-2/main_sonnet_r3/` | 지표 2 실행 234회의 원본 기록 (transcript, 감사 로그, 최종 작업 폴더) | 46MB |
-| `runs/all_new_sources/` | 새 소스 4개에 기존 시스템을 돌린 지표 1 채점 결과 | 7MB |
-| `runs/review/*.worksheet.jsonl` | 정답 검토 작업 파일 (값이 들어 있음) | 0.7MB |
+| `metric-1/results/all_new_sources/` | 새 소스 4개에 기존 시스템을 돌린 지표 1 채점 결과 | 7MB |
+| `metric-1/results/review/*.worksheet.jsonl` | 정답 검토 작업 파일 (값이 들어 있음) | 0.7MB |
 | `metric-1/data_test/`, `data_answer/`, `labels_from_*.jsonl` | 새 소스 4개의 변환 결과 | 약 70MB |
 | `../openhands-feedback/`, `../SWE-Gym-OpenHands-SFT-Trajectories/`, `../noseyparker/` | 새로 받은 원본 | 112MB, 10MB, 1MB |
 | `../Nemotron-PII` | 이미 있던 `../pii_ref_stats/raw/nemotron`을 가리키는 링크 (새로 받지 않음) | 0 |
@@ -247,7 +247,7 @@ for l in sys.stdin: r = json.loads(l); print(r['where'][0], r['type'], '-', r['r
 ### 3-5. 기존 시스템 점수 보기
 
 ```bash
-cat runs/all_new_sources/summary.md
+cat metric-1/results/all_new_sources/summary.md
 ```
 
 | 소스 | 무엇이 보이나 |

@@ -90,7 +90,7 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_openh
 
 ## 기준 시스템 점수
 
-`runs/all_new_sources`. CredSweeper와 gitleaks는 네 채널을 모두 검사했고, PromptGuard는 `tool_output`만 처리한다.
+`metric-1/results/all_new_sources`. CredSweeper와 gitleaks는 네 채널을 모두 검사했고, PromptGuard는 `tool_output`만 처리한다.
 
 | 시스템 | recall | precision | F2 | 1,000줄당 과잉 마스킹 |
 |---|---|---|---|---|

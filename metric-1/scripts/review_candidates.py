@@ -7,12 +7,12 @@ definition (metric-1/README.md, "정답의 정의"), and the converter turns ver
 Run from the repository root:
   # 1. candidates, from evaluator runs over the dataset (their per_edit.jsonl) and the regexes below
   python metric-1/scripts/review_candidates.py collect metric-1/data_test/sessions_from_X.jsonl \\
-      --runs runs/review/<credsweeper run> runs/review/<gitleaks run> --out runs/review/X.worksheet.jsonl
+      --runs metric-1/results/review/<credsweeper run> metric-1/results/review/<gitleaks run> --out metric-1/results/review/X.worksheet.jsonl
   # 2. fill in "verdict" (credential | not_credential), "reason" and, for credentials, "type"
   # 3. record the verdicts without the values
-  python metric-1/scripts/review_candidates.py apply runs/review/X.worksheet.jsonl --out metric-1/reviews/X.jsonl
+  python metric-1/scripts/review_candidates.py apply metric-1/results/review/X.worksheet.jsonl --out metric-1/reviews/X.jsonl
 
-The worksheet holds the values with their context: keep it under runs/ (ignored by git). The review file holds,
+The worksheet holds the values with their context: keep it under metric-1/results/ (ignored by git). The review file holds,
 per value, its SHA-256, one place it occurs (session_id, item_id, start, end), type, verdict, reason and which
 detectors found it; the converter reads the value back from that place.
 

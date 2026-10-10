@@ -4,6 +4,8 @@ __pycache__/
 .DS_Store
 :memory:.ses
 runs/
+# metric 1 results hold secret values (per_edit.jsonl, review worksheets)
+metric-1/results/
 .python-version
 metric-1/claude/
 # CredData file contents stay under their source repos' licenses (CredData itself ships only

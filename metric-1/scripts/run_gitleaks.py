@@ -8,7 +8,7 @@ the evaluator only reads the result. Each item in the chosen channels is written
 temporary folder, scanned once with `gitleaks dir` and its built-in config, and the folder (including
 gitleaks' report, which holds the secrets) is deleted afterwards.
 
-Writes (default runs/gitleaks/<sessions name>.jsonl, next to the evaluator's run folders):
+Writes (default metric-1/results/gitleaks/<sessions name>.jsonl, next to the evaluator's run folders):
   <out>            one finding per line: session_id, item_id, start, end, rule_id (item text offsets, no secrets)
   <out>.meta.json  gitleaks version, sessions path and SHA-256, channels, counts, scan time
 
@@ -115,13 +115,13 @@ def main():
     parser.add_argument("--sessions", type=Path, default=METRIC_ROOT / "data_test" / "sessions.jsonl")
     parser.add_argument("--channels", default=PROMPTGUARD_CHANNELS,
                         help=f"comma-separated channels to scan, or 'all' (default: {PROMPTGUARD_CHANNELS}, as PromptGuard)")
-    parser.add_argument("--out", type=Path, help="findings file (default: runs/gitleaks/<sessions name>.jsonl)")
+    parser.add_argument("--out", type=Path, help="findings file (default: metric-1/results/gitleaks/<sessions name>.jsonl)")
     parser.add_argument("--gitleaks", default="gitleaks", help="gitleaks executable")
     args = parser.parse_args()
     channels = CHANNELS if args.channels == "all" else tuple(dict.fromkeys(args.channels.split(",")))
     if unknown := [c for c in channels if c not in CHANNELS]:
         parser.error(f"unknown channel(s) {unknown}; expected 'all' or some of {list(CHANNELS)}")
-    out = args.out or Path("runs") / "gitleaks" / f"{args.sessions.stem}.jsonl"
+    out = args.out or METRIC_ROOT / "results" / "gitleaks" / f"{args.sessions.stem}.jsonl"
 
     data = args.sessions.read_bytes()
     items = [(s["session_id"], it["item_id"], it["text"])

@@ -18,7 +18,7 @@ purpose the run needs (ml_eval for credsweeper --ml on, else rule_eval), or when
 (credsweeper package, gitleaks executable, promptguard-claude-demoV0 checkout and its pinned credsweeper).
 Gitleaks is scanned once per dataset with run_gitleaks.py before it is scored.
 
-Writes runs/all_<YYYYmmdd-HHMMSS>/ (or --out):
+Writes metric-1/results/all_<YYYYmmdd-HHMMSS>/ (or --out):
   <system>_.../     one evaluate.py run folder per combination
   gitleaks/         findings files from run_gitleaks.py
   logs/             each combination's evaluate.py (and run_gitleaks.py) output
@@ -248,7 +248,7 @@ def main() -> int:
                                               "(default: $PROMPTGUARD_CLAUDE_ROOT, else ../promptguard-claude-demoV0)")
     parser.add_argument("--gitleaks", default="gitleaks", help="gitleaks executable")
     parser.add_argument("--jobs", type=int, default=1, help="combinations to run in parallel (default: 1)")
-    parser.add_argument("--out", type=Path, help="batch folder (default: runs/all_<timestamp>)")
+    parser.add_argument("--out", type=Path, help="batch folder (default: metric-1/results/all_<timestamp>)")
     parser.add_argument("--dry-run", action="store_true", help="list the combinations and exit")
     args = parser.parse_args()
 
@@ -264,7 +264,7 @@ def main() -> int:
                   + (f"  ({c.skip})" if c.skip else ""))
         return 0
 
-    batch = (args.out or REPO_ROOT / "runs" / f"all_{datetime.now():%Y%m%d-%H%M%S}").resolve()
+    batch = (args.out or METRIC_ROOT / "results" / f"all_{datetime.now():%Y%m%d-%H%M%S}").resolve()
     (batch / "logs").mkdir(parents=True, exist_ok=True)
     (batch / "gitleaks").mkdir(exist_ok=True)
     print(f"batch: {batch}")

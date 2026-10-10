@@ -74,7 +74,7 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_nosey
 
 ## 기준 시스템 점수
 
-`runs/all_new_sources`. 모든 item이 `tool_output`이라 세 시스템이 같은 텍스트를 본다.
+`metric-1/results/all_new_sources`. 모든 item이 `tool_output`이라 세 시스템이 같은 텍스트를 본다.
 
 | 시스템 | recall | precision | F2 | partial 비율 | recall (PASSWORD / SECRET / TOKEN) |
 |---|---|---|---|---|---|

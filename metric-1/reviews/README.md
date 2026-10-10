@@ -29,16 +29,16 @@
 python metric-1/scripts/convert_swe_gym.py --swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories
 # 2. 후보를 낼 탐지기 실행 (모든 채널)
 python metric-1/scripts/run_gitleaks.py --sessions metric-1/data_test/sessions_from_SWE-Gym.jsonl --channels all
-python metric-1/scripts/evaluate.py run --system gitleaks --findings runs/gitleaks/sessions_from_SWE-Gym.jsonl \
-    --sessions metric-1/data_test/sessions_from_SWE-Gym.jsonl --out runs/review
+python metric-1/scripts/evaluate.py run --system gitleaks --findings metric-1/results/gitleaks/sessions_from_SWE-Gym.jsonl \
+    --sessions metric-1/data_test/sessions_from_SWE-Gym.jsonl --out metric-1/results/review
 python metric-1/scripts/evaluate.py run --system credsweeper --ml off --channels all \
-    --sessions metric-1/data_test/sessions_from_SWE-Gym.jsonl --out runs/review
-# 3. 후보 모으기: 탐지기 결과 + 정규식, 기계적인 판정은 미리 채움 (값이 든 작업 파일은 runs/ 아래에만)
+    --sessions metric-1/data_test/sessions_from_SWE-Gym.jsonl --out metric-1/results/review
+# 3. 후보 모으기: 탐지기 결과 + 정규식, 기계적인 판정은 미리 채움 (값이 든 작업 파일은 metric-1/results/ 아래에만)
 python metric-1/scripts/review_candidates.py collect metric-1/data_test/sessions_from_SWE-Gym.jsonl \
-    --runs runs/review/<credsweeper 실행 폴더> runs/review/<gitleaks 실행 폴더> --out runs/review/SWE-Gym.worksheet.jsonl
+    --runs metric-1/results/review/<credsweeper 실행 폴더> metric-1/results/review/<gitleaks 실행 폴더> --out metric-1/results/review/SWE-Gym.worksheet.jsonl
 # 4. 작업 파일에서 verdict가 비어 있는 행을 판정한다 (verdict, reason, credential이면 type)
 # 5. 값 없이 기록
-python metric-1/scripts/review_candidates.py apply runs/review/SWE-Gym.worksheet.jsonl --out metric-1/reviews/SWE-Gym.jsonl
+python metric-1/scripts/review_candidates.py apply metric-1/results/review/SWE-Gym.worksheet.jsonl --out metric-1/reviews/SWE-Gym.jsonl
 # 6. 정답을 넣어 다시 변환
 python metric-1/scripts/convert_swe_gym.py --swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories
 ```

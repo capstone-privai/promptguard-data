@@ -3,8 +3,8 @@
 지표 1 데이터셋으로 기존 시스템(CredSweeper, gitleaks)과 PromptGuard 데모를 채점했을 때 recall이 낮게 나온 자리를 span 단위로 따라가 원인을 정리한 문서다. 놓친 정답 span마다 원문에서 채널, 값 앞 문맥, 값의 모양을 붙여 recall을 나눠 보고, 원인이 의심되면 해당 도구에 같은 값을 직접 넣어 확인했다. 2026-10-08에 더한 외부 소스 4개로 본 약점은 [새 외부 소스로 본 기존 시스템의 약점](README_baseline-new-sources.md)에 따로 정리했다.
 
 - 대상 실행
-  - 합성 데이터(`sessions`, `sessions_2`, `sessions_from_example`): `runs/all_20261008-010650`. 합성 AWS 키 ID 생성을 고친 뒤([8절](#8-형식에-맞지-않는-값)) 다시 만든 데이터다.
-  - CredData, privesc-llm-data: `runs/all_20261007-221606`. 그 뒤로 채점기와 이 두 데이터는 바뀌지 않았다.
+  - 합성 데이터(`sessions`, `sessions_2`, `sessions_from_example`): `metric-1/results/all_20261008-010650`. 합성 AWS 키 ID 생성을 고친 뒤([8절](#8-형식에-맞지-않는-값)) 다시 만든 데이터다.
+  - CredData, privesc-llm-data: `metric-1/results/all_20261007-221606`. 그 뒤로 채점기와 이 두 데이터는 바뀌지 않았다.
 - 도구 버전: CredSweeper 1.18.5, gitleaks 8.30.1, PromptGuard `promptguard-demo-v0@915492b`(predictor=mock)
 - 판정은 [채점 기준](../metric-1/README.md#채점-기준)을 따른다. `partial`(일부만 가림)도 실패로 센다.
 - 시스템 구성: CredSweeper와 gitleaks는 네 채널을 모두 본다. PromptGuard는 `tool_output`만 처리하고, 탐지는 CredSweeper(ML off)이며 mock predictor는 후보를 모두 MASK한다.

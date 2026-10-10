@@ -8,7 +8,7 @@
 
 원인이 의심되면 같은 줄을 도구에 직접 넣어 확인했다. 아래 표의 "찾음", "못 찾음"은 그 결과다.
 
-- 대상 실행: `runs/all_new_sources`. 지금 `data_test/`, `data_answer/`의 네 데이터와 SHA-256이 같다.
+- 대상 실행: `metric-1/results/all_new_sources`. 지금 `data_test/`, `data_answer/`의 네 데이터와 SHA-256이 같다.
 - 도구 버전: CredSweeper 1.18.5, gitleaks 8.30.1(기본 설정), PromptGuard `promptguard-demo-v0@915492b`(predictor=mock)
 - 판정은 [채점 기준](../metric-1/README.md#채점-기준)을 따른다. `partial`(일부만 가림)도 실패로 센다.
 - 시스템 구성: CredSweeper와 gitleaks는 네 채널을 모두 본다. PromptGuard는 `tool_output`만 처리하고 탐지는 CredSweeper(ML off)라서, 아래 CredSweeper의 약점을 그대로 물려받는다.

@@ -198,7 +198,7 @@ python metric-1/scripts/evaluate.py run --system credsweeper|oracle|identity [--
 
 # gitleaks: 먼저 탐지 결과를 만들고(gitleaks 설치 필요, 예: brew install gitleaks), 그 결과로 채점한다
 python metric-1/scripts/run_gitleaks.py --sessions <sessions 파일>
-python metric-1/scripts/evaluate.py run --system gitleaks --findings runs/gitleaks/<sessions 이름>.jsonl --sessions <sessions 파일>
+python metric-1/scripts/evaluate.py run --system gitleaks --findings metric-1/results/gitleaks/<sessions 이름>.jsonl --sessions <sessions 파일>
 ```
 
-결과는 `runs/<시각>_<system>/`에 쌓인다. 세션의 `meta.allowed_use`에 실행 용도(기본 `rule_eval`, CredSweeper ML 검증이면 `ml_eval`)가 없으면 실행하지 않는다. `oracle`은 recall 1.0, precision 1.0이, `identity`는 recall 0.0, precision `N/A`가 나와야 하므로 채점기 점검용으로 쓴다. 옵션, 채널 대응, 결과 파일은 [evaluation/README.md](evaluation/README.md)에 있다.
+결과는 `metric-1/results/<시각>_<system>/`에 쌓인다. 세션의 `meta.allowed_use`에 실행 용도(기본 `rule_eval`, CredSweeper ML 검증이면 `ml_eval`)가 없으면 실행하지 않는다. `oracle`은 recall 1.0, precision 1.0이, `identity`는 recall 0.0, precision `N/A`가 나와야 하므로 채점기 점검용으로 쓴다. 옵션, 채널 대응, 결과 파일은 [evaluation/README.md](evaluation/README.md)에 있다.
