@@ -4,8 +4,12 @@ __pycache__/
 .DS_Store
 :memory:.ses
 runs/
-# metric 1 results hold secret values (per_edit.jsonl, review worksheets)
-metric-1/results/
+# metric 1 results hold secret values (per_edit.jsonl, review worksheets); only the batch summaries
+# (metrics and run folder names) are kept in git
+metric-1/results/**
+!metric-1/results/**/
+!metric-1/results/**/summary.csv
+!metric-1/results/**/summary.md
 .python-version
 metric-1/claude/
 # CredData file contents stay under their source repos' licenses (CredData itself ships only
