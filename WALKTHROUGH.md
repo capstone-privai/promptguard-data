@@ -96,7 +96,7 @@ python3 metric-2/scripts/m2.py build t01 --out /tmp/m2-t01
 cat /tmp/m2-t01/.env
 ```
 
-`DB_PASSWORD=` 뒤에 가짜 비밀번호가 채워져 있다. 값은 지표 1과 같은 생성기로 만들어서 매번 똑같다. 실제 형식의 키(`sk_live_…` 등)를 git에 올리면 GitHub가 push를 막기 때문에 저장소에는 `{{secret:…}}`만 둔다.
+`DB_PASSWORD=` 뒤에 가짜 비밀번호가 채워져 있다. 값은 시드가 고정된 생성기로 만들어서 매번 똑같다(이 문서를 쓸 때는 지표 1의 생성기였고, 2026-10-12부터는 실제 키 형식을 따르는 생성기다. [metric-2/README.md의 비밀 생성기](metric-2/README.md#비밀-생성기-scriptsm2_secretspy) 참고). 실제 형식의 키(`sk_live_…` 등)를 git에 올리면 GitHub가 push를 막기 때문에 저장소에는 `{{secret:…}}`만 둔다.
 
 ### 2-3. 채점기가 맞는지 Claude 없이 확인하기
 

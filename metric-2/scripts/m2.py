@@ -434,6 +434,18 @@ def cmd_selftest(args):
                 print("    ", json.dumps(solved, ensure_ascii=False))
             for problem in lint:
                 print("     lint:", problem)
+    gitleaks_check = getattr(mt.secretgen, "gitleaks_check", None)  # an independent scanner agrees on the format
+    if gitleaks_check:
+        version, missed = gitleaks_check()
+        if not version:
+            print("gitleaks not installed: secret kinds not checked against its rules")
+        elif not missed:
+            print(f"ok  gitleaks {version}: every kind that names a gitleaks rule is found by it")
+        else:
+            print(f"BAD gitleaks {version}: {len(missed)} sample(s) not found by their rule")
+            for miss in missed:
+                print("    ", miss)
+            problems += len(missed)
     print(f"{problems} problem(s)")
     sys.exit(1 if problems else 0)
 
@@ -735,10 +747,11 @@ def cmd_recheck(args):
         for path in sorted(Path(batch).glob("*/*/result.json")):
             r = json.loads(path.read_text(encoding="utf-8"))
             task = tasks[r["task"]]
-            if r.get("secrets_fingerprint", task.fingerprint) != task.fingerprint:
+            # A run without a fingerprint predates them and was built with m2_secrets_v1.py.
+            if (r.get("secrets_fingerprint") or task.legacy_fingerprint) != task.fingerprint:
                 raise SystemExit(f"{path.parent}: built with other secret values than {mt.SECRETS_MODULE.name} gives "
-                                 f"now (another M2_SECRETS, or a changed secret); recheck would compare against "
-                                 f"the wrong values")
+                                 f"now, so recheck would compare against the wrong values. Runs from before "
+                                 f"2026-10-12: M2_SECRETS={mt.LEGACY_SECRETS_MODULE.relative_to(REPO_ROOT)}")
             if task.id not in built_cache:
                 with tempfile.TemporaryDirectory() as d:
                     built_cache[task.id] = mt.build(task, Path(d) / "ws")

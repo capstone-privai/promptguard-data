@@ -1,0 +1,3 @@
+# metric 2: pip install -r metric-2/requirements.txt
+rstr==3.2.2   # secret values (scripts/m2_secrets.py); pinned because another version may draw other values
+PyYAML>=6     # checks that parse YAML

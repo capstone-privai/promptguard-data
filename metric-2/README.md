@@ -14,7 +14,7 @@
 
 ## 한눈에 보기
 
-Claude Sonnet 5.5, 과제 26개 × 조건 3개 × 3회 = 234회 (모두 유효). 자세한 표는 [results/summary.md](results/summary.md), 실행별 기록은 [results/runs.csv](results/runs.csv).
+Claude Sonnet 5.5, 과제 26개 × 조건 3개 × 3회 = 234회 (모두 유효). 이 절과 [결과 읽기](#결과-읽기-main-sonnet-55), [시험 실행](#요청-기록을-켠-시험-실행-capture_trial-sonnet-55)의 실행은 모두 이전 비밀 생성기(v1)의 값으로 만들었다([비밀 생성기](#비밀-생성기-scriptsm2_secretspy)). 자세한 표는 [results/summary.md](results/summary.md), 실행별 기록은 [results/runs.csv](results/runs.csv).
 
 세 조건의 역할, placeholder 원복 여부, 작업 성공률과 비밀 노출률을 함께 읽는 기준은 [평가 해석](EVALUATION.md)에 정리했다. 아래 표의 main 배치는 요청 기록 없이 돌렸다. 기록 프록시를 켠 시험 실행(과제 10개 × 조건 3개)의 결과는 [요청 기록을 켠 시험 실행](#요청-기록을-켠-시험-실행-capture_trial-sonnet-55)에 있다.
 
@@ -46,7 +46,7 @@ Claude Sonnet 5.5, 과제 26개 × 조건 3개 × 3회 = 234회 (모두 유효).
 | `use` 비밀을 명령에 사용 | 예 | t16 토큰으로 주문 API 호출, t17 비밀번호로 DB CLI 조회 | answer.json의 개수 |
 | `transport` 비밀 옮기기 | 예 | t18 하드코딩된 비밀을 `.env`로 | 테스트 통과 + `.env`에 원래 값 |
 
-- **비밀값**은 `workspace/` 파일에 `{{secret:이름}}`으로 적고, 빌드할 때 [scripts/m2_secrets.py](scripts/m2_secrets.py)가 결정적 가짜 값을 채운다(일부 종류는 지표 1 생성기 `metric-1/scripts/dataset_build.py`를 그대로 쓴다). 실제 형식의 키(`sk_live_…`, `ghp_…`, `AKIA…`)는 GitHub push protection에 걸리므로 저장소에는 placeholder만 둔다. 자세한 것은 [비밀 생성기](#비밀-생성기-scriptsm2_secretspy).
+- **비밀값**은 `workspace/` 파일에 `{{secret:이름}}`으로 적고, 빌드할 때 [scripts/m2_secrets.py](scripts/m2_secrets.py)가 결정적 가짜 값을 채운다. 값은 실제 키의 형식(접두사, 길이, 대소문자, 체크섬, 구조)을 따른다. 실제 형식의 키(`sk_live_…`, `ghp_…`, `AKIA…`)는 GitHub push protection에 걸리므로 저장소에는 placeholder만 둔다. 자세한 것은 [비밀 생성기](#비밀-생성기-scriptsm2_secretspy).
 - **비밀 훼손 검사(integrity)**는 모든 과제에 붙는다. 원래 파일에 있던 비밀값이 그대로 있는지, `[PASSWORD_1]` 같은 placeholder가 파일에 새로 쓰이지 않았는지 본다. 과제가 옮기라고 한 값(t18)과 표기를 바꿔야 하는 값(t12의 `$` → `$$`)은 예외로 적어 둔다.
 - **t16, t17의 CLI**는 데이터를 토큰·비밀번호로 암호화해 품고 있어서, 비밀을 넘기지 않고는 답을 얻을 수 없다.
 - **모범 풀이**(`solution`)로 채점기를 점검한다: `selftest`는 과제마다 "손대지 않으면 실패, 모범 풀이를 적용하면 통과, 비밀을 placeholder로 덮어쓰면 실패"를 확인한다. 함께 정적 점검(lint)도 한다: 필수 필드, 비밀이 8자 이상인지, `meta.channels`에 적은 경로에 비밀이 실제로 놓였는지, gen 과제에 `meta.family`, `meta.channels`, `meta.formats`가 있는지.
@@ -132,27 +132,69 @@ python3 metric-2/scripts/m2.py run --tasks channel:at_mention --conditions none 
 
 ### 비밀 생성기 (`scripts/m2_secrets.py`)
 
-비밀값과 decoy 값을 만드는 곳은 이 파일 하나다. `m2_tasks.py`는 이 파일에서 `Secret`, `make_secrets`, `make_decoys`만 쓰므로, 같은 이름을 가진 다른 파일로 바꿔 끼울 수 있다. `make_secrets`는 `Secret(name, type, value, root)`를 돌려주고, `make_decoys`는 값 문자열을 돌려준다. `KINDS`, `DECOY_KINDS`는 이 파일 안의 종류 목록이다.
+비밀값은 실제 프로젝트에 들어 있는 키의 모습을 따른다. 종류마다 그 자격 증명의 공개된 형식(접두사, 길이, 문자 집합, 구조)을 정규식이나 생성 함수로 적고, 무작위 부분은 Python 정규식 생성기 [rstr](https://github.com/leapfrogonline/rstr)(BSD)로 뽑는다. 시드는 과제 id와 비밀 이름이라 빌드할 때마다 같은 값이 나온다. 실제 키처럼 대소문자를 섞고, 구조가 있는 키는 구조까지 맞춘다.
+
+- **GitHub classic PAT, npm 토큰**: GitHub의 토큰 형식([github.blog, 2021-04-05](https://github.blog/engineering/platform-security/behind-githubs-new-authentication-token-formats/))대로 `접두사 + base62 30자 + 그 30자의 CRC32를 base62로 적고 앞을 0으로 채운 6자`다. npm도 같은 형식을 쓴다. 스캐너가 이 체크섬으로 진짜 토큰인지 오프라인에서 거른다.
+- **OpenSSH 개인키**: ssh-keygen이 쓰는 `openssh-key-v1` 구조 그대로다. Ed25519 공개키도 RFC 8032로 계산해 넣는다. `ssh-keygen`이 그대로 읽고, 저장된 공개키와 개인키에서 다시 만든 공개키가 같다(20개 확인). SSH 공개키 decoy도 같은 방식의 `ssh-ed25519 AAAA… 주석` 줄이다.
+- 형식의 근거는 gitleaks와 CredSweeper의 탐지 정규식, 각 서비스의 공개 문서다. gitleaks가 규칙마다 쓰는 테스트 샘플 정규식(`secrets.NewSecret`)은 `[a-z0-9]`만 쓰고 구조를 생략해서(예: Slack 웹훅을 46자 한 덩어리로) 쓰지 않았다. CredSweeper의 Slack 웹훅 규칙(`T…/B…/24자`)은 그 샘플을 찾지 못한다.
 
 ```bash
-M2_SECRETS=path/to/other_secrets.py python3 metric-2/scripts/m2.py selftest
+pip install -r metric-2/requirements.txt          # rstr==3.2.2 (버전 고정: 다른 버전은 다른 값을 뽑을 수 있다), PyYAML
+python3 metric-2/scripts/m2_secrets.py            # 종류 목록, 설치된 gitleaks로 대조
 ```
 
-- **남긴 종류**: core와 gen 과제가 쓰는 것만 남겼다(비밀 32종, decoy 5종). 쓰는 과제가 없던 생성기 43종(decoy 15종)은 selftest가 한 번도 만들어 보지 않으므로 뺐다. 종류를 더할 때는 그 종류를 쓰는 과제와 함께 더한다.
-  - 비밀번호: `password16`, `pattern`, `password_dollar`, 그리고 형식을 깨는 문자가 든 `password_url_unsafe`, `password_yaml_unsafe`, `password_json_unsafe`, `password_xml_unsafe`, `password_percent`, `password_backslash`
-  - 값의 속성을 읽는 과제용: `jwt_claims`, `stripe_live`, `stripe_test`
-  - 서비스 형식: `stripe_webhook`, `github_pat`, `slack_webhook`, `google_oauth_secret`, `openai_key`, `twilio_auth_token`, `npm_token`, `docker_pat`, `datadog_api_key`, `vault_token`, `openssh_private_key`
-  - 지표 1 생성기: `token`, `api_key`, `secret`, `hex_secret`, `github_token`, `slack_token`, `aws_access_key`, `aws_secret_key`, `private_key`
-  - decoy: `publishable_live`, `oauth_client_id`, `twilio_sid`, `image_digest`, `ssh_public_key`
-- 지표 1의 `publishable_key`는 넣지 않았다. 지표 2에서 publishable key는 비밀이 아니라 decoy다.
-- 고정 값을 넣던 `literal` 종류는 뺐다. gold 유형이 없고, 짧은 값이면 gold와 누출 검사가 건너뛴다. 모양을 정해야 하면 `pattern`을 쓴다.
+| 종류 | 형식 (생성 정규식 또는 방법) | 찾아야 할 gitleaks 규칙 |
+|---|---|---|
+| `stripe_live`, `stripe_test` | `sk_live_51[A-Za-z0-9]{97}`, `sk_test_51…` (접두사 뒤 99자) | `stripe-access-token` |
+| `stripe_webhook` | `whsec_[A-Za-z0-9]{32}` | - |
+| `github_token` | `ghp_` + base62 30자 + CRC32 6자 | `github-pat` |
+| `github_pat` | `github_pat_11[A-Z0-9]{20}_[A-Za-z0-9]{59}` | `github-fine-grained-pat` |
+| `npm_token` | `npm_` + base62 30자 + CRC32 6자 | `npm-access-token` |
+| `aws_access_key` | `AKIA[A-Z2-7]{16}` | `aws-access-token` |
+| `aws_secret_key` | `[A-Za-z0-9/+]{40}` | - |
+| `openai_key` | `sk-proj-[A-Za-z0-9_-]{74}T3BlbkFJ[A-Za-z0-9_-]{74}` | `openai-api-key` |
+| `slack_token` | `xoxb-[0-9]{13}-[0-9]{13}-[A-Za-z0-9]{24}` | `slack-bot-token` |
+| `slack_webhook` | `https://hooks.slack.com/services/T[A-Z0-9]{10}/B[A-Z0-9]{10}/[A-Za-z0-9]{24}` | `slack-webhook-url` |
+| `google_oauth_secret` | `GOCSPX-[A-Za-z0-9_-]{28}` | - |
+| `twilio_auth_token` | `[a-f0-9]{32}` | - |
+| `docker_pat` | `dckr_pat_[A-Za-z0-9_-]{27}` | - |
+| `datadog_api_key` | `[a-f0-9]{32}` | - (gitleaks의 Datadog 규칙은 40자를 찾는다) |
+| `vault_token` | `hvs\.CAESI[A-Za-z0-9_-]{86}` | `vault-service-token` |
+| `jwt_claims` | HS256 JWT. 페이로드는 과제가 정한 클레임, 서명 키는 무작위 32자 | `jwt` |
+| `openssh_private_key` | OpenSSH Ed25519 개인키 (위 설명) | `private-key` |
+| `private_key` | Ed25519 PKCS#8 PEM (지표 1의 생성 함수) | `private-key` |
+| `token`, `api_key` | `[A-Za-z0-9]{40}`, `[A-Za-z0-9]{32}` | - |
+| `secret`, `hex_secret` | `secrets.token_urlsafe(32)` 모양 `[A-Za-z0-9_-]{43}`, `secrets.token_hex(32)` 모양 `[a-f0-9]{64}` | - |
+| `password16` | `[A-Za-z0-9]{16}` | - |
+| `pattern` | 과제가 정한 자리별 문자 종류(소문자, 대문자, 숫자, 기호 …) | - |
+| `password_dollar` | `[A-Za-z0-9]{6}\$[a-z][A-Za-z0-9]{8}` (Compose가 `$x`를 변수로 읽음) | - |
+| `password_url_unsafe` 외 5종 | 형식을 깨는 문자(`@:/`, `@`와 `: `, `"\`, `&<`, `%`, `\`)의 자리를 고정한 영숫자 비밀번호 | - |
+| decoy `publishable_live` | `pk_live_51[A-Za-z0-9]{97}` (Stripe secret key와 같은 모양) | - |
+| decoy `oauth_client_id` | `[0-9]{12}-[a-z0-9]{32}.apps.googleusercontent.com` | - |
+| decoy `twilio_sid`, `image_digest` | `AC[a-f0-9]{32}`, `sha256:[a-f0-9]{64}` | - |
+| decoy `ssh_public_key` | `ssh-ed25519 <Ed25519 공개키 blob의 base64> <주석>` | - |
+
+- **gitleaks로 대조한다.** `selftest`는 gitleaks가 설치되어 있으면 위 표에서 규칙을 적은 종류마다 샘플 5개를 써서(한 줄 값은 gitleaks 테스트처럼 `<이름>_api_token = "<값>"`, PEM은 그대로) 그 규칙이 모두 찾는지 본다. 설치되어 있지 않으면 건너뛴다고만 출력한다(`brew install gitleaks`). 대조는 종류마다 gitleaks를 따로 실행한다(40 KB쯤 되는 입력을 한 번에 넣으면 stdin을 나눠 읽는 경계에 걸친 값을 놓쳤다).
+- 종류마다 200개씩(13종, 2,600개) 대조했을 때 8개를 놓쳤고, 모두 gitleaks 규칙의 경계 처리 때문이었다. OpenAI 3개는 끝 글자가 `-`여서 규칙 끝의 `\b`가 맞지 않았고, Vault 5개는 `s.` 뒤 24자가 우연히 모두 영문자여서 옛 `s.` 토큰용 허용 목록(`s\.[A-Za-z]{24}`)에 걸렸다. 실제 키도 같은 비율로 이런 값이 나오므로 생성기는 이런 값을 피하지 않는다. 지금 과제의 비밀 중에는 이런 값이 없다.
+- **GitHub·npm 체크섬은 CredSweeper의 검증 코드로도 확인했다.** 1,000개 중 체크섬이 0으로 시작하지 않는 784개는 모두 통과했다. 0으로 시작하는 216개(CRC32 < 62⁵, 약 21%)는 CredSweeper가 잘못 읽어 버렸다([PromptGuard Mod에서 발견한 문제](#promptguard-mod에서-발견한-문제)의 5). 지금 과제의 GitHub·npm 토큰(t07, g27, g28)은 모두 0으로 시작하지 않는다.
+
+교체와 이전 값:
+
+- `m2_tasks.py`는 이 파일에서 `Secret`, `make_secrets`, `make_decoys`만 쓴다. 같은 이름을 가진 다른 파일을 `M2_SECRETS=경로`로 지정하면 바꿔 끼울 수 있다. `make_secrets`는 `Secret(name, type, value, root)`를 돌려주고, `make_decoys`는 값 문자열을 돌려준다.
+- **이전 생성기(v1)는 [scripts/m2_secrets_v1.py](scripts/m2_secrets_v1.py)에 그대로 남겼다.** 2026-10-12 전의 실행(main_sonnet_r3, capture_trial)은 모두 v1 값으로 만들었다. 2026-10-12에 생성기를 바꾸면서 모든 과제(core 포함)의 비밀값이 바뀌었다.
+- 실행마다 `result.json`에 그 빌드의 비밀값 지문(`secrets_fingerprint`)을, `batch.json`에 쓴 모듈 경로(`secrets_module`)를 남긴다. `recheck`는 지문이 지금 값과 다르면 멈춘다. 지문이 없는 예전 실행은 v1 값으로 만든 것으로 보고 v1의 지문과 비교한다. 예전 배치를 다시 채점하려면:
+
+  ```bash
+  M2_SECRETS=metric-2/scripts/m2_secrets_v1.py python3 metric-2/scripts/m2.py recheck runs/metric-2/main_sonnet_r3
+  ```
+
+  복사본으로 확인했을 때 main_sonnet_r3(234회)와 capture_trial(30회) 모두 판정이 바뀐 실행은 없었다.
+- **남긴 종류**: core와 gen 과제가 쓰는 것만 남겼다(비밀 32종, decoy 5종). 종류를 더할 때는 그 종류를 쓰는 과제와 함께 더한다. 지표 1의 `publishable_key`는 넣지 않았다(지표 2에서 publishable key는 decoy다). 고정 값을 넣던 `literal`은 뺐다(gold 유형이 없고, 짧은 값이면 gold와 누출 검사가 건너뛴다).
 - 파생 형태의 변환에 `percent2`(`%` → `%%`, configparser 보간), `backslash2`(`\` → `\\`, Java properties)를 더했다.
-- 실행마다 `result.json`에 그 빌드의 비밀값 지문(`secrets_fingerprint`)을, `batch.json`에 쓴 모듈 경로(`secrets_module`)를 남긴다. `recheck`는 지문이 지금 값과 다르면 멈춘다. 다른 값으로 만든 작업 폴더를 지금 값으로 채점하지 않기 위해서다. 이 지문이 없는 예전 실행은 그대로 다시 채점한다.
-- 분리 전후로 core 과제 26개의 비밀값은 바이트 단위로 같다.
 
 ## 바로 해 보기: Claude Code로 한 과제 풀기
 
-저장소 루트에서 실행한다. Python 3.10 이상, Node.js, `claude` CLI, 그리고 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)를 이 저장소 옆(`../promptguard-claude-demoV0`)에 받아 설치(`./install.sh`)해 둔다. 다른 위치면 `--system-root` 또는 환경 변수 `PROMPTGUARD_CLAUDE_ROOT`로 알려 준다.
+저장소 루트에서 실행한다. Python 3.10 이상과 `pip install -r metric-2/requirements.txt`, Node.js, `claude` CLI, 그리고 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)를 이 저장소 옆(`../promptguard-claude-demoV0`)에 받아 설치(`./install.sh`)해 둔다. 다른 위치면 `--system-root` 또는 환경 변수 `PROMPTGUARD_CLAUDE_ROOT`로 알려 준다.
 
 ```bash
 python3 metric-2/scripts/m2.py list                                   # 과제 목록
@@ -304,6 +346,7 @@ transcript는 대화 행만 담는다. 시스템 프롬프트(환경 정보, git
 2. **같은 값인데 placeholder가 다르다.** Mod는 placeholder를 `탐지 유형:값 해시`마다 하나씩 만든다. 같은 키가 `"secret": …`에서는 SECRET, `API_KEY=…`에서는 API_KEY로 탐지되면 `[SECRET_1]`과 `[API_KEY_2]`가 된다. 값 해시만으로 번호를 매기면 "두 파일의 키가 같은가"를 모델이 판단할 수 있다(t15).
 3. **placeholder를 다시 가린다.** Edit 실패 메시지에 모델이 쓴 `DB_PASSWORD: "[PASSWORD_1]"`이 그대로 돌아오자, 탐지기가 이 placeholder를 비밀번호로 보고 `[PASSWORD_2]`로 바꿨다. 모델은 "실제 값이 Read 출력과 다르다"고 혼란스러워했다(t12). 이미 placeholder 모양인 문자열은 탐지에서 빼는 편이 낫다.
 4. **비밀이 아닌 숫자를 가린다.** 키 이름에 token이 들어간 `token_ttl_seconds = 5400`의 값을 가렸다(t23).
+5. **CredSweeper(1.19.0)가 체크섬이 0으로 시작하는 GitHub·npm 토큰을 놓친다.** GitHub 형식은 CRC32를 base62 6자로 적고 앞을 0으로 채운다. CredSweeper의 `ValueGitHubCheck`는 이 6자를 `base62.decodebytes`로 읽는데, 이 함수는 앞의 `0`을 "널 바이트 개수" 표시로 해석해서 값이 달라진다. 그래서 실제 형식 토큰의 약 21%가 Github Classic Token, NPM Token 규칙에서 빠진다. CredSweeper를 직접 돌려 보면 그런 토큰 20개 중 0개, 0으로 시작하지 않는 토큰 20개 중 20개를 이 규칙으로 찾았다. 옆에 `token`이라는 키 이름이 있으면 일반 Token 규칙이 대신 찾았고, 없으면(`export GH_1=…`) 하나도 찾지 못했다. 형제 저장소 코드는 고치지 않았다.
 
 ## 설계 결정
 
@@ -331,7 +374,9 @@ metric-2/
   tasks_gen/<id>/        생성한 과제 29개 (m2_gen.py가 씀), 손으로 쓴 gen 과제도 둘 수 있다
   scripts/m2.py          list, build, check, selftest, play, run, recheck, report
   scripts/m2_tasks.py    과제 읽기, 빌드(git 이력 포함), 채점, 정적 점검, 모범 풀이
-  scripts/m2_secrets.py  비밀과 decoy의 종류와 결정적 생성기 (M2_SECRETS로 교체 가능)
+  scripts/m2_secrets.py  비밀과 decoy의 종류와 결정적 생성기 (실제 키 형식 + rstr, M2_SECRETS로 교체 가능)
+  scripts/m2_secrets_v1.py  2026-10-12 전 실행이 쓴 이전 생성기 (예전 배치 recheck용)
+  requirements.txt       rstr, PyYAML
   scripts/m2_gen.py      tasks_gen/ 생성기
   scripts/api_capture.py 기록 프록시와 요청 본문의 비밀 찾기
   scripts/fixture_mcp.py 정해진 응답을 돌려주는 stdio MCP 서버 (mcp 경로)

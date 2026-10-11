@@ -59,6 +59,8 @@ def load_module(path: Path, name: str):
 SECRETS_MODULE = Path(os.environ.get("M2_SECRETS") or Path(__file__).with_name("m2_secrets.py")).resolve()
 secretgen = load_module(SECRETS_MODULE, "m2_secretgen")
 Secret = secretgen.Secret
+# The generator every run before 2026-10-12 used. Those runs have no secrets_fingerprint in result.json.
+LEGACY_SECRETS_MODULE = Path(__file__).with_name("m2_secrets_v1.py").resolve()
 
 SEED_PREFIX = "metric2"
 SECRET_REF = re.compile(r"\{\{(secret|decoy):([a-z][a-z0-9_]*)\}\}")
@@ -149,6 +151,13 @@ class Task:
         """Short hash of the values this build gets: a run recorded under another secrets module (or an edited
         secret) has a different one, and its saved workspace cannot be checked against these values."""
         return values_fingerprint(self.secrets, self.decoys)
+
+    @property
+    def legacy_fingerprint(self) -> str:
+        """The fingerprint this task had under m2_secrets_v1.py, for runs recorded before fingerprints were."""
+        legacy = load_module(LEGACY_SECRETS_MODULE, "m2_secretgen_v1")
+        return values_fingerprint(legacy.make_secrets(self.id, self.spec.get("secrets", {})),
+                                  legacy.make_decoys(self.id, self.spec.get("decoys", {})))
 
     def fill(self, text: str) -> str:
         def value(m: re.Match) -> str:

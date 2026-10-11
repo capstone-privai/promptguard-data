@@ -1,29 +1,32 @@
-"""Metric 2 secret values: the kinds a task can declare and the deterministic generator behind them.
+"""Metric 2 secret values: synthetic keys in the shape real projects hold.
 
-This is the one place that decides what a secret looks like. m2_tasks.py uses three names from it, and any
-module with the same three can replace it (set M2_SECRETS=path/to/module.py):
+Every kind follows the public format of the credential it stands for: its prefix, length, alphabet and structure
+(mixed-case base62 where the provider uses it, the CRC32 checksum GitHub and npm put in their tokens, the binary
+layout of an OpenSSH key). The random part is drawn with rstr (github.com/leapfrogonline/rstr, BSD), a Python
+regex-to-string generator, seeded with the task id and the secret name, so every build of a task is
+byte-identical. The values are public synthetic values: never use them to authenticate anywhere.
+
+A kind names the gitleaks rule (github.com/gitleaks/gitleaks, MIT) that should find it, where gitleaks has one,
+and selftest runs the installed gitleaks to check that it does: an independent scanner agrees the value looks like
+that provider's key.
+
+  python3 metric-2/scripts/m2_secrets.py     list the kinds and check them with the installed gitleaks
+
+m2_tasks.py uses three names from this module, and any module with the same three can replace it (set
+M2_SECRETS=path/to/module.py; m2_secrets_v1.py is the generator every run before 2026-10-12 used):
 
   Secret                          dataclass(name, type, value, root)
   make_secrets(task_id, specs)    {name: Secret} for task.json "secrets"
   make_decoys(task_id, specs)     {name: value} for task.json "decoys"
 
-KINDS and DECOY_KINDS below are this module's catalog of the kinds a task may use.
-
 A spec is {"kind": <kind>} (plus the kind's own fields: "pattern", "claims", "comment") or a derived form
 {"from": <earlier name>, "transforms": [...]} such as the base64 or JSON-escaped text of a secret. A derived
 secret keeps the root of its base, so a leak of any form counts as a leak of the declared secret.
 
-Values are seeded with the task id and the secret name, so every build of a task is byte-identical. They are
-public synthetic values: never use them to authenticate anywhere. Some kinds reuse the metric 1 generator
-(metric-1/scripts/dataset_build.py), so the two metrics see the same shapes.
-
 Which kinds are here: the ones some task in metric-2/tasks or metric-2/tasks_gen uses, so selftest builds every
-generator at least once. A provider format follows the public shape of that credential (prefix, length,
-alphabet) so a detector sees what it would see in a real project. A password kind with a special character
-exists for a task that must escape it. Add a kind together with the task that needs it.
-
-Decoys are look-alike values that are not secrets (a publishable key, a public SSH key, an image digest). They
-are generated the same way but are never gold and never counted as a leak.
+generator at least once. Add a kind together with the task that needs it. Decoys are look-alike values that are
+not secrets (a publishable key, a public SSH key, an image digest): generated the same way, never gold, never
+counted as a leak.
 """
 from __future__ import annotations
 
@@ -31,24 +34,25 @@ import base64
 import hashlib
 import hmac
 import json
+import random
+import shutil
+import subprocess
 import sys
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 from urllib.parse import quote
 
+try:
+    import rstr
+except ImportError:  # pragma: no cover
+    raise SystemExit("metric 2 needs rstr: pip install -r metric-2/requirements.txt")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "metric-1" / "scripts"))
-import dataset_build as m1  # noqa: E402  (shared synthetic value generator)
+import dataset_build as m1  # noqa: E402  (metric 1 transforms and its Ed25519 PKCS#8 builder)
 
 SEED_PREFIX = "metric2"
-
-ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-CLASSES = {"l": "abcdefghijkmnopqrstuvwxyz", "u": "ABCDEFGHJKLMNPQRSTUVWXYZ", "d": "23456789",
-           "s": "!#%*+-=?@^_~", "a": ALNUM, "h": "0123456789abcdef"}
-B64 = ALNUM + "+/"
-B64URL = ALNUM + "-_"
-HEX = "0123456789abcdef"
-DIGITS = "0123456789"
-UPPER_DIGITS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 
 @dataclass
@@ -59,85 +63,188 @@ class Secret:
     root: str = ""  # the declared base secret a derived form comes from
 
 
-def v(seed: str, length: int, alphabet: str = ALNUM) -> str:
-    return m1.value(seed, length, alphabet)
+@dataclass(frozen=True)
+class Kind:
+    type: str | None                 # gold type (None for a decoy)
+    regex: str = ""                  # the value is a random string matching this regex
+    source: str = ""                 # the real format it follows
+    rule: str = ""                   # the gitleaks rule that should find it ("" if gitleaks has none)
+    build: Callable[[rstr.Rstr, str, dict], str] | None = None  # for a value a regex cannot describe
 
 
-def b64url(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+# ---- builders for structured values ------------------------------------------------------------------------
+
+BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 
-def jwt_with_claims(seed: str, claims: dict) -> str:
+def checksummed(prefix: str) -> Callable[[rstr.Rstr, str, dict], str]:
+    """GitHub's token format (github.blog, 2021-04-05), which npm adopted: prefix, 30 random base62 characters,
+    then the CRC32 of those 30 characters in base62, zero-padded to 6. Scanners check it offline."""
+    def build(gen: rstr.Rstr, _seed: str, _spec: dict) -> str:
+        body = gen.xeger("[A-Za-z0-9]{30}")
+        crc, digits = zlib.crc32(body.encode()), ""
+        while crc:
+            crc, r = divmod(crc, 62)
+            digits = BASE62[r] + digits
+        return prefix + body + digits.rjust(6, "0")
+    return build
+
+
+def jwt_with_claims(gen: rstr.Rstr, _seed: str, spec: dict) -> str:
+    """An HS256 JWT whose payload is the task's claims (a task reads the expiry), signed with a random key."""
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).decode().rstrip("=")
     header = b64url(b'{"alg":"HS256","typ":"JWT"}')
-    payload = b64url(json.dumps(claims, separators=(",", ":")).encode())
-    signature = b64url(hmac.new(m1.value(seed + ":jwt-key", 32).encode(), f"{header}.{payload}".encode(),
-                                hashlib.sha256).digest())
-    return f"{header}.{payload}.{signature}"
+    payload = b64url(json.dumps(spec["claims"], separators=(",", ":")).encode())
+    key = gen.xeger(r"[A-Za-z0-9]{32}").encode()
+    return f"{header}.{payload}.{b64url(hmac.new(key, f'{header}.{payload}'.encode(), hashlib.sha256).digest())}"
 
 
-def from_pattern(seed: str, pattern: str) -> str:
-    """One character per pattern letter: l lower, u upper, d digit, s symbol, a alphanumeric, h hex."""
-    return "".join(m1.value(f"{seed}:{i}", 1, CLASSES[c]) for i, c in enumerate(pattern))
+PATTERN_CLASSES = {"l": "[a-km-z]", "u": "[A-HJ-NP-Z]", "d": "[2-9]", "s": r"[!#%*+\-=?@^_~]", "a": "[A-Za-z0-9]",
+                   "h": "[0-9a-f]"}
 
 
-def fake_pem(seed: str, label: str, n_bytes: int, width: int = 64) -> str:
-    """A PEM block with a random body. It has the shape of a key but is not a parsable key."""
-    body = base64.b64encode(hashlib.shake_256(f"{SEED_PREFIX}:pem:{seed}".encode()).digest(n_bytes)).decode()
-    lines = [body[i:i + width] for i in range(0, len(body), width)]
-    return f"-----BEGIN {label}-----\n" + "\n".join(lines) + f"\n-----END {label}-----"
+def from_pattern(gen: rstr.Rstr, _seed: str, spec: dict) -> str:
+    """A password with a fixed character class per position: l lower, u upper, d digit, s symbol, a alphanumeric,
+    h hex (a task reads its policy)."""
+    return gen.xeger("".join(PATTERN_CLASSES[c] for c in spec["pattern"]))
 
 
-# Metric 1 kinds metric 2 tasks use, with metric 1's gold type. Its publishable_key is left out on purpose:
-# metric 2 counts a publishable key as a decoy, not a secret.
-M1_KINDS = ("token", "api_key", "secret", "hex_secret", "github_token", "slack_token", "aws_access_key",
-            "aws_secret_key", "private_key")
+# Ed25519 public key from a seed (RFC 8032, section 5.1.5), so an OpenSSH key holds a matching key pair.
+_P = 2 ** 255 - 19
+_D = -121665 * pow(121666, _P - 2, _P) % _P
 
-# kind -> (gold type, generator(seed, spec) -> value)
-KINDS = {
+
+def _x_from_y(y: int) -> int:
+    x2 = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P) % _P
+    x = pow(x2, (_P + 3) // 8, _P)
+    if (x * x - x2) % _P:
+        x = x * pow(2, (_P - 1) // 4, _P) % _P
+    return _P - x if x & 1 else x
+
+
+def _add(a: tuple, b: tuple) -> tuple:
+    p, q = (a[1] - a[0]) * (b[1] - b[0]) % _P, (a[1] + a[0]) * (b[1] + b[0]) % _P
+    r, s = 2 * a[3] * b[3] * _D % _P, 2 * a[2] * b[2] % _P
+    e, f, g, h = q - p, s - r, s + r, q + p
+    return e * f % _P, g * h % _P, f * g % _P, e * h % _P
+
+
+_GY = 4 * pow(5, _P - 2, _P) % _P
+_G = (_x_from_y(_GY), _GY, 1, _x_from_y(_GY) * _GY % _P)
+
+
+def ed25519_public(seed: bytes) -> bytes:
+    h = hashlib.sha512(seed).digest()
+    scalar = (int.from_bytes(h[:32], "little") & ((1 << 254) - 8)) | (1 << 254)
+    point, base = (0, 1, 1, 0), _G
+    while scalar:
+        if scalar & 1:
+            point = _add(point, base)
+        base, scalar = _add(base, base), scalar >> 1
+    z = pow(point[2], _P - 2, _P)
+    x, y = point[0] * z % _P, point[1] * z % _P
+    return (y | (x & 1) << 255).to_bytes(32, "little")
+
+
+def _ssh_string(data: bytes) -> bytes:
+    return len(data).to_bytes(4, "big") + data
+
+
+def openssh_key(_gen: rstr.Rstr, seed: str, spec: dict) -> str:
+    """An unencrypted OpenSSH Ed25519 private key in the layout ssh-keygen writes (openssh-key-v1)."""
+    rng = random.Random(seed + ":ssh")
+    secret, check = rng.randbytes(32), rng.randbytes(4)
+    public = ed25519_public(secret)
+    key_type = _ssh_string(b"ssh-ed25519")
+    private = (check + check + key_type + _ssh_string(public) + _ssh_string(secret + public)
+               + _ssh_string(spec.get("comment", "deploy@ci").encode()))
+    private += bytes(range(1, 1 + (-len(private)) % 8))
+    blob = (b"openssh-key-v1\0" + _ssh_string(b"none") + _ssh_string(b"none") + _ssh_string(b"")
+            + (1).to_bytes(4, "big") + _ssh_string(key_type + _ssh_string(public)) + _ssh_string(private))
+    body = base64.b64encode(blob).decode()
+    return ("-----BEGIN OPENSSH PRIVATE KEY-----\n" + "\n".join(body[i:i + 70] for i in range(0, len(body), 70))
+            + "\n-----END OPENSSH PRIVATE KEY-----")
+
+
+def ssh_public_key(_gen: rstr.Rstr, seed: str, spec: dict) -> str:
+    """An authorized_keys line for an Ed25519 key."""
+    public = ed25519_public(random.Random(seed + ":ssh").randbytes(32))
+    blob = _ssh_string(b"ssh-ed25519") + _ssh_string(public)
+    return f"ssh-ed25519 {base64.b64encode(blob).decode()} {spec.get('comment', 'deploy@ci')}"
+
+
+# ---- kinds --------------------------------------------------------------------------------------------------
+
+ALNUM = "[A-Za-z0-9]"
+
+KINDS: dict[str, Kind] = {
+    # provider keys
+    "stripe_live": Kind("SECRET", r"sk_live_51[A-Za-z0-9]{97}", "Stripe secret key: sk_live_ + 99 base62",
+                        "stripe-access-token"),
+    "stripe_test": Kind("SECRET", r"sk_test_51[A-Za-z0-9]{97}", "Stripe test secret key: sk_test_ + 99 base62",
+                        "stripe-access-token"),
+    "stripe_webhook": Kind("SECRET", r"whsec_[A-Za-z0-9]{32}", "Stripe webhook signing secret"),
+    "github_token": Kind("TOKEN", source="GitHub classic PAT: ghp_ + 30 base62 + CRC32", rule="github-pat",
+                         build=checksummed("ghp_")),
+    "github_pat": Kind("TOKEN", r"github_pat_11[A-Z0-9]{20}_[A-Za-z0-9]{59}",
+                       "GitHub fine-grained PAT: github_pat_ + 22 + _ + 59", "github-fine-grained-pat"),
+    "npm_token": Kind("TOKEN", source="npm access token: npm_ + 30 base62 + CRC32 (GitHub's format)",
+                      rule="npm-access-token", build=checksummed("npm_")),
+    "aws_access_key": Kind("ACCESS_KEY", r"AKIA[A-Z2-7]{16}", "AWS access key ID: AKIA + 16 base32",
+                           "aws-access-token"),
+    "aws_secret_key": Kind("SECRET", r"[A-Za-z0-9/+]{40}", "AWS secret access key: 40 base64 characters"),
+    "openai_key": Kind("SECRET", r"sk-proj-[A-Za-z0-9_-]{74}T3BlbkFJ[A-Za-z0-9_-]{74}",
+                       "OpenAI project key: sk-proj- + 74 + T3BlbkFJ + 74", "openai-api-key"),
+    "slack_token": Kind("TOKEN", r"xoxb-[0-9]{13}-[0-9]{13}-[A-Za-z0-9]{24}",
+                        "Slack bot token: xoxb-<team>-<bot>-<24 base62>", "slack-bot-token"),
+    "slack_webhook": Kind("SECRET", r"https://hooks\.slack\.com/services/T[A-Z0-9]{10}/B[A-Z0-9]{10}/[A-Za-z0-9]{24}",
+                          "Slack incoming webhook: /services/T<team>/B<bot>/<24 base62>", "slack-webhook-url"),
+    "google_oauth_secret": Kind("SECRET", r"GOCSPX-[A-Za-z0-9_-]{28}", "Google OAuth client secret: GOCSPX- + 28"),
+    "twilio_auth_token": Kind("SECRET", r"[a-f0-9]{32}", "Twilio auth token: 32 hex"),
+    "docker_pat": Kind("TOKEN", r"dckr_pat_[A-Za-z0-9_-]{27}", "Docker Hub access token: dckr_pat_ + 27"),
+    "datadog_api_key": Kind("SECRET", r"[a-f0-9]{32}", "Datadog API key: 32 hex"),
+    "vault_token": Kind("TOKEN", r"hvs\.CAESI[A-Za-z0-9_-]{86}", "HashiCorp Vault service token: hvs. + 91 base64url",
+                        "vault-service-token"),
+    "jwt_claims": Kind("TOKEN", source="HS256 JWT with the task's claims", rule="jwt", build=jwt_with_claims),
+    "openssh_private_key": Kind("PRIVATE_KEY", source="OpenSSH Ed25519 private key (openssh-key-v1)",
+                                rule="private-key", build=openssh_key),
+    "private_key": Kind("PRIVATE_KEY", source="Ed25519 PKCS#8 PEM (metric 1's builder)", rule="private-key",
+                        build=lambda _gen, seed, _spec: m1.ed25519_pem(seed)),
+    # secrets with no provider format: what frameworks and scripts generate
+    "token": Kind("TOKEN", ALNUM + "{40}", "API token: 40 base62"),
+    "api_key": Kind("SECRET", ALNUM + "{32}", "API key: 32 base62"),
+    "secret": Kind("SECRET", r"[A-Za-z0-9_-]{43}", "secrets.token_urlsafe(32): 43 base64url"),
+    "hex_secret": Kind("SECRET", r"[a-f0-9]{64}", "secrets.token_hex(32): 64 hex"),
     # passwords
-    "password16": ("PASSWORD", lambda s, _: m1.value(s, 16, ALNUM)),
-    "pattern": ("PASSWORD", lambda s, spec: from_pattern(s, spec["pattern"])),
-    "password_dollar": ("PASSWORD", lambda s, _: m1.value(s + ":a", 6, ALNUM) + "$"
-                        + m1.value(s + ":b", 1, CLASSES["l"]) + m1.value(s + ":c", 8, ALNUM)),
-    # Passwords with a character that breaks one container format unless escaped (escape tasks).
-    "password_url_unsafe": ("PASSWORD", lambda s, _: v(s + ":a", 5) + "@" + v(s + ":b", 4) + ":" + v(s + ":c", 3)
-                            + "/" + v(s + ":d", 4)),
-    "password_yaml_unsafe": ("PASSWORD", lambda s, _: "@" + v(s + ":a", 8) + ": " + v(s + ":b", 6)),
-    "password_json_unsafe": ("PASSWORD", lambda s, _: v(s + ":a", 6) + '"' + v(s + ":b", 4) + "\\" + v(s + ":c", 5)),
-    "password_xml_unsafe": ("PASSWORD", lambda s, _: v(s + ":a", 6) + "&" + v(s + ":b", 4) + "<" + v(s + ":c", 5)),
-    "password_percent": ("PASSWORD", lambda s, _: v(s + ":a", 6) + "%" + v(s + ":b", 1, "abcdefgh") + v(s + ":c", 7)),
-    "password_backslash": ("PASSWORD", lambda s, _: v(s + ":a", 7) + "\\" + v(s + ":b", 7)),
-    # tokens and keys with a property a task reads (expiry, live or test mode)
-    "jwt_claims": ("TOKEN", lambda s, spec: jwt_with_claims(s, spec["claims"])),
-    "stripe_live": ("SECRET", lambda s, _: "sk_live_" + m1.value(s, 24, ALNUM)),
-    "stripe_test": ("SECRET", lambda s, _: "sk_test_" + m1.value(s, 24, ALNUM)),
-    # provider formats
-    "stripe_webhook": ("SECRET", lambda s, _: "whsec_" + v(s, 32)),
-    "github_pat": ("TOKEN", lambda s, _: "github_pat_" + v(s + ":a", 22) + "_" + v(s + ":b", 59)),
-    "slack_webhook": ("SECRET", lambda s, _: f"https://hooks.slack.com/services/T{v(s + ':a', 10, UPPER_DIGITS)}/"
-                      f"B{v(s + ':b', 10, UPPER_DIGITS)}/{v(s, 24)}"),
-    "google_oauth_secret": ("SECRET", lambda s, _: "GOCSPX-" + v(s, 28, B64URL)),
-    "openai_key": ("SECRET", lambda s, _: "sk-proj-" + v(s + ":a", 64, B64URL) + "T3BlbkFJ" + v(s + ":b", 64, B64URL)),
-    "twilio_auth_token": ("SECRET", lambda s, _: v(s, 32, HEX)),
-    "npm_token": ("TOKEN", lambda s, _: "npm_" + v(s, 36)),
-    "docker_pat": ("TOKEN", lambda s, _: "dckr_pat_" + v(s, 27, B64URL)),
-    "datadog_api_key": ("SECRET", lambda s, _: v(s, 32, HEX)),
-    "vault_token": ("TOKEN", lambda s, _: "hvs." + v(s, 90, B64URL)),
-    "openssh_private_key": ("PRIVATE_KEY", lambda s, _: fake_pem(s, "OPENSSH PRIVATE KEY", 400, 70)),
-    **{kind: (m1.GENERATORS[kind][0], lambda s, _spec, g=m1.GENERATORS[kind][1]: g(s)) for kind in M1_KINDS},
+    "password16": Kind("PASSWORD", ALNUM + "{16}", "password: 16 alphanumeric"),
+    "pattern": Kind("PASSWORD", source="password with a character class per position", build=from_pattern),
+    "password_dollar": Kind("PASSWORD", ALNUM + r"{6}\$[a-z]" + ALNUM + "{8}",
+                            "password with $x, which Compose reads as a variable"),
+    # passwords with a character that breaks one container format unless escaped (escape tasks)
+    "password_url_unsafe": Kind("PASSWORD", ALNUM + "{5}@" + ALNUM + "{4}:" + ALNUM + "{3}/" + ALNUM + "{4}",
+                                "password with @ : / (URL)"),
+    "password_yaml_unsafe": Kind("PASSWORD", "@" + ALNUM + "{8}: " + ALNUM + "{6}", "password with @ and ': ' (YAML)"),
+    "password_json_unsafe": Kind("PASSWORD", ALNUM + '{6}"' + ALNUM + r"{4}\\" + ALNUM + "{5}",
+                                 'password with " and \\ (JSON)'),
+    "password_xml_unsafe": Kind("PASSWORD", ALNUM + "{6}&" + ALNUM + "{4}<" + ALNUM + "{5}", "password with & < (XML)"),
+    "password_percent": Kind("PASSWORD", ALNUM + "{6}%[a-h]" + ALNUM + "{7}", "password with % (configparser)"),
+    "password_backslash": Kind("PASSWORD", ALNUM + r"{7}\\" + ALNUM + "{7}", "password with \\ (Java properties)"),
 }
 
-# Look-alike values that are not secrets. They share a secret's shape (prefix, length, alphabet), so a detector
-# that goes by shape masks them, but a task needs them as they are.
-DECOY_KINDS = {
-    "publishable_live": lambda s, _: "pk_live_" + v(s, 24),
-    "oauth_client_id": lambda s, _: v(s, 12, DIGITS) + "-" + v(s + ":b", 32, "abcdefghijklmnopqrstuvwxyz0123456789")
-                                    + ".apps.googleusercontent.example.invalid",
-    "twilio_sid": lambda s, _: "AC" + v(s, 32, HEX),
-    "image_digest": lambda s, _: "sha256:" + v(s, 64, HEX),
-    "ssh_public_key": lambda s, spec: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI" + v(s, 43, B64) + " "
-                                      + spec.get("comment", "deploy@ci"),
+DECOY_KINDS: dict[str, Kind] = {
+    # Public values in the shape of the secret they sit next to, so a detector that goes by shape masks them.
+    "publishable_live": Kind(None, r"pk_live_51[A-Za-z0-9]{97}", "Stripe publishable key: pk_live_ + 99 base62"),
+    "oauth_client_id": Kind(None, r"[0-9]{12}-[a-z0-9]{32}\.apps\.googleusercontent\.com", "Google OAuth client ID"),
+    "twilio_sid": Kind(None, r"AC[a-f0-9]{32}", "Twilio Account SID: AC + 32 hex"),
+    "image_digest": Kind(None, r"sha256:[a-f0-9]{64}", "container image digest"),
+    "ssh_public_key": Kind(None, source="Ed25519 authorized_keys line", build=ssh_public_key),
 }
+
+
+def generate(kind: Kind, seed: str, spec: dict) -> str:
+    gen = rstr.Rstr(random.Random(seed))
+    return kind.build(gen, seed, spec) if kind.build else gen.xeger(kind.regex)
 
 
 def transform(value: str, name: str, arg: str | None) -> tuple[str, str | None]:
@@ -184,8 +291,8 @@ def make_secrets(task_id: str, specs: dict) -> dict[str, Secret]:
         else:
             if spec["kind"] not in KINDS:
                 raise ValueError(f"{task_id}: unknown secret kind {spec['kind']!r} for {name!r} (see {__file__})")
-            kind_type, generate = KINDS[spec["kind"]]
-            value = generate(f"{SEED_PREFIX}:{task_id}:{name}", spec)
+            kind = KINDS[spec["kind"]]
+            value, kind_type = generate(kind, f"{SEED_PREFIX}:{task_id}:{name}", spec), kind.type
             root = name
         out[name] = Secret(name, spec.get("type") or kind_type, value, root)
     return out
@@ -199,6 +306,61 @@ def make_decoys(task_id: str, specs: dict) -> dict[str, str]:
         else:
             if spec["kind"] not in DECOY_KINDS:
                 raise ValueError(f"{task_id}: unknown decoy kind {spec['kind']!r} for {name!r} (see {__file__})")
-            value = DECOY_KINDS[spec["kind"]](f"{SEED_PREFIX}:{task_id}:decoy:{name}", spec)
+            value = generate(DECOY_KINDS[spec["kind"]], f"{SEED_PREFIX}:{task_id}:decoy:{name}", spec)
         out[name] = value
     return out
+
+
+# ---- checking against gitleaks ------------------------------------------------------------------------------
+
+SAMPLE_SPECS = {"jwt_claims": {"claims": {"sub": "1042", "iat": 1790000000, "exp": 1790003600}}}
+
+
+def gitleaks_check(samples: int = 5) -> tuple[str, list[str]]:
+    """Runs the installed gitleaks on `samples` values of every kind that names a gitleaks rule and reports each
+    value that rule did not find. A one-line value is written the way gitleaks' own tests write theirs
+    (<name>_api_token = "<value>"), a PEM block as it is. Returns (gitleaks version, problems); the version is ""
+    when gitleaks is not installed."""
+    exe = shutil.which("gitleaks")
+    if not exe:
+        return "", []
+    version = subprocess.run([exe, "version"], capture_output=True, text=True).stdout.strip()
+    problems = []
+    for name, kind in KINDS.items():  # one run per kind: gitleaks reads stdin in fragments and can miss a value
+        if not kind.rule:              # that straddles two (seen with ~40 KB of input)
+            continue
+        text, starts = "", []
+        for i in range(samples):
+            value = generate(kind, f"gitleaks-check:{name}:{i}", SAMPLE_SPECS.get(name, {}))
+            starts.append(text.count("\n") + 1)
+            text += (value if "\n" in value else f'{name}_api_token = "{value}"') + "\n\n"
+        proc = subprocess.run([exe, "stdin", "--no-banner", "--report-format", "json", "--report-path", "-",
+                               "--exit-code", "0"], input=text, capture_output=True, text=True)
+        try:
+            found = {f["StartLine"] for f in json.loads(proc.stdout or "[]") if f["RuleID"] == kind.rule}
+        except json.JSONDecodeError:
+            return version, [f"gitleaks output is not JSON: {(proc.stderr or proc.stdout)[:200]}"]
+        problems += [f"{name}: sample {i} not found by gitleaks rule {kind.rule}"
+                     for i, line in enumerate(starts) if line not in found]
+    return version, problems
+
+
+def main():
+    width = max(map(len, KINDS | DECOY_KINDS))
+    for title, kinds in (("secrets", KINDS), ("decoys", DECOY_KINDS)):
+        print(f"{title}:")
+        for name, kind in kinds.items():
+            print(f"  {name:{width}s} {kind.type or '-':11s} {kind.rule or '-':24s} {kind.source}")
+    version, problems = gitleaks_check()
+    if not version:
+        print("\ngitleaks not installed: the values were not checked against its rules")
+        return
+    n = sum(bool(k.rule) for k in KINDS.values())
+    print(f"\ngitleaks {version}: {n} kinds x 5 samples, {len(problems)} not found by their rule")
+    for problem in problems:
+        print("  " + problem)
+    sys.exit(1 if problems else 0)
+
+
+if __name__ == "__main__":
+    main()
