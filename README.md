@@ -5,7 +5,7 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표
 | 폴더 | 내용 | 상태 |
 |---|---|---|
 | [metric-1/](metric-1/) | 탐지·마스킹 평가 데이터, 정답 span, 생성·검증 도구, 채점기 | 합성 파일럿 v0.1(사람 검토 대기) + 외부 소스 6개 |
-| [metric-2/](metric-2/) | 마스킹 조건별 과제 성공 평가: 과제 26개, Claude Code 실행기, 결과 | Sonnet 5.5로 3회 반복한 결과 있음 |
+| [metric-2/](metric-2/) | 마스킹 조건별 과제 성공과 서버 누출 평가: 과제 26개, Claude Code 실행기, API 요청 기록 프록시, 결과 | Sonnet 5.5로 3회 반복한 결과 + 요청 기록을 켠 시험 실행(10개 × 3조건) |
 | [metric-3/](metric-3/) | KEEP 판단 정확도 평가 데이터 | 준비용 폴더 |
 | [docs/](docs/) | 분석 문서: [기존 시스템의 recall이 낮은 이유](docs/README_baseline-recall.md), [새 외부 소스로 본 기존 시스템의 약점](docs/README_baseline-new-sources.md) | 지표 1 채점 결과(2026-10-08) 기준 |
 
@@ -17,4 +17,4 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표
 
 ## 지표 2
 
-과제 26개를 Claude Code로 풀게 하면서, PromptGuard Native Mod 뒤의 탐지기만 바꿔 세 조건(마스킹 없음, 정답 비밀만 마스킹, PromptGuard)을 비교한다. 과제 구성, 바로 실행하는 방법(`m2.py play`), 결과와 실패 사례는 [metric-2/README.md](metric-2/README.md)에 있다.
+과제 26개를 Claude Code로 풀게 하면서, PromptGuard Native Mod 뒤의 탐지기만 바꿔 세 조건(마스킹 없음, 정답 비밀만 마스킹, PromptGuard)을 비교한다. 실행마다 로컬 기록 프록시가 Anthropic API로 나간 요청 본문을 남기고, 과제의 비밀이 서버에 도착했는지와 요청의 어느 자리(시스템 프롬프트, 도구 결과 등)로 갔는지를 잰다. 과제 구성, 바로 실행하는 방법(`m2.py play`), 결과와 실패 사례는 [metric-2/README.md](metric-2/README.md)에, 결과를 읽는 기준은 [metric-2/EVALUATION.md](metric-2/EVALUATION.md)에 있다.
