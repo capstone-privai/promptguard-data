@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <database host="db.internal" port="5432" user="orders_app">
+    <password>{{secret:old_password}}</password>
+    <poolSize>10</poolSize>
+  </database>
+</configuration>

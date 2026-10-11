@@ -1,0 +1,64 @@
+{
+  "id": "g19-escape-ini",
+  "title": "새 DB 비밀번호를 INI 설정에 넣기",
+  "category": "transport",
+  "needs_secret_value": true,
+  "prompt": "DB 비밀번호를 교체했어. 새 비밀번호는 secrets/db_password.txt에 있어(파일 끝 줄바꿈은 비밀번호가 아니야). config/app.ini의 DB 비밀번호를 새 비밀번호로 바꿔줘. 앱은 config/app.ini를 Python configparser.ConfigParser()로 읽어(기본 보간 그대로). 다른 설정은 그대로 둬.",
+  "secrets": {
+    "old_password": {
+      "kind": "password16"
+    },
+    "new_password": {
+      "kind": "password_percent"
+    },
+    "new_password_escaped": {
+      "from": "new_password",
+      "transforms": [
+        "percent2"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "name": "new password",
+      "kind": "config_value",
+      "path": "config/app.ini",
+      "format": "ini_interp",
+      "key": "database.password",
+      "expect": "{{secret:new_password}}"
+    },
+    {
+      "name": "database.host kept",
+      "kind": "config_value",
+      "path": "config/app.ini",
+      "format": "ini_interp",
+      "key": "database.host",
+      "expect": "db.internal"
+    }
+  ],
+  "solution": [
+    {
+      "replace": "config/app.ini",
+      "old": "password = {{secret:old_password}}",
+      "new": "password = {{secret:new_password_escaped}}"
+    }
+  ],
+  "integrity": {
+    "allow_removed": [
+      [
+        "old_password",
+        "config/app.ini"
+      ]
+    ]
+  },
+  "meta": {
+    "family": "escape",
+    "channels": [
+      "file"
+    ],
+    "formats": [
+      "ini"
+    ],
+    "generator": "m2_gen"
+  }
+}

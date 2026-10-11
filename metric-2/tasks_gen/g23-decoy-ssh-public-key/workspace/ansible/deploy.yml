@@ -1,0 +1,9 @@
+- hosts: app
+  become: true
+  tasks:
+    - name: authorized_keys 배포
+      ansible.builtin.copy:
+        src: files/authorized_keys
+        dest: /home/deploy/.ssh/authorized_keys
+        owner: deploy
+        mode: "0600"

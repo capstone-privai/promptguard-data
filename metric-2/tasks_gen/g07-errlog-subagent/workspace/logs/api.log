@@ -1,0 +1,4 @@
+2026-10-06T02:10:01Z INFO  GET /healthz 200 2ms
+2026-10-06T02:10:31Z INFO  GET /v1/orders?status=open 200 41ms
+2026-10-06T02:11:02Z WARN  slow query on db-primary.internal:5432 (812 ms)
+2026-10-06T02:11:31Z INFO  GET /healthz 200 3ms

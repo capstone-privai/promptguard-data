@@ -1,0 +1,6 @@
+# config/settings.yaml로 복사해서 쓴다. 실제 값은 넣지 않는다.
+slack:
+  webhook_url: https://hooks.slack.com/services/XXXX/YYYY/ZZZZ
+  channel: "#deploys"
+http:
+  timeout_s: 10

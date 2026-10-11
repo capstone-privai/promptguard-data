@@ -214,16 +214,6 @@ def collect_transcript(session_id: str, run_dir: Path) -> list[dict]:
     return rows
 
 
-def strings_in(value) -> list[str]:
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [s for v in value for s in strings_in(v)]
-    if isinstance(value, dict):
-        return [s for v in value.values() for s in strings_in(v)]
-    return []
-
-
 def transcript_stats(rows: list[dict], task: mt.Task) -> dict:
     """What the model received and wrote, read from the transcript (which stores each row as the mod left it).
     seen: gold secrets inside user-role rows (the prompt and tool results); written: inside the model's own
@@ -241,7 +231,7 @@ def transcript_stats(rows: list[dict], task: mt.Task) -> dict:
         for block in blocks:
             if not isinstance(block, dict):
                 continue
-            texts = strings_in(block.get("content") if block.get("type") == "tool_result" else
+            texts = mt.strings(block.get("content") if block.get("type") == "tool_result" else
                                block.get("input") if block.get("type") == "tool_use" else block.get("text"))
             target = seen if row["type"] == "user" else written
             for text in texts:
@@ -423,22 +413,27 @@ def cmd_check(args):
 
 
 def cmd_selftest(args):
+    """For every task: untouched fails, the oracle solution passes, a placeholder written over a secret fails,
+    and the static checks (mt.lint_task) find nothing."""
     problems = 0
     for task in mt.load_tasks(args.tasks):
         with tempfile.TemporaryDirectory() as d:
             ws = Path(d) / "ws"
             built = mt.build(task, ws)
             untouched = mt.check_task(task, ws, built)["success"]
+            lint = mt.lint_task(task, built)
             mt.apply_solution(task, ws)
             solved = mt.check_task(task, ws, built)
             corrupted = mt.corrupt_with_placeholder(task, ws, built)
             broken = mt.check_task(task, ws, built)["success"] if corrupted else False
-            ok = not untouched and solved["success"] and not broken
+            ok = not untouched and solved["success"] and not broken and not lint
             problems += not ok
             print(f"{'ok ' if ok else 'BAD'} {task.id:30s} untouched={untouched!s:5} solved={solved['success']!s:5} "
                   f"placeholder_written={'n/a' if not corrupted else broken}")
             if not solved["success"]:
                 print("    ", json.dumps(solved, ensure_ascii=False))
+            for problem in lint:
+                print("     lint:", problem)
     print(f"{problems} problem(s)")
     sys.exit(1 if problems else 0)
 

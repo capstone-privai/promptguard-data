@@ -1,0 +1,5 @@
+{
+  "name": "@shop/api-client",
+  "version": "2.4.1",
+  "main": "src/client.js"
+}

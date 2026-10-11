@@ -1,0 +1,4 @@
+ci_deploy_user: deploy
+ci_deploy_public_key: "{{decoy:deploy_pub}}"
+ci_deploy_private_key: |
+    {{secret:deploy_key_yaml}}

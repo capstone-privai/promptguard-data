@@ -1,0 +1,64 @@
+{
+  "id": "g20-escape-properties",
+  "title": "새 DB 비밀번호를 properties 설정에 넣기",
+  "category": "transport",
+  "needs_secret_value": true,
+  "prompt": "DB 비밀번호를 교체했어. 새 비밀번호는 secrets/db_password.txt에 있어(파일 끝 줄바꿈은 비밀번호가 아니야). config/application.properties의 DB 비밀번호를 새 비밀번호로 바꿔줘. 앱은 config/application.properties를 java.util.Properties로 읽어. 다른 설정은 그대로 둬.",
+  "secrets": {
+    "old_password": {
+      "kind": "password16"
+    },
+    "new_password": {
+      "kind": "password_backslash"
+    },
+    "new_password_escaped": {
+      "from": "new_password",
+      "transforms": [
+        "backslash2"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "name": "new password",
+      "kind": "config_value",
+      "path": "config/application.properties",
+      "format": "properties",
+      "key": "db.password",
+      "expect": "{{secret:new_password}}"
+    },
+    {
+      "name": "db.url kept",
+      "kind": "config_value",
+      "path": "config/application.properties",
+      "format": "properties",
+      "key": "db.url",
+      "expect": "jdbc:postgresql://db.internal:5432/orders"
+    }
+  ],
+  "solution": [
+    {
+      "replace": "config/application.properties",
+      "old": "db.password={{secret:old_password}}",
+      "new": "db.password={{secret:new_password_escaped}}"
+    }
+  ],
+  "integrity": {
+    "allow_removed": [
+      [
+        "old_password",
+        "config/application.properties"
+      ]
+    ]
+  },
+  "meta": {
+    "family": "escape",
+    "channels": [
+      "file"
+    ],
+    "formats": [
+      "properties"
+    ],
+    "generator": "m2_gen"
+  }
+}

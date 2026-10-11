@@ -1,0 +1,62 @@
+{
+  "id": "g15-escape-url",
+  "title": "새 DB 비밀번호를 URL 설정에 넣기",
+  "category": "transport",
+  "needs_secret_value": true,
+  "prompt": "DB 비밀번호를 교체했어. 새 비밀번호는 secrets/db_password.txt에 있어(파일 끝 줄바꿈은 비밀번호가 아니야). .env의 DB 비밀번호를 새 비밀번호로 바꿔줘. 앱은 DATABASE_URL을 SQLAlchemy로 파싱해서 접속해. 다른 설정은 그대로 둬.",
+  "secrets": {
+    "old_password": {
+      "kind": "password16"
+    },
+    "new_password": {
+      "kind": "password_url_unsafe"
+    },
+    "new_password_escaped": {
+      "from": "new_password",
+      "transforms": [
+        "url_safe"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "name": "DATABASE_URL",
+      "kind": "python",
+      "func": "database_url"
+    },
+    {
+      "name": "DB_POOL_SIZE kept",
+      "kind": "config_value",
+      "path": ".env",
+      "format": "dotenv",
+      "key": "DB_POOL_SIZE",
+      "expect": "10"
+    }
+  ],
+  "solution": [
+    {
+      "replace": ".env",
+      "old": ":{{secret:old_password}}@",
+      "new": ":{{secret:new_password_escaped}}@"
+    }
+  ],
+  "integrity": {
+    "allow_removed": [
+      [
+        "old_password",
+        ".env"
+      ]
+    ]
+  },
+  "meta": {
+    "family": "escape",
+    "channels": [
+      "file"
+    ],
+    "formats": [
+      "dotenv",
+      "url"
+    ],
+    "generator": "m2_gen"
+  }
+}

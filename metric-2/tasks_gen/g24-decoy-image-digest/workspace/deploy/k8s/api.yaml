@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: registry-ci
+  namespace: shop
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: '{"auths":{"registry.example.invalid":{"auth":"{{secret:registry_auth}}"}}}'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      imagePullSecrets:
+        - name: registry-ci
+      containers:
+        - name: api
+          image: registry.example.invalid/shop/api:2026.09.4
+          ports:
+            - containerPort: 8080

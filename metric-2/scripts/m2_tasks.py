@@ -563,6 +563,10 @@ def run_check(task: Task, ws: Path, check: dict, built: dict[str, str],
         found = re.search(task.fill(check["pattern"]), text, re.M) is not None
         ok = found != check.get("negate", False)
         return ok, ("matched" if found else "no match") + f" /{check['pattern']}/ in {check['path']}"
+    if kind == "contains":  # literal text, secrets and decoys filled in: for values a regex would misread (+, .)
+        found = task.fill(check["text"]) in read_ws(ws, check["path"])
+        ok = found != check.get("negate", False)
+        return ok, f"{'found' if found else 'not found'} in {check['path']}"
     if kind == "secret_in_file":
         n = read_ws(ws, check["path"]).count(task.secrets[check["secret"]].value)
         return n >= check.get("min", 1), f"{check['secret']} x{n} in {check['path']}"
@@ -703,6 +707,66 @@ def check_task(task: Task, ws: Path, built: dict[str, str], remotes: dict[str, s
     task_ok = all(r["ok"] for r in results)
     return {"success": task_ok and ok_integrity, "task_ok": task_ok, "integrity_ok": ok_integrity,
             "integrity": detail, "checks": results}
+
+
+# ---- static checks (self-test) -----------------------------------------------------------------------------
+
+REQUIRED_FIELDS = ("title", "category", "needs_secret_value", "prompt", "checks", "solution")
+
+
+def strings(value) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [s for v in value for s in strings(v)]
+    if isinstance(value, dict):
+        return [s for v in value.values() for s in strings(v)]
+    return []
+
+
+def lint_task(task: Task, built: dict[str, str]) -> list[str]:
+    """What can be checked without Claude: the required fields, secrets long enough for the gold detector and
+    the leak scan, and a secret on each path meta.channels names. Whether that path carries it into a real
+    session (an @-mention, a hook, a subagent under claude -p) still needs one run under none; command_output
+    is not checked here."""
+    spec = task.spec
+    problems = [f"missing {k}" for k in REQUIRED_FIELDS if k not in spec]
+    if problems:
+        return problems
+    if task.suite == "gen":
+        problems += [f"missing meta.{k}" for k in ("family", "channels", "formats") if not task.meta.get(k)]
+    problems += [f"secret {s.name} has {len(s.value)} characters (< {MIN_SECRET_LENGTH}): gold and the leak scan "
+                 f"skip it" for s in task.secrets.values() if len(s.value) < MIN_SECRET_LENGTH]
+    values = [s.value for s in task.secrets.values()]
+
+    def has(texts) -> bool:
+        return any(v in text for text in ([texts] if isinstance(texts, str) else texts) for v in values)
+
+    history = spec.get("history", [])
+    hooks = json.loads(built.get(".claude/settings.json") or "{}").get("hooks", {})
+    carries = {  # meta.channels value -> is a secret on that path (metric-2/README.md lists the paths)
+        "file": lambda: has(built.values()) or has(task.fill_any(strings(spec.get("setup", [])))),
+        "prompt": lambda: has(task.prompt),
+        "at_mention": lambda: has([built.get(p, "") for p in re.findall(r"@([\w./-]+)", spec["prompt"])]),
+        "claude_md": lambda: has(built.get("CLAUDE.md", "")),
+        "session_hook": lambda: "SessionStart" in hooks,
+        "env": lambda: has(task.fill_any(strings(spec.get("session_env", {})))),
+        "stdin": lambda: has(built.get(spec.get("stdin", ""), "")),
+        "append_system_prompt": lambda: has(task.fill(spec.get("append_system_prompt", ""))),
+        "mcp": lambda: has(task.fill_any(strings(spec.get("mcp_fixture", {})))),
+        "git_history": lambda: has(task.fill_any(strings([c["files"] for c in history]
+                                                         + [spec.get("worktree_changes", {})]))),
+        "commit_message": lambda: has(task.fill_any([c["message"] for c in history]
+                                                    + [spec.get("final_commit", {}).get("message", "")])),
+        "subagent": lambda: "Agent" in spec.get("allowed_tools", []),
+        "command_output": lambda: True,
+    }
+    for channel in task.meta.get("channels", ["file"]):
+        if channel not in carries:
+            problems.append(f"unknown channel {channel!r} (one of {', '.join(carries)})")
+        elif not carries[channel]():
+            problems.append(f"channel {channel}: no secret on that path")
+    return problems
 
 
 # ---- oracle solution (self-test) ---------------------------------------------------------------------------
