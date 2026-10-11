@@ -547,6 +547,12 @@ def read_ws(ws: Path, rel: str) -> str:
     return file.read_text(encoding="utf-8", errors="replace") if file.is_file() else ""
 
 
+# Checks run Python without writing bytecode into the workspace: a .pyc written before an edit that keeps the file
+# size, within the same second, would be loaded instead of the edited source, and it would end up in the saved
+# workspace.
+CHECK_ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+
+
 def run_check(task: Task, ws: Path, check: dict, built: dict[str, str],
               remotes: dict[str, str] | None = None) -> tuple[bool, str]:
     kind = check["kind"]
@@ -615,7 +621,7 @@ def run_check(task: Task, ws: Path, check: dict, built: dict[str, str],
     if kind == "command":
         try:
             proc = subprocess.run([task.fill(a) for a in check["run"]], cwd=ws, capture_output=True, text=True,
-                                  timeout=check.get("timeout", 60))
+                                  timeout=check.get("timeout", 60), env=CHECK_ENV)
         except (OSError, subprocess.TimeoutExpired) as e:
             return False, f"{' '.join(check['run'])}: {type(e).__name__}"
         ok = proc.returncode == check.get("exit", 0)

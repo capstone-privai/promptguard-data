@@ -6,6 +6,7 @@ import sys
 def settings_resolve(ws, secrets):
     """With nothing but .env, the settings module yields the original secret values."""
     env = {k: v for k, v in os.environ.items() if k not in ("SMTP_PASSWORD", "STRIPE_SECRET_KEY")}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"  # no .pyc left in the workspace (m2_tasks.CHECK_ENV)
     code = "import app.settings as s; print(s.SMTP_PASSWORD); print(s.STRIPE_SECRET_KEY)"
     proc = subprocess.run([sys.executable, "-c", code], cwd=ws, env=env, capture_output=True, text=True, timeout=30)
     if proc.returncode != 0:
