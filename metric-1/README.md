@@ -36,6 +36,8 @@
 
 합성 데이터의 비밀값은 모두 결정적으로 만든 가짜 값이다. 정답은 탐지기 결과와 상관없이, 값을 끼워 넣는 순간에 위치를 기록해 만든다.
 
+gold span 열은 데이터에 든 정답 수다. 이 중 `tool_input` 채널의 정답(에이전트 세션 v2 6개, privesc-llm-data 3,820개, openhands-feedback 2개)은 데이터에 그대로 두지만 채점하지 않는다([단위](#단위)). 채점하는 정답은 데이터셋 9개를 합쳐 30,606개 중 26,778개다.
+
 `data_test/`와 `data_answer/`는 git에 올리지 않는다(`.gitignore`). 저장소를 받은 뒤 [생성과 검증](#생성과-검증)의 명령으로 각자 만든다. 합성 데이터도 올리지 않는 이유는, 비밀값이 실제 형식(예: AWS 키 ID와 시크릿 키 쌍)을 따르는 가짜 값이라 GitHub push protection이 진짜 비밀로 보고 push를 막기 때문이다. 생성은 결정적이므로 누가 만들어도 바이트 단위로 같은 파일이 나온다.
 
 ### 검토했지만 쓰지 않은 소스
@@ -63,7 +65,7 @@
 |---|---|
 | `prompt` | 사용자 메시지 |
 | `instructions` | 시스템 프롬프트에 들어가는 지침 (저장소의 에이전트 지침 파일, 설정에 적은 지시문 등) |
-| `tool_input` | 모델이 쓴 도구 인자 (예: 셸 명령) |
+| `tool_input` | 모델이 쓴 도구 인자 (예: 셸 명령). 지표 1에서는 채점하지 않는다([단위](#단위)) |
 | `tool_output` | 모델에 돌아가는 도구 결과. 셸 명령의 stdout과 stderr는 구분하지 않고 한 텍스트로 담는다 |
 
 채널은 에이전트와 무관한 구분이다. 에이전트마다 이 네 자리를 어느 지점(훅, 플러그인, 프록시 등)에서 가로채는지는 다르므로, 그 대응은 평가 대상 시스템을 연동하는 쪽에서 정한다.
@@ -146,7 +148,11 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 - **정답 span**: 데이터셋이 정한, 그 item에서 가려야 할 비밀값 하나의 위치.
 - **edit**: 시스템이 실제로 바꾼 구간 하나. 원문 좌표의 `start`, `end`와 대체 문자열 `replacement`로 이루어진다.
 
-정답은 데이터셋에서만 온다. 시스템이 처리하지 않는 채널에 있는 정답도 분모에 들어가며 놓친 것으로 센다. 현재 PromptGuard는 `prompt`, `instructions`, `tool_output`을 처리하고 모델이 쓴 `tool_input`은 가리지 않으므로, `tool_input`의 정답은 항상 놓친 것이 되고 채널별 recall에 그대로 드러난다.
+정답은 데이터셋에서만 온다. 채점하는 채널은 `prompt`, `instructions`, `tool_output` 세 개다([evaluation/dataset/schema.py](evaluation/dataset/schema.py)의 `SCORED_CHANNELS`).
+
+`tool_input`(모델이 직접 쓴 도구 인자, 예: 셸 명령)은 모든 시스템에서 채점하지 않는다. 클라우드 모델이 만든 글이라 가릴 대상이 아니고, 오히려 실행 직전에 placeholder를 원래 값으로 되돌리는(복원) 자리이기 때문이다. 그래서 `tool_input` item에 있는 정답 span, 그 item에서 나온 edit, 그 item의 줄 수를 분자와 분모 양쪽에서 뺀다. 시스템이 `tool_input`을 검사해 가렸어도 점수는 같다. `tool_input` item과 그 정답은 데이터에 그대로 두고 채점할 때만 빼며, 뺀 양은 결과 파일에 남는다([evaluation/README.md](evaluation/README.md#채점)).
+
+채점하는 세 채널 안에서는 시스템이 처리하지 않는 채널에 있는 정답도 분모에 들어가며 놓친 것으로 센다. 현재 PromptGuard는 세 채널을 모두 처리한다.
 
 ### 판정
 
@@ -177,10 +183,10 @@ python metric-1/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일
 
 | 지표 | 정의 |
 |---|---|
-| **recall** (주) | `full` 정답 span / 전체 정답 span |
-| **precision** (주) | 정답과 겹치는 edit / 전체 edit |
+| **recall** (주) | `full` 정답 span / 전체 정답 span (채점하는 세 채널) |
+| **precision** (주) | 정답과 겹치는 edit / 전체 edit (채점하는 세 채널) |
 | F2 | `5PR / (4P + R)`. 비밀을 놓치는 쪽이 더 위험하므로 recall에 가중을 둔다 |
-| 1,000줄당 과잉 마스킹 | 정답과 겹치지 않는 edit / 전체 줄 수 × 1000 |
+| 1,000줄당 과잉 마스킹 | 정답과 겹치지 않는 edit / 채점하는 세 채널의 줄 수 × 1000 |
 | char recall | 가려진 정답 글자 수 / 전체 정답 글자 수 |
 | partial, missed 비율 | `partial` / `missed` 정답 span의 비율 |
 | 유형별, 채널별 recall | 정답을 유형, 채널로 나눠 잰 recall |

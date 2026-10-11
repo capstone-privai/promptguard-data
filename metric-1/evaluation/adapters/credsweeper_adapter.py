@@ -15,8 +15,7 @@ from credsweeper import CredSweeper
 from credsweeper.file_handler.string_content_provider import StringContentProvider
 
 from evaluation.adapters.base import ItemOutput, passthrough, select_non_overlapping
-from evaluation.adapters.promptguard_adapter import CHANNEL_MAP
-from evaluation.dataset.schema import Session
+from evaluation.dataset.schema import SCORED_CHANNELS, Session
 from evaluation.scorer.edits import Edit, apply_edits
 
 REPLACEMENT = "[SECRET]"
@@ -45,8 +44,9 @@ def _is_private_key(rule: str) -> bool:
 class CredSweeperAdapter:
     name = "credsweeper"
 
-    def __init__(self, ml: bool = False, channels: tuple[str, ...] = tuple(CHANNEL_MAP)):
-        # Default: the dataset channels PromptGuard processes.
+    def __init__(self, ml: bool = False, channels: tuple[str, ...] = SCORED_CHANNELS):
+        # Default: the scored channels, which PromptGuard processes too. Others are for diagnosis only:
+        # their edits are applied but never scored.
         self.ml = ml
         self.channels = tuple(channels)
         # ml=False matches PromptGuard's worker; ml=True keeps CredSweeper's default ml_threshold (medium).

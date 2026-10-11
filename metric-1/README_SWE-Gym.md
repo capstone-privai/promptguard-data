@@ -87,14 +87,14 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_SWE-G
 
 ## 기준 시스템 점수
 
-`metric-1/results/all_new_sources`. CredSweeper와 gitleaks는 네 채널을 모두 검사했고, PromptGuard는 `tool_output`만 처리한다.
+`metric-1/results/all_new_sources`(CredSweeper 1.18.5, gitleaks 8.30.1, PromptGuard `promptguard-demo-v0@915492b` mock predictor). CredSweeper와 gitleaks는 네 채널을 모두 검사했고, PromptGuard는 `tool_output`만 처리한다. 아래 값은 같은 실행 기록을 2026-10-11에 바꾼 기준대로 다시 집계한 것이다. `tool_input`(정답 없음)에서 나온 edit와 그 줄 75,990줄을 뺐다.
 
 | 시스템 | recall | precision | 1,000줄당 과잉 마스킹 | 과잉 마스킹 수 |
 |---|---|---|---|---|
-| PromptGuard | 1.000 | 0.004 | 0.85 | 516 |
-| CredSweeper ml=off | 1.000 | 0.003 | 1.21 | 733 |
-| CredSweeper ml=on | 1.000 | 0.008 | 0.44 | 264 |
-| gitleaks | 1.000 | 0.091 | 0.03 | 20 |
+| PromptGuard | 1.000 | 0.004 | 0.98 | 516 |
+| CredSweeper ml=off | 1.000 | 0.003 | 1.16 | 611 |
+| CredSweeper ml=on | 1.000 | 0.008 | 0.49 | 258 |
+| gitleaks | 1.000 | 0.111 | 0.03 | 16 |
 
 정답이 2개뿐이라 recall과 precision은 의미가 적다. **1,000줄당 과잉 마스킹을 본다.** 코딩 에이전트가 오픈소스 저장소를 고치는 동안, CredSweeper(ML off)는 1,000줄마다 약 1.2번 비밀이 아닌 것(코드 표현식, request id, 테스트 값)을 가린다. 지표 2에서 본 것처럼 이런 과잉 마스킹은 과제에 필요한 값을 가려 작업을 막을 수 있다. 어떤 규칙이 무엇을 가렸는지는 [새 외부 소스로 본 기존 시스템의 약점](../docs/README_baseline-new-sources.md#6-키워드-규칙이-코드-조각을-값으로-잡음)에 있다.
 

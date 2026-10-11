@@ -6,8 +6,10 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, Session
+from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, SCORED_CHANNELS, Session
 from evaluation.scorer.span_scoring import ItemScore, SpanStatus
+
+EXCLUDED_CHANNELS: tuple[str, ...] = tuple(name for name in CHANNELS if name not in SCORED_CHANNELS)
 
 
 def count_lines(text: str) -> int:
@@ -51,9 +53,22 @@ def aggregate(
     scores: Sequence[ItemScore],
     elapsed_ms: Mapping[Any, float | None],  # keyed by (session_id, item_id)
 ) -> dict[str, Any]:
-    gold = [(score.channel, result) for score in scores for result in score.gold_results]
-    edits = [result for score in scores for result in score.edit_results]
-    lines_total = sum(count_lines(item.text) for session in sessions for item in session.items)
+    """Every metric counts the SCORED_CHANNELS only: gold spans, edits and lines of other channels are left
+    out of numerators and denominators alike, and reported under `excluded_by_channel`."""
+    scored = [score for score in scores if score.channel in SCORED_CHANNELS]
+    gold = [(score.channel, result) for score in scored for result in score.gold_results]
+    edits = [result for score in scored for result in score.edit_results]
+    items = [item for session in sessions for item in session.items]
+    lines_total = sum(count_lines(item.text) for item in items if item.channel in SCORED_CHANNELS)
+    excluded = {
+        name: {
+            "items": sum(1 for item in items if item.channel == name),
+            "lines": sum(count_lines(item.text) for item in items if item.channel == name),
+            "gold": sum(len(score.gold_results) for score in scores if score.channel == name),
+            "edits": sum(len(score.edit_results) for score in scores if score.channel == name),
+        }
+        for name in EXCLUDED_CHANNELS
+    }
 
     statuses = [result.status for _channel, result in gold]
     full = statuses.count(SpanStatus.FULL)
@@ -89,16 +104,21 @@ def aggregate(
             "edits_fp": edits_fp,
             "gold_chars_total": gold_chars,
             "exposed_chars_total": exposed_chars,
+            "gold_excluded": sum(entry["gold"] for entry in excluded.values()),
+            "edits_excluded": sum(entry["edits"] for entry in excluded.values()),
         },
         "latency_ms": latency_summary(elapsed_ms),
         "density_per_1k_lines": None if not lines_total else len(gold) / lines_total * 1000,
         "lines_total": lines_total,
+        "scored_channels": list(SCORED_CHANNELS),
+        "excluded_by_channel": excluded,
         "composition": {
             "by_type": {kind: sum(1 for _c, result in gold if result.type == kind) for kind in GOLD_TYPES},
-            "by_channel": {name: sum(1 for channel, _r in gold if channel == name) for name in CHANNELS},
+            "by_channel": {name: sum(1 for channel, _r in gold if channel == name) for name in SCORED_CHANNELS},
         },
         "recall_by_type": {kind: recall_where(lambda _c, result, kind=kind: result.type == kind) for kind in GOLD_TYPES},
-        "recall_by_channel": {name: recall_where(lambda channel, _r, name=name: channel == name) for name in CHANNELS},
+        "recall_by_channel": {name: recall_where(lambda channel, _r, name=name: channel == name)
+                              for name in SCORED_CHANNELS},
         "sessions": len(sessions),
-        "items": sum(len(session.items) for session in sessions),
+        "items": len(items),
     }

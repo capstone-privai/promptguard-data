@@ -27,7 +27,8 @@ _WARMUP_TEXT = "DB_PASSWORD=warmup123\n"
 
 # Dataset channel → the `source` the mod scans it as. prompt is the prompt.submit hook, instructions the
 # CLAUDE.md blocks of prompt.context, tool_output the tool.call result. The arguments the model writes
-# (tool_input) are not rewritten by any hook, so they pass through.
+# (tool_input) are nothing to mask: the mod restores placeholders in them before the tool runs. They pass
+# through, and metric 1 does not score them. The keys must equal schema.SCORED_CHANNELS (test_system_contract).
 CHANNEL_MAP: dict[str, str] = {"prompt": "user_prompt", "instructions": "claude_md", "tool_output": "tool_result"}
 
 

@@ -10,8 +10,10 @@ Axes (each defaults to every value):
   system        promptguard, credsweeper, gitleaks, oracle, identity (--systems)
   ml            credsweeper only: off, on (--ml)
 
-CredSweeper and gitleaks always scan all four channels (`--channels all`); recall_by_channel in each run
-breaks the result down per channel. PromptGuard processes the channels its Claude Code mod rewrites.
+Every system is scored on prompt, instructions and tool_output (evaluation/dataset/schema.py SCORED_CHANNELS);
+tool_input, the text the model writes, is never scored. CredSweeper and gitleaks scan those three channels
+only (their default), the ones PromptGuard's Claude Code mod rewrites. recall_by_channel in each run breaks
+the result down per channel.
 
 A combination is skipped, with the reason recorded, when the dataset's meta.allowed_use does not include the
 purpose the run needs (ml_eval for credsweeper --ml on, else rule_eval), or when a dependency is missing
@@ -155,12 +157,16 @@ def evaluate_command(combo: Combo, args: argparse.Namespace, batch: Path, findin
            "--sessions", str(combo.dataset), "--out", str(batch)]
     if combo.system == "credsweeper":
         cmd += ["--ml", combo.ml]
-        cmd += ["--channels", "all"]
     elif combo.system == "gitleaks":
         cmd += ["--findings", str(findings)]
     elif combo.system == "promptguard":
         cmd += ["--system-root", str(args.resolved_system_root)]
     return cmd
+
+
+def gitleaks_command(dataset: Path, args: argparse.Namespace, findings: Path) -> list[str]:
+    return [sys.executable, str(SCRIPTS / "run_gitleaks.py"), "--sessions", str(dataset), "--out", str(findings),
+            "--gitleaks", args.gitleaks]
 
 
 def run_logged(cmd: list[str], log) -> int:
@@ -181,8 +187,7 @@ def run_combo(combo: Combo, args: argparse.Namespace, batch: Path) -> None:
         findings = None
         if combo.system == "gitleaks":
             findings = batch / "gitleaks" / f"{combo.dataset.stem}.jsonl"
-            code = run_logged([sys.executable, str(SCRIPTS / "run_gitleaks.py"), "--sessions", str(combo.dataset),
-                               "--channels", "all", "--out", str(findings), "--gitleaks", args.gitleaks], log)
+            code = run_logged(gitleaks_command(combo.dataset, args, findings), log)
             if code != 0:
                 combo.status, combo.note = "failed", f"run_gitleaks.py exit {code}"
                 combo.seconds = time.perf_counter() - started

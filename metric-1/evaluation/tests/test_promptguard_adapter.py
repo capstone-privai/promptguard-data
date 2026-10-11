@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from evaluation.adapters.promptguard_adapter import CHANNEL_MAP, PromptGuardAdapter
 from evaluation.dataset.io import load_sessions
 from evaluation.dataset.schema import Item, Session
-from evaluation.run import evaluate_sessions
+from evaluation.run import evaluate, evaluate_sessions
 from evaluation.scorer.span_scoring import SpanStatus
-from evaluation.tests.support import (GOLD, HAS_PROMPTGUARD, SESSIONS, SKIP_REASON, ScriptedWorker, finding, found)
+from evaluation.tests.support import (GOLD, HAS_PROMPTGUARD, SESSIONS, SKIP_REASON, TOOL_INPUT_ITEM, ScriptedWorker,
+                                      finding, found, write_tool_input_fixture)
 
 
 def _session(*texts: str, channel: str = "tool_output") -> Session:
@@ -58,6 +61,19 @@ class PromptGuardAdapterTests(unittest.TestCase):
         text = "DB_PASSWORD=mysecret123\n"
         output = self.adapter.run_session(_session(text, channel="tool_input"))[0]
         self.assertEqual((output.text, output.edits, output.elapsed_ms), (text, [], None))
+
+    def test_tool_input_gold_is_not_counted(self) -> None:
+        # The same secret masked as tool_output (one full span, one edit) drops out of both sides as tool_input.
+        with tempfile.TemporaryDirectory() as tmp:
+            result = evaluate(*write_tool_input_fixture(Path(tmp)), self.adapter)
+        self.assertEqual(result.outputs[TOOL_INPUT_ITEM].edits, [])
+        before, after = self.result.metrics["counts"], result.metrics["counts"]
+        self.assertEqual(self._status(*TOOL_INPUT_ITEM, "mysecret123"), SpanStatus.FULL)
+        self.assertEqual((after["gold_total"], after["gold_excluded"]), (before["gold_total"] - 1, 1))
+        self.assertEqual(after["full"], before["full"] - 1)
+        self.assertEqual((after["edits_total"], after["edits_tp"]), (before["edits_total"] - 1, before["edits_tp"] - 1))
+        self.assertEqual(result.metrics["recall"], after["full"] / after["gold_total"])
+        self.assertNotIn("tool_input", result.metrics["recall_by_channel"])
 
     def test_offsets_are_converted_to_code_points(self) -> None:
         text = "🔐 DB_PASSWORD=mysecret123\n"

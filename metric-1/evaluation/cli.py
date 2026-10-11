@@ -14,10 +14,9 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from evaluation.adapters.base import SystemUnderTest
-from evaluation.adapters.promptguard_adapter import CHANNEL_MAP
 from evaluation.adapters.system_root import SystemRootError, load_worker, resolve_system_root
 from evaluation.dataset.io import gold_path_for, load_sessions
-from evaluation.dataset.schema import CHANNELS, USES
+from evaluation.dataset.schema import CHANNELS, SCORED_CHANNELS, USES
 from evaluation.dataset.validate import validate_dataset
 from evaluation.report.meta import build_run_meta
 from evaluation.report.write import create_run_dir, fmt, write_run
@@ -59,8 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--use", choices=USES, help="purpose every session's meta.allowed_use must include "
                                                  "(default: ml_eval for credsweeper --ml on, else rule_eval)")
     run.add_argument("--ml", choices=("on", "off"), help="CredSweeper ML validation (credsweeper only; default: off)")
-    run.add_argument("--channels", help="comma-separated channels to scan, or 'all' (credsweeper only; "
-                                        f"default: {','.join(CHANNEL_MAP)}, the channels PromptGuard processes)")
+    run.add_argument("--channels", help="comma-separated channels to scan, or 'all' (credsweeper only, for diagnosis; "
+                                        f"default: {','.join(SCORED_CHANNELS)}). Only those channels are scored "
+                                        "whatever is scanned")
     run.add_argument("--findings", help="findings file from metric-1/scripts/run_gitleaks.py (gitleaks only, required)")
     run.add_argument("--out", default=str(DEFAULT_OUT), help="parent folder for run folders (default: metric-1/results)")
     run.add_argument("--debug", action="store_true", help="also write debug/ with raw candidates (contains secrets)")
@@ -108,7 +108,7 @@ def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path
     if args.system == "credsweeper":
         ml = args.ml == "on"
         label = f"credsweeper_ml-{'on' if ml else 'off'}"
-        channels = (tuple(CHANNEL_MAP) if not args.channels else
+        channels = (SCORED_CHANNELS if not args.channels else
                     CHANNELS if args.channels == "all" else tuple(dict.fromkeys(args.channels.split(","))))
         if unknown := [channel for channel in channels if channel not in CHANNELS]:
             raise ConfigError(f"unknown channel(s) {unknown}; expected 'all' or some of {list(CHANNELS)}")

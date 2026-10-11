@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import inspect
 import json
 import shutil
 import subprocess
@@ -13,10 +15,19 @@ from typing import Any
 from evaluation.adapters.promptguard_adapter import CHANNEL_MAP, ModFailure, ModSession
 from evaluation.adapters.system_root import MOD, load_worker
 from evaluation.dataset.io import load_sessions
-from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, USES
-from evaluation.tests.support import GOLD, HAS_PROMPTGUARD, SESSIONS, SYSTEM_ROOT, finding, found
+from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, SCORED_CHANNELS, USES
+from evaluation.tests.support import (CREDSWEEPER_REASON, GOLD, HAS_CREDSWEEPER, HAS_PROMPTGUARD, SESSIONS,
+                                      SYSTEM_ROOT, finding, found)
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+
+
+def _script(name: str):
+    sys.path.insert(0, str(SCRIPTS))
+    try:
+        return __import__(name)
+    finally:
+        sys.path.remove(str(SCRIPTS))
 NODE = shutil.which("node")
 
 # Loads a fresh copy of register.mjs per session (its placeholder ledger is module state) and runs each text
@@ -48,28 +59,41 @@ process.stdout.write(JSON.stringify(out))
 
 class DataContractTests(unittest.TestCase):
     def test_channels_and_types_match_dataset_build(self) -> None:
-        sys.path.insert(0, str(SCRIPTS))
-        try:
-            import dataset_build
-        finally:
-            sys.path.remove(str(SCRIPTS))
+        dataset_build = _script("dataset_build")
         self.assertEqual(set(CHANNELS), dataset_build.CHANNELS)
         self.assertEqual(set(GOLD_TYPES), dataset_build.TYPES)
 
-    def test_gitleaks_scans_promptguards_channels_by_default(self) -> None:
-        sys.path.insert(0, str(SCRIPTS))
-        try:
-            import run_gitleaks
-        finally:
-            sys.path.remove(str(SCRIPTS))
-        self.assertEqual(run_gitleaks.PROMPTGUARD_CHANNELS.split(","), list(CHANNEL_MAP))
+    def test_scored_channels(self) -> None:
+        # tool_input is what the model wrote: placeholders there are restored before execution, not masked.
+        self.assertEqual(set(SCORED_CHANNELS), set(CHANNELS) - {"tool_input"})
+        self.assertEqual(SCORED_CHANNELS, tuple(channel for channel in CHANNELS if channel in SCORED_CHANNELS))
+
+    def test_systems_process_the_scored_channels(self) -> None:
+        self.assertEqual(tuple(CHANNEL_MAP), SCORED_CHANNELS)  # PromptGuard
+        run_gitleaks = _script("run_gitleaks")
+        self.assertEqual(run_gitleaks.CHANNELS, CHANNELS)
+        self.assertEqual(tuple(run_gitleaks.SCORED_CHANNELS.split(",")), SCORED_CHANNELS)
+
+    @unittest.skipUnless(HAS_CREDSWEEPER, CREDSWEEPER_REASON)
+    def test_credsweeper_scans_the_scored_channels_by_default(self) -> None:
+        from evaluation.adapters.credsweeper_adapter import CredSweeperAdapter
+
+        default = inspect.signature(CredSweeperAdapter).parameters["channels"].default
+        self.assertEqual(default, SCORED_CHANNELS)
+
+    def test_run_all_scans_only_the_scored_channels(self) -> None:
+        run_all = _script("run_all")
+        args = argparse.Namespace(gitleaks="gitleaks", resolved_system_root=Path("checkout"))
+        dataset = Path("sessions.jsonl")
+        commands = [run_all.gitleaks_command(dataset, args, Path("findings.jsonl"))]
+        commands += [run_all.evaluate_command(run_all.Combo(dataset, system, ml=ml), args, Path("batch"),
+                                              Path("findings.jsonl"))
+                     for system, ml in (("credsweeper", "off"), ("credsweeper", "on"), ("gitleaks", None))]
+        for command in commands:
+            self.assertNotIn("--channels", command)
 
     def test_evaluation_uses_match_dataset_policy(self) -> None:
-        sys.path.insert(0, str(SCRIPTS))
-        try:
-            import dataset_policy
-        finally:
-            sys.path.remove(str(SCRIPTS))
+        dataset_policy = _script("dataset_policy")
         self.assertEqual(set(USES), set(dataset_policy.USES) - {"ml_train"})
         self.assertEqual(set(dataset_policy.USES), {"rule_eval", "ml_eval", "ml_train"})
         for origin in ("authored", "recorded", "external"):

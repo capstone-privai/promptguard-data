@@ -53,13 +53,16 @@ class WriteTests(unittest.TestCase):
             self.assertEqual(leaked, [], name)
         spans = [json.loads(line) for line in (run_dir / "per_span.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(len(spans), 12)
-        self.assertEqual(set(spans[0]), {"session_id", "item_id", "span_id", "start", "end", "type", "channel", "status",
-                                         "exposed_chars"})
+        self.assertEqual(set(spans[0]), {"session_id", "item_id", "span_id", "start", "end", "type", "channel", "scored",
+                                         "status", "exposed_chars"})
         edits = [json.loads(line) for line in (run_dir / "per_edit.jsonl").read_text(encoding="utf-8").splitlines()]
-        self.assertEqual(set(edits[0]), {"session_id", "item_id", "start", "end", "overlaps_gold"})
+        self.assertEqual(set(edits[0]), {"session_id", "item_id", "start", "end", "channel", "scored", "overlaps_gold"})
         metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
         self.assertEqual(metrics["counts"]["gold_total"], 12)
+        self.assertEqual(metrics["counts"]["gold_total"], sum(span["scored"] for span in spans))
+        self.assertEqual(metrics["counts"]["edits_total"], sum(edit["scored"] for edit in edits))
         meta = json.loads((run_dir / "run_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["scored_channels"], ["prompt", "instructions", "tool_output"])
         self.assertEqual(len(meta["dataset"]["sessions_sha256"]), 64)
         self.assertEqual(len(meta["dataset"]["gold_sha256"]), 64)
         self.assertEqual(meta["dataset"]["meta_summary"]["source"], {"fixture": 8})

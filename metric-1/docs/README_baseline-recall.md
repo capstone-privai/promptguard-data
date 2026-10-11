@@ -8,23 +8,24 @@
 - 도구 버전: CredSweeper 1.18.5, gitleaks 8.30.1, PromptGuard `promptguard-demo-v0@915492b`(predictor=mock)
 - 판정은 [채점 기준](../metric-1/README.md#채점-기준)을 따른다. `partial`(일부만 가림)도 실패로 센다.
 - 시스템 구성: CredSweeper와 gitleaks는 네 채널을 모두 본다. PromptGuard는 `tool_output`만 처리하고, 탐지는 CredSweeper(ML off)이며 mock predictor는 후보를 모두 MASK한다.
+- 채점 채널: 2026-10-11부터 `tool_input`(에이전트가 직접 쓴 명령)은 채점하지 않는다([단위](../README.md#단위)). 요약, 원인 표, 1절의 채널 표, 2절, 8절의 고치기 전후 표, ML 문단의 수치는 위 실행 기록에서 `tool_input`의 정답 span, edit, 줄을 빼고 다시 집계한 값이다. 1절의 명령 유형 표와 5절의 엔트로피 표는 탐지기가 어떤 자리의 값을 놓치는지 보는 진단이라, `tool_input`의 정답까지 센 그대로 둔다.
 
 ## 요약
 
 | 데이터셋 | 정답 | PromptGuard | CS ml=off | CS ml=on | gitleaks |
 |---|---|---|---|---|---|
 | 내장 코퍼스 (`sessions`) | 32 | 0.656 | 0.656 | 0.594 | 0.313 |
-| 에이전트 세션 v2 (`sessions_2`) | 78 | 0.628 | 0.692 | 0.641 | 0.474 |
+| 에이전트 세션 v2 (`sessions_2`) | 72 | 0.681 | 0.708 | 0.653 | 0.472 |
 | 템플릿 예시 (`sessions_from_example`) | 10 | 0.900 | 0.900 | 0.800 | 0.800 |
 | CredData | 15,596 | 0.973 | 0.977 | 0.971 | 0.433 |
-| privesc-llm-data | 10,624 | **0.167** | **0.499** | **0.492** | **0.116** |
+| privesc-llm-data | 6,804 | **0.261** | **0.584** | **0.577** | **0.147** |
 
 낮은 recall은 아래 여덟 가지 원인으로 거의 다 설명된다. 앞의 여섯은 시스템의 구조나 설계에서 오고, 뒤의 둘은 정답·데이터 쪽 문제라 고칠 대상이 다르다.
 
 | # | 원인 | 영향받는 시스템 | 대표 근거 |
 |---|---|---|---|
-| 1 | **키 이름 없는 자리의 값** (위치 인자, 자연어) | 전부 | privesc에서 값 바로 앞이 `key=`/`key:` 꼴이면 CS recall 0.955~1.000, 아니면 0.004~0.020 |
-| 2 | **처리하지 않는 채널** | PromptGuard | privesc 정답의 57%(6,020개)가 `instructions`/`tool_input`에 있다 |
+| 1 | **키 이름 없는 자리의 값** (위치 인자, 자연어) | 전부 | privesc에서 값 바로 앞이 `key=`/`key:` 꼴이면 CS recall 0.955~1.000, 아니면 0.020 |
+| 2 | **처리하지 않는 채널** | PromptGuard | privesc 정답의 32%(2,200개)가 `instructions`에 있다 |
 | 3 | **약한·기본 비밀번호 필터** | CredSweeper, PromptGuard | `postgres`, `root`, `qwer1234`는 필터를 끄면 찾는다. ML을 켜면 더 버린다 |
 | 4 | **규칙에 없는 키 이름** | CredSweeper, PromptGuard | `Cookie: session=`, `?code=`, `X-Amz-Signature=`, 웹훅 URL 경로, `비번` |
 | 5 | **gitleaks 일반 규칙의 값 조건** | gitleaks | privesc의 `password` 자리에서도 엔트로피 3.5 이하인 값은 0/3,786 |
@@ -32,7 +33,7 @@
 | 7 | **정답 경계가 비밀값보다 넓음** | 전부 (`partial`) | URI 전체, CredData의 줄 전체 PEM·JWK. 노출된 부분에 비밀값은 없다 |
 | 8 | **형식에 맞지 않는 값** | gitleaks, CredSweeper | CredData 난독화로 형식이 깨진 AWS 키 ID·GUID, privesc의 잘린 개인키 |
 
-ML 검증(CredSweeper `--ml on`)은 어느 데이터셋에서도 recall을 올리지 못했다. privesc와 CredData에서 ML이 새로 찾은 정답 span은 **0개**이고, 진짜 값을 버린 것만 privesc 73개, CredData 96개다. ML은 규칙이 만든 후보를 거르는 분류기라서, 규칙이 후보를 만들지 못한 값(원인 1, 4)은 보지 못한다. 효과는 precision에만 나타난다(privesc 0.489 → 0.916).
+ML 검증(CredSweeper `--ml on`)은 어느 데이터셋에서도 recall을 올리지 못했다. privesc와 CredData에서 ML이 새로 찾은 정답 span은 **0개**이고, 진짜 값을 버린 것만 privesc 48개, CredData 96개다. ML은 규칙이 만든 후보를 거르는 분류기라서, 규칙이 후보를 만들지 못한 값(원인 1, 4)은 보지 못한다. 효과는 precision에만 나타난다(privesc 0.489 → 0.930).
 
 ## 1. 키 이름 없는 자리의 값
 
@@ -45,14 +46,14 @@ privesc는 셸 명령 궤적이라 비밀번호가 키 이름 없이 인자로 �
 | 채널 | 대입 문법 | 정답 | PromptGuard | CS off | CS on | gitleaks |
 |---|---|---|---|---|---|---|
 | instructions | 있음 | 2,200 | 0.000 | 1.000 | 0.995 | 0.276 |
-| tool_input | 있음 | 1,329 | 0.000 | 0.986 | 0.968 | 0.178 |
 | tool_output | 있음 | 1,799 | 0.955 | 0.955 | 0.934 | 0.198 |
-| tool_input | 없음 | 2,491 | 0.000 | 0.004 | 0.004 | 0.000 |
 | tool_output | 없음 | 2,805 | 0.020 | 0.020 | 0.020 | 0.012 |
+
+채점하지 않는 `tool_input`(에이전트가 쓴 명령)에서도 같은 차이가 보인다. 대입 문법이 있는 1,329개는 CS ml=off가 0.986을 찾고, 없는 2,491개는 0.004를 찾는다.
 
 앞 40자에 `password` 같은 키워드가 있는지로 나눠도 비슷하게 갈리지만(0.86~1.0 vs 0.01~0.08), 대입 문법이 더 정확한 기준이다. `The temporary deploy password is X`처럼 키워드가 있어도 구분자가 없으면 찾지 못한다(내장 코퍼스 `m1-08`).
 
-CS ml=off가 놓친 비밀번호를 명령 유형으로 나누면 다음과 같다.
+CS ml=off가 놓친 비밀번호를 명령 유형으로 나누면 다음과 같다. 탐지기가 어떤 자리에서 놓치는지 보는 진단이라, 이 표는 채점하지 않는 `tool_input`의 정답도 센다. 에이전트가 쓴 명령 자체는 채점하지 않지만, 같은 명령이 도구 결과에 다시 찍힌 자리(`tool_output`)는 채점한다.
 
 | 값이 놓인 자리 | 정답 | CS off recall | 놓친 수 |
 |---|---|---|---|
@@ -76,14 +77,14 @@ CredData의 진짜 누락(CS ml=off `missed` 129개)도 119개가 대입 문법 
 
 ## 2. 처리하지 않는 채널 (PromptGuard)
 
-PromptGuard는 `tool_output`만 처리하므로 나머지 채널의 정답은 항상 놓친다([채점 기준](../metric-1/README.md#단위)에 적힌 대로 의도된 동작이다).
+PromptGuard 데모는 `tool_output`만 처리하므로 채점하는 나머지 채널(`prompt`, `instructions`)의 정답은 항상 놓친다. `tool_input`은 어느 시스템에서도 채점하지 않는다([단위](../README.md#단위)).
 
 | 데이터셋 | `tool_output` 밖의 정답 | `tool_output` 안 recall: PromptGuard | `tool_output` 안 recall: CS off |
 |---|---|---|---|
-| privesc | 6,020 / 10,624 (57%) | 0.386 | 0.386 |
-| sessions_2 | 11 / 78 | 0.731 | 0.731 |
+| privesc | 2,200 / 6,804 (32%) | 0.386 | 0.386 |
+| sessions_2 | 5 / 72 | 0.731 | 0.731 |
 
-`tool_output` 안에서는 PromptGuard와 CS ml=off가 같다. predictor가 후보를 전부 MASK하므로 탐지기 성능이 곧 시스템 성능이다. privesc에서 PromptGuard가 0.167인 것은 채널 범위(원인 2)와 위치 인자(원인 1)가 겹친 결과다. 놓친 8,849개 중 6,020개가 채널 때문이고, 나머지 2,829개도 대부분 위치 인자다.
+`tool_output` 안에서는 PromptGuard와 CS ml=off가 같다. predictor가 후보를 전부 MASK하므로 탐지기 성능이 곧 시스템 성능이다. privesc에서 PromptGuard가 0.261인 것은 채널 범위(원인 2)와 위치 인자(원인 1)가 겹친 결과다. 놓친 5,029개 중 2,200개가 채널(`instructions`) 때문이고, 나머지 2,829개도 대부분 위치 인자다.
 
 ## 3. 약한·기본 비밀번호 필터
 
@@ -125,7 +126,7 @@ gitleaks에서 형식이 정해진 토큰(`ghp_`, `AKIA`, PEM 등)이 아닌 값
 | 숫자가 하나 이상 | `XrYDCLmoEsze` | `XrYDCLmoEs2e` |
 | stopword를 포함하지 않음 | `lo8t7V9WPrOC` (`proc` 포함) | `lo8t7V9WPxOC` |
 
-엔트로피 조건이 가장 크게 작용한다. 12자 값의 엔트로피는 최대 log2(12) ≈ 3.585라서, **글자가 하나만 겹쳐도 3.5 아래로 떨어진다.** privesc 비밀번호의 84%가 12자다. 그래서 privesc에서 `"password": "…"` 꼴인 자리만 봐도 결과가 엔트로피로 갈린다.
+엔트로피 조건이 가장 크게 작용한다. 12자 값의 엔트로피는 최대 log2(12) ≈ 3.585라서, **글자가 하나만 겹쳐도 3.5 아래로 떨어진다.** privesc 비밀번호의 84%가 12자다. 그래서 privesc에서 `"password": "…"` 꼴인 자리만 봐도 결과가 엔트로피로 갈린다. 1절의 명령 유형 표와 같은 진단이라 채점하지 않는 `tool_input`의 정답도 센다.
 
 | privesc, 대입 문법 자리 | 정답 | gitleaks recall |
 |---|---|---|
@@ -164,8 +165,10 @@ CredData의 CS ml=off `partial` 225개 중 203개가 위 두 경우이고, 이 �
 | 데이터셋 | gitleaks recall (고치기 전 → 후) | CredSweeper·PromptGuard |
 |---|---|---|
 | `sessions` | 0.281 → 0.313 (+1) | 변화 없음 |
-| `sessions_2` | 0.410 → 0.474 (+5) | 변화 없음 |
+| `sessions_2` | 0.417 → 0.472 (+4) | 변화 없음 |
 | `sessions_from_example` | 0.700 → 0.800 (+1) | 변화 없음 |
+
+`sessions_2`에서 형식을 고친 값은 5개지만, 그중 1개는 채점하지 않는 `tool_input`에 있어 표에서는 +4다.
 
 고친 뒤 형식에 맞는 `AKIA…` 값은 gitleaks가 101/101(합성 7, CredData 94)을 찾는다.
 

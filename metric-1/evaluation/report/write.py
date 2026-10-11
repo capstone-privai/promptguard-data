@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from evaluation.dataset.schema import CHANNELS, GOLD_TYPES
+from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, SCORED_CHANNELS
 from evaluation.run import RunResult
 
 
@@ -44,16 +44,25 @@ def fmt(value: Any, digits: int = 4) -> str:
 
 
 def _per_span(result: RunResult) -> list[dict[str, Any]]:
+    """Every gold span, including those of unscored channels (`scored` false) for diagnosis."""
     return [{"session_id": gold.session_id, "item_id": gold.item_id, "span_id": gold.span_id, "start": gold.start,
-             "end": gold.end, "type": gold.type, "channel": score.channel, "status": gold.status.value,
+             "end": gold.end, "type": gold.type, "channel": score.channel,
+             "scored": score.channel in SCORED_CHANNELS, "status": gold.status.value,
              "exposed_chars": gold.exposed_chars}
             for score in result.scores for gold in score.gold_results]
 
 
 def _per_edit(result: RunResult) -> list[dict[str, Any]]:
     return [{"session_id": edit.session_id, "item_id": edit.item_id, "start": edit.start, "end": edit.end,
+             "channel": score.channel, "scored": score.channel in SCORED_CHANNELS,
              "overlaps_gold": edit.overlaps_gold}
             for score in result.scores for edit in score.edit_results]
+
+
+def _channel_row(metrics: dict[str, Any], name: str) -> str:
+    if name in SCORED_CHANNELS:
+        return f"| {name} | {metrics['composition']['by_channel'][name]} | {fmt(metrics['recall_by_channel'][name])} |"
+    return f"| {name} | {metrics['excluded_by_channel'][name]['gold']} (not scored) | not scored |"
 
 
 def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
@@ -82,8 +91,7 @@ def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
         "",
         f"{level} Composition and recall by channel", "",
         "| Channel | Gold spans | Recall |", "|---|---|---|",
-        *[f"| {name} | {metrics['composition']['by_channel'][name]} | {fmt(metrics['recall_by_channel'][name])} |"
-          for name in CHANNELS],
+        *[_channel_row(metrics, name) for name in CHANNELS],
         "",
     ]
     return lines
@@ -102,6 +110,9 @@ def render_report(meta: dict[str, Any], result: RunResult) -> str:
         f"- Dataset: `{dataset['sessions_path']}` (sha256 `{dataset['sessions_sha256'][:12]}`) + "
         f"`{dataset['gold_path']}` (sha256 `{dataset['gold_sha256'][:12]}`): {dataset['sessions']} sessions, "
         f"{dataset['items']} items, {dataset['gold_spans']} gold spans; used as `{dataset['use']}`",
+        f"- Scored channels: {', '.join(metrics['scored_channels'])}. Left out of every metric: "
+        + "; ".join(f"{name} ({entry['items']} items, {entry['lines']} lines, {entry['gold']} gold spans, "
+                    f"{entry['edits']} edits)" for name, entry in metrics["excluded_by_channel"].items()),
         f"- Lines: {metrics['lines_total']}; secret density per 1,000 lines: {fmt(metrics['density_per_1k_lines'], 2)}",
         f"- Code: commit `{(git['commit'] or 'unknown')[:12]}` on `{git['branch'] or 'unknown'}`, "
         f"evaluation {meta['versions']['evaluation']}, started {meta['started_at']}",

@@ -36,6 +36,8 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_openh
 | `tool_input` | 5,778 | 2 |
 | `tool_output` | 5,645 | 45 |
 
+`tool_input`의 정답 2개(openhands-161의 Fernet 키. 에이전트가 `write`/`edit`로 쓴 코드 안에 있다)는 데이터에 그대로 두지만 채점하지 않는다. 모델이 직접 쓴 도구 인자라 가릴 대상이 아니기 때문이다([채점 기준](README.md#단위)). 채점하는 정답은 `tool_output`의 45개(SECRET 36 / PASSWORD 6 / TOKEN 2 / PRIVATE_KEY 1)다.
+
 ## 변환 규칙
 
 ### 채널
@@ -90,17 +92,17 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_openh
 
 ## 기준 시스템 점수
 
-`metric-1/results/all_new_sources`. CredSweeper와 gitleaks는 네 채널을 모두 검사했고, PromptGuard는 `tool_output`만 처리한다.
+`metric-1/results/all_new_sources`(CredSweeper 1.18.5, gitleaks 8.30.1, PromptGuard `promptguard-demo-v0@915492b` mock predictor). CredSweeper와 gitleaks는 네 채널을 모두 검사했고, PromptGuard는 `tool_output`만 처리한다. 아래 값은 같은 실행 기록을 2026-10-11에 바꾼 기준대로 다시 집계한 것이다. `tool_input`의 정답 2개, `tool_input`에서 나온 edit, `tool_input`의 줄 60,313줄을 뺐다.
 
 | 시스템 | recall | precision | F2 | 1,000줄당 과잉 마스킹 |
 |---|---|---|---|---|
-| PromptGuard | 0.957 | 0.199 | 0.543 | 0.53 |
-| CredSweeper ml=off | 1.000 | 0.138 | 0.445 | 0.85 |
-| CredSweeper ml=on | 0.979 | 0.418 | 0.772 | 0.19 |
-| gitleaks | 0.106 | 0.714 | 0.128 | 0.006 |
+| PromptGuard | 1.000 | 0.199 | 0.554 | 0.64 |
+| CredSweeper ml=off | 1.000 | 0.195 | 0.547 | 0.66 |
+| CredSweeper ml=on | 0.978 | 0.603 | 0.870 | 0.10 |
+| gitleaks | 0.111 | 0.714 | 0.134 | 0.007 |
 
 - **recall은 상한값이다.** 정답 후보를 CredSweeper와 gitleaks가 냈으므로, 이 둘이 놓친 자격증명은 정답에 들어갈 수 없다(정규식으로 일부 보충). 이 데이터의 recall을 다른 데이터와 비교하지 않는다.
-- **precision과 과잉 마스킹이 이 데이터의 핵심 수치다.** 실제 사용자 세션 34만 줄에서 CredSweeper(ML off)는 1,000줄에 0.85번, ML on은 0.19번 비밀이 아닌 것을 가린다. CredData의 과잉 마스킹(어렵게 고른 음성)과 달리 실제 트래픽의 비율이다. 어떤 규칙이 무엇을 가렸는지와 gitleaks가 놓친 이유는 [새 외부 소스로 본 기존 시스템의 약점](../docs/README_baseline-new-sources.md)에 있다.
+- **precision과 과잉 마스킹이 이 데이터의 핵심 수치다.** 실제 사용자 세션 28만 줄(채점하는 세 채널)에서 CredSweeper(ML off)는 1,000줄에 0.66번, ML on은 0.10번 비밀이 아닌 것을 가린다. CredData의 과잉 마스킹(어렵게 고른 음성)과 달리 실제 트래픽의 비율이다. 어떤 규칙이 무엇을 가렸는지와 gitleaks가 놓친 이유는 [새 외부 소스로 본 기존 시스템의 약점](../docs/README_baseline-new-sources.md)에 있다.
 
 ## 알려진 한계
 

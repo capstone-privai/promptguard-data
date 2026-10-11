@@ -9,8 +9,9 @@ from pathlib import Path
 
 from evaluation.adapters.gitleaks_adapter import REPLACEMENT, GitleaksAdapter
 from evaluation.dataset.io import file_sha256, load_sessions
+from evaluation.dataset.schema import CHANNELS, SCORED_CHANNELS
 from evaluation.run import evaluate
-from evaluation.tests.support import GOLD, SESSIONS
+from evaluation.tests.support import GOLD, SESSIONS, TOOL_INPUT_ITEM, write_tool_input_fixture
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from run_gitleaks import locate  # noqa: E402
@@ -47,6 +48,20 @@ class GitleaksAdapterTests(unittest.TestCase):
         scanned = sum(channels[(g["session_id"], g["item_id"])] == "tool_output" for g in gold)
         self.assertEqual(metrics["counts"]["edits_total"], scanned)  # only the scanned channel is masked
         self.assertEqual(metrics["precision"], 1.0)
+
+    def test_tool_input_findings_are_applied_but_not_scored(self) -> None:
+        sessions, gold = write_tool_input_fixture(self.dir)
+        rows = [{"session_id": g["session_id"], "item_id": g["item_id"], "start": g["span"]["start"],
+                 "end": g["span"]["end"], "rule_id": "test"} for g in records(gold)]
+        for channels, applied in ((CHANNELS, 1), (SCORED_CHANNELS, 0)):
+            with self.subTest(channels=channels):
+                result = evaluate(sessions, gold, GitleaksAdapter(write_findings(self.dir, rows, sessions, channels),
+                                                                  sessions))
+                self.assertEqual(len(result.outputs[TOOL_INPUT_ITEM].edits), applied)
+                counts = result.metrics["counts"]
+                self.assertEqual((counts["gold_total"], counts["gold_excluded"]), (11, 1))
+                self.assertEqual((counts["edits_total"], counts["edits_excluded"]), (11, applied))
+                self.assertEqual((result.metrics["recall"], result.metrics["precision"]), (1.0, 1.0))
 
     def test_replacement_and_describe(self) -> None:
         g = records(GOLD)[0]

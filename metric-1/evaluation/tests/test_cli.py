@@ -11,10 +11,12 @@ from evaluation.adapters.base import ItemOutput
 from evaluation.adapters.reference import IdentityAdapter
 from evaluation.cli import (EXIT_CONFIG, EXIT_DATASET, EXIT_OK, EXIT_SCORING, build_parser, default_use,
                             execute_run, main)
-from evaluation.dataset.schema import Session
+from evaluation.dataset.io import load_sessions
+from evaluation.dataset.schema import SCORED_CHANNELS, Session
+from evaluation.report.aggregate import count_lines
 from evaluation.scorer.edits import Edit
 from evaluation.tests.support import (CREDSWEEPER_REASON, GOLD, HAS_CREDSWEEPER, HAS_PROMPTGUARD, SESSIONS,
-                                      SKIP_REASON, SYSTEM_ROOT)
+                                      SKIP_REASON, SYSTEM_ROOT, TOOL_INPUT_ITEM, write_tool_input_fixture)
 
 DATA = ("--sessions", str(SESSIONS))
 
@@ -45,6 +47,20 @@ class CliTests(unittest.TestCase):
         out = io.StringIO()
         code = main(list(argv), out=out)
         return code, out.getvalue()
+
+    def _run_dir(self, *argv: str) -> Path:
+        """Run into a fresh folder and return the run folder."""
+        out = self.out_dir / str(len(list(self.out_dir.glob("*"))) if self.out_dir.exists() else 0)
+        code, output = self._main("run", *argv, "--out", str(out))
+        self.assertEqual(code, EXIT_OK, output)
+        (run_dir,) = out.iterdir()
+        return run_dir
+
+    @staticmethod
+    def _read(run_dir: Path, name: str):
+        text = (run_dir / name).read_text(encoding="utf-8")
+        return [json.loads(line) for line in text.splitlines()] if name.endswith(".jsonl") else (
+            json.loads(text) if name.endswith(".json") else text)
 
     def _broken_dataset(self) -> Path:
         path = Path(self._tmp.name) / "sessions_broken.jsonl"
@@ -106,6 +122,33 @@ class CliTests(unittest.TestCase):
             code, output = self._main("run", *DATA, "--system", system, "--out", str(self.out_dir))
             self.assertEqual(code, EXIT_OK, output)
             self.assertIn(recall, output)
+
+    def test_tool_input_is_not_scored(self) -> None:
+        sessions, gold = write_tool_input_fixture(Path(self._tmp.name))
+        data = ("--sessions", str(sessions), "--gold", str(gold))
+        lines = sum(count_lines(item.text) for session in load_sessions(SESSIONS, GOLD) for item in session.items)
+        oracle = self._run_dir(*data, "--system", "oracle")  # masks the tool_input gold too
+        identity = self._run_dir(*data, "--system", "identity")
+        for run_dir, recall, edits in ((oracle, 1.0, 11), (identity, 0.0, 0)):
+            metrics = self._read(run_dir, "metrics.json")
+            self.assertEqual(metrics["recall"], recall)
+            self.assertEqual((metrics["counts"]["gold_total"], metrics["counts"]["gold_excluded"]), (11, 1))
+            self.assertEqual(metrics["counts"]["edits_total"], edits)
+            self.assertEqual(metrics["lines_total"], lines - 1)
+            self.assertEqual(self._read(run_dir, "run_meta.json")["scored_channels"], list(SCORED_CHANNELS))
+            self.assertIn("| tool_input | 1 (not scored) | not scored |", self._read(run_dir, "report.md"))
+            spans = self._read(run_dir, "per_span.jsonl")
+            self.assertEqual(len(spans), 12)
+            self.assertEqual([(span["session_id"], span["item_id"]) for span in spans if not span["scored"]],
+                             [TOOL_INPUT_ITEM])
+        metrics = self._read(oracle, "metrics.json")
+        self.assertEqual(metrics["precision"], 1.0)
+        self.assertEqual(metrics["counts"]["edits_excluded"], 1)
+        self.assertEqual(metrics["excluded_by_channel"], {"tool_input": {"items": 1, "lines": 1, "gold": 1, "edits": 1}})
+        edits = self._read(oracle, "per_edit.jsonl")
+        self.assertEqual([(edit["session_id"], edit["item_id"], edit["channel"]) for edit in edits if not edit["scored"]],
+                         [(*TOOL_INPUT_ITEM, "tool_input")])
+        self.assertEqual(self._read(identity, "metrics.json")["counts"]["edits_excluded"], 0)
 
     @unittest.skipUnless(HAS_PROMPTGUARD, SKIP_REASON)
     def test_run_promptguard(self) -> None:

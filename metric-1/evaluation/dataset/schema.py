@@ -10,6 +10,13 @@ from typing import Any
 # test_system_contract checks this.
 CHANNELS: tuple[str, ...] = ("prompt", "instructions", "tool_input", "tool_output")
 
+# The channels metric 1 scores, for every system. tool_input is text the model wrote (e.g. a shell command):
+# nothing to mask there; placeholders in it are restored to the real values just before execution. Its items
+# and gold stay in the data, and scoring leaves its gold, its edits and its lines out of every metric.
+# PromptGuard's CHANNEL_MAP, the CredSweeper adapter's default channels and scripts/run_gitleaks.py
+# SCORED_CHANNELS must equal this; test_system_contract checks.
+SCORED_CHANNELS: tuple[str, ...] = ("prompt", "instructions", "tool_output")
+
 # Must equal scripts/dataset_build.py TYPES and promptguard.common.schema.CandidateType;
 # test_system_contract checks both.
 GOLD_TYPES: tuple[str, ...] = ("PASSWORD", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY", "SECRET")

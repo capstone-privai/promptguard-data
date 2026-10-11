@@ -4,7 +4,7 @@
 
 - **업무 문서와 자연어 속 비밀** (Nemotron-PII): 메일, 안내문, API 문서, 양식
 - **수백 종 서비스의 토큰 형식** (Nosey Parker): 규칙 189개의 예시
-- **실제 에이전트 트래픽의 과잉 마스킹** (openhands-feedback, SWE-Gym): 정답이 거의 없는 실제 세션 약 95만 줄
+- **실제 에이전트 트래픽의 과잉 마스킹** (openhands-feedback, SWE-Gym): 정답이 거의 없는 실제 세션 약 81만 줄(채점하는 세 채널)
 
 원인이 의심되면 같은 줄을 도구에 직접 넣어 확인했다. 아래 표의 "찾음", "못 찾음"은 그 결과다.
 
@@ -12,6 +12,7 @@
 - 도구 버전: CredSweeper 1.18.5, gitleaks 8.30.1(기본 설정), PromptGuard `promptguard-demo-v0@915492b`(predictor=mock)
 - 판정은 [채점 기준](../metric-1/README.md#채점-기준)을 따른다. `partial`(일부만 가림)도 실패로 센다.
 - 시스템 구성: CredSweeper와 gitleaks는 네 채널을 모두 본다. PromptGuard는 `tool_output`만 처리하고 탐지는 CredSweeper(ML off)라서, 아래 CredSweeper의 약점을 그대로 물려받는다.
+- 채점 채널: 2026-10-11부터 `tool_input`(에이전트가 직접 쓴 도구 인자)은 채점하지 않는다([단위](../README.md#단위)). 요약의 두 표, 5절의 openhands-feedback recall, 8절의 과잉 마스킹 총계, 정리의 수치는 위 실행 기록에서 `tool_input`의 정답 span, edit, 줄을 빼고 다시 집계한 값이다. 6, 7절의 규칙별·내용별 내역은 네 채널을 모두 센 그대로다([6절](#6-키워드-규칙이-코드-조각을-값으로-잡음) 첫 문단).
 - 규칙별 분석: 채점기와 같은 설정으로 CredSweeper를 다시 돌려 탐지마다 규칙 이름을 붙였다(span 판정은 실행 기록과 모두 같다). gitleaks는 탐지 결과 파일의 규칙 이름을 썼다.
 
 ## 요약
@@ -22,7 +23,7 @@
 |---|---|---|---|---|---|---|
 | Nemotron-PII | 3,866 | 0.206 | 0.309 | 0.212 | **0.098** | |
 | Nosey Parker | 351 | 0.775 | 0.789 | 0.726 | 0.627 | |
-| openhands-feedback | 47 | 0.957 | 1.000 | 0.979 | **0.106** | 상한값이다. 정답 후보를 CredSweeper와 gitleaks가 냈다 |
+| openhands-feedback | 45 | 1.000 | 1.000 | 0.978 | **0.111** | 상한값이다. 정답 후보를 CredSweeper와 gitleaks가 냈다 |
 | SWE-Gym | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 정답이 2개라 의미가 적다 |
 
 ### 실제 에이전트 트래픽의 과잉 마스킹
@@ -31,10 +32,10 @@
 
 | 데이터셋 | 줄 수 | PromptGuard | CS ml=off | CS ml=on | gitleaks |
 |---|---|---|---|---|---|
-| openhands-feedback | 344,065 | 181 (0.53) | 293 (0.85) | 64 (0.19) | 2 (0.006) |
-| SWE-Gym | 604,706 | 516 (0.85) | 733 (1.21) | 264 (0.44) | 20 (0.03) |
+| openhands-feedback | 283,752 | 181 (0.64) | 186 (0.66) | 29 (0.10) | 2 (0.007) |
+| SWE-Gym | 528,716 | 516 (0.98) | 611 (1.16) | 258 (0.49) | 16 (0.03) |
 
-두 도구의 약점은 방향이 반대다. CredSweeper(ML off)는 많이 찾지만 코드에서 비밀이 아닌 것도 많이 가린다. gitleaks는 거의 잘못 가리지 않는 대신 Nemotron-PII와 openhands-feedback에서 정답의 90%를 놓친다. 약점은 아래 아홉 가지로 정리된다. 1~5는 비밀을 놓치는 쪽, 6~7은 비밀이 아닌 것을 가리는 쪽, 8은 CredSweeper의 ML 검증, 9는 정답·데이터 쪽 문제다.
+두 도구의 약점은 방향이 반대다. CredSweeper(ML off)는 많이 찾지만 코드에서 비밀이 아닌 것도 많이 가린다. gitleaks는 거의 잘못 가리지 않는 대신 Nemotron-PII와 openhands-feedback에서 정답의 약 90%를 놓친다. 약점은 아래 아홉 가지로 정리된다. 1~5는 비밀을 놓치는 쪽, 6~7은 비밀이 아닌 것을 가리는 쪽, 8은 CredSweeper의 ML 검증, 9는 정답·데이터 쪽 문제다.
 
 | # | 약점 | 영향 | 대표 근거 |
 |---|---|---|---|
@@ -43,8 +44,8 @@
 | 3 | **키 이름 목록의 빈틈** | 둘 다 | 쿠키 `user_session=`, `user_sess=`의 값 418개: CS 12, gitleaks 0. gitleaks는 `PASS`, `PWD`, curl 밖의 `Bearer`를 모른다 |
 | 4 | **서비스 형식 규칙의 범위** | 둘 다 | Nosey Parker에서 둘 다 놓친 58개 중 31개는 어느 쪽에도 형식 규칙이 없다. gitleaks는 URL 속 비밀번호를 1/14만 찾는다 |
 | 5 | **gitleaks 일반 규칙의 값 조건** | gitleaks | 특수문자가 든 비밀번호 0/338(Nemotron), Django `SECRET_KEY` 0/36(openhands). 값 속 `dev_`, 값 뒤의 `,` `?` `&`, 값 앞의 `b'`에서도 탈락 |
-| 6 | **키워드 규칙이 코드 조각을 값으로 잡음** | CS ML off | 실제 트래픽 과잉 마스킹 1,026개 중 730개. `key: "Enter"`, `max_input_tokens = 4096` |
-| 7 | **값 모양만 보는 info 규칙** | CS | ML을 켜도 남는 과잉 마스킹 328개 중 286개가 UUID, 15자 소문자, 도메인 규칙에서 나온다 |
+| 6 | **키워드 규칙이 코드 조각을 값으로 잡음** | CS ML off | 실제 트래픽 과잉 마스킹 1,026개(`tool_input` 포함) 중 730개. `key: "Enter"`, `max_input_tokens = 4096` |
+| 7 | **값 모양만 보는 info 규칙** | CS | ML을 켜도 남는 과잉 마스킹 328개(`tool_input` 포함) 중 286개가 UUID, 15자 소문자, 도메인 규칙에서 나온다 |
 | 8 | **ML 검증이 기억하기 쉬운 비밀번호를 버림** | CS ML on | 네 데이터에서 새로 찾은 정답 0개, 잃은 정답 396개. 단어가 든 비밀번호는 31%만 남는다 |
 | 9 | **정답·데이터 쪽 문제** | 정답 | Nemotron의 구절 라벨(`Temporary Password` 등) 44개, Nosey Parker의 경계·placeholder·난독화 문제 17개 |
 
@@ -167,7 +168,7 @@ gitleaks는 `Bearer` 토큰을 curl 명령 안에서만 찾는다. Nemotron의 `
 **특수문자.** 사람이 정한 비밀번호에는 대개 특수문자가 있다.
 
 - Nemotron에서 키-값 꼴인 비밀번호 398개 중 338개에 특수문자가 있고(`Ocean@2025`, `B7k#mP9vL2@xZ5`), gitleaks는 이 중 하나도 찾지 못했다. 특수문자가 없는 60개도 54개는 엔트로피가 3.5 이하라, 모두 합쳐 5개(0.013)를 찾았다.
-- openhands-feedback의 Django `SECRET_KEY`(한 세션에 36곳)는 `django-insecure-` 뒤에 `^`, `!`, `%`, `(`, `@`, `#` 같은 글자가 섞인 값이라 0/36이다. OWASP Juice Shop 소스의 비밀번호 3개와 비밀번호 생성기가 출력한 값 1개도 특수문자나 공백 때문에 놓쳤다. 이 데이터에서 gitleaks recall이 0.106인 이유의 대부분이다.
+- openhands-feedback의 Django `SECRET_KEY`(한 세션에 36곳)는 `django-insecure-` 뒤에 `^`, `!`, `%`, `(`, `@`, `#` 같은 글자가 섞인 값이라 0/36이다. OWASP Juice Shop 소스의 비밀번호 3개와 비밀번호 생성기가 출력한 값 1개도 특수문자나 공백 때문에 놓쳤다. 이 데이터에서 gitleaks recall이 0.111인 이유의 대부분이다.
 
 **값 속의 불용어.** 이 규칙에는 불용어가 1,446개 있고, 값에 하나라도 들어 있으면 버린다. `dev_`, `read`, `write`, `view`, `user`, `session`, `example`도 불용어다.
 
@@ -191,11 +192,11 @@ Nemotron의 API 키에는 `api_dev_`, `write_dev_`, `read_dev_` 같은 접두어
 | `FERNET_KEY = 'Q7mZp2Lw…'` | 찾음 |
 | `FERNET_KEY = b'Q7mZp2Lw…'` (Python bytes) | 못 찾음 |
 
-`.`은 값의 글자로 받아들이므로 문장 끝의 마침표는 통과한다. 데이터에서는 Nemotron의 `,`(15), 마크다운의 `**`(9), Nosey Parker의 `&`(Blynk 4), openhands-feedback의 `b'…'`(Fernet 키 2)가 이 조건에 걸렸다. CredSweeper는 이 절의 줄을 모두 찾는다.
+`.`은 값의 글자로 받아들이므로 문장 끝의 마침표는 통과한다. 데이터에서는 Nemotron의 `,`(15), 마크다운의 `**`(9), Nosey Parker의 `&`(Blynk 4), openhands-feedback의 `b'…'`(Fernet 키 2. 에이전트가 쓴 코드라 채점하지 않는 `tool_input`에 있다)가 이 조건에 걸렸다. CredSweeper는 이 절의 줄을 모두 찾는다.
 
 ## 6. 키워드 규칙이 코드 조각을 값으로 잡음
 
-openhands-feedback과 SWE-Gym은 실제 에이전트 트래픽이라 정답이 거의 없고, 가린 것은 대부분 과잉 마스킹이다. CredSweeper(ML off)의 과잉 마스킹 1,026개 중 71%(730개)가 키워드 규칙(`Key`, `Password`, `Token`, `API`, `Auth` 등)에서 나왔다. 키 이름 안에 키워드가 들어 있고 뒤에 `=`나 `:`가 오면 그 뒤를 값으로 보는데, 코드에는 이런 줄이 많다. 무엇을 가렸는지는 정답 검토 때 남긴 판정([reviews/](../metric-1/reviews/README.md))으로 나눴다.
+openhands-feedback과 SWE-Gym은 실제 에이전트 트래픽이라 정답이 거의 없고, 가린 것은 대부분 과잉 마스킹이다. 이 절과 7절의 규칙별·내용별 수는 CredSweeper가 네 채널을 모두 검사한 실행 기록의 edit를 센 것이라, 지금은 채점하지 않는 `tool_input`의 edit도 들어 있다. 채점하는 세 채널만 세면 과잉 마스킹은 ML off 797개, ML on 287개이고, 그 규칙별 내역은 다시 나누지 않았다. CredSweeper(ML off)의 과잉 마스킹 1,026개 중 71%(730개)가 키워드 규칙(`Key`, `Password`, `Token`, `API`, `Auth` 등)에서 나왔다. 키 이름 안에 키워드가 들어 있고 뒤에 `=`나 `:`가 오면 그 뒤를 값으로 보는데, 코드에는 이런 줄이 많다. 무엇을 가렸는지는 정답 검토 때 남긴 판정([reviews/](../metric-1/reviews/README.md))으로 나눴다.
 
 | 가려진 것 | CS ml=off | CS ml=on | 예 |
 |---|---|---|---|
@@ -229,7 +230,7 @@ CredSweeper를 `severity=low`로 돌려 info 규칙을 빼면, ML on 기준으�
 
 ## 8. ML 검증이 기억하기 쉬운 비밀번호를 버림
 
-CredSweeper의 ML 검증은 규칙이 만든 후보를 거르는 분류기다. 네 데이터 모두에서 ML을 켜서 새로 찾은 정답은 0개이고, 잃은 정답은 396개(Nemotron 373, Nosey Parker 22, openhands-feedback 1)다. 과잉 마스킹은 줄인다(실제 트래픽 1,026 → 328개).
+CredSweeper의 ML 검증은 규칙이 만든 후보를 거르는 분류기다. 네 데이터 모두에서 ML을 켜서 새로 찾은 정답은 0개이고, 잃은 정답은 396개(Nemotron 373, Nosey Parker 22, openhands-feedback 1)다. 과잉 마스킹은 줄인다(실제 트래픽, 채점하는 세 채널 기준 797 → 287개).
 
 잃은 값은 사람이 기억하기 쉬운 비밀번호에 몰려 있다. Nemotron에서 CS ml=off가 찾은 비밀번호 458개를 값의 모양으로 나누면 다음과 같다.
 
@@ -277,9 +278,9 @@ ML 모델은 CredData로 학습했고, CredData는 약한 비밀번호와 테스
 - **형식이 정해진 토큰은 두 도구가 서로 보완한다.** Nosey Parker에서 합치면 0.835다. 남는 것은 어느 쪽에도 형식 규칙이 없는 서비스(Doppler의 개인 토큰 외 토큰, TrueNAS, Twitch 등)와 형식이 바뀐 토큰이다. 형식 규칙 목록은 서비스가 늘고 형식이 바뀔 때마다 따라가야 한다.
 - **과잉 마스킹은 두 갈래다.** 코드 조각을 값으로 잡는 키워드 규칙(71%)은 ML 검증으로 대부분 걸러지지만, 값 모양만 보는 info 규칙(UUID 등)은 ML을 거치지 않는다. `severity=low`와 ML on을 함께 쓰면 SWE-Gym의 과잉 마스킹이 gitleaks 수준으로 내려가지만, UUID 모양 키와 기억하기 쉬운 비밀번호를 놓친다. 지금 도구에는 이 둘을 문맥으로 가르는 장치가 없다.
 - **PromptGuard 데모에 대한 함의.**
-  - 지금 데모는 `tool_output`에서 CredSweeper ML off와 같다. 실제 트래픽에서 1,000줄당 0.53~0.85번 코드 조각과 request id를 가리고, 그중 숫자·버전이 51개다. predictor가 후보를 거르는 단계에서 6, 7절의 과잉 마스킹을 줄여야 한다.
+  - 지금 데모는 `tool_output`에서 CredSweeper ML off와 같다. 실제 트래픽에서 1,000줄당 0.64~0.98번 코드 조각과 request id를 가리고, 그중 숫자·버전이 51개다. predictor가 후보를 거르는 단계에서 6, 7절의 과잉 마스킹을 줄여야 한다.
   - predictor로 CredSweeper ML을 그대로 쓰면 8절처럼 지표 1의 정답을 버린다. 판정 기준을 지표 1의 정의에 맞춰야 한다.
   - Nemotron 정답의 절반이 `prompt` 채널에 있어, 사용자가 붙여 넣은 글을 처리하지 않으면 이 데이터의 recall 상한이 0.51이다.
-  - CredSweeper와 다른 점은 채널(Nemotron `prompt` 396개, openhands-feedback `tool_input` 2개)과 겹친 탐지 처리(Nosey Parker `partial` 5개: Databricks, New Relic `NRII-` 2, base64 PEM, Slack 앱 토큰의 끝이 노출됨. [이전 문서 원인 6](README_baseline-recall.md#6-겹친-탐지-중-짧은-쪽을-남김-promptguard))뿐이다.
+  - CredSweeper와 다른 점은 채널(Nemotron `prompt` 396개)과 겹친 탐지 처리(Nosey Parker `partial` 5개: Databricks, New Relic `NRII-` 2, base64 PEM, Slack 앱 토큰의 끝이 노출됨. [이전 문서 원인 6](README_baseline-recall.md#6-겹친-탐지-중-짧은-쪽을-남김-promptguard))뿐이다.
   - 탐지 단계에서 후보를 넓히려면 문장 속 "키워드 … `is`/`:` 값", 마크다운·표·XML의 키-값, 쿠키 이름, 같은 세션에서 이미 비밀로 판정한 값의 재등장을 볼 수 있다. [이전 문서의 정리](README_baseline-recall.md#정리)와 같은 방향이다.
 - **데이터 쪽 할 일.** Nemotron의 구절·번호 라벨 44개는 변환 규칙에서 빼는 것이 맞다. Nosey Parker는 정답 경계(연결 문자열 전체, Slack 접두어), placeholder(`SOME_PASSWORD`, `myPassword`), 사용자명 자리의 같은 값을 정답에서 빼거나 좁힐지 정해야 한다. 체크섬이 깨진 난독화 값은 이전 문서의 CredData 난독화 값과 같이 다룬다.

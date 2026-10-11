@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import shutil
 import unittest
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,20 @@ from evaluation.adapters.system_root import SystemRootError, load_worker, resolv
 FIXTURES = Path(__file__).parent / "fixtures"
 SESSIONS = FIXTURES / "sessions.jsonl"
 GOLD = FIXTURES / "gold.jsonl"
+TOOL_INPUT_ITEM = ("s-0004", 1)  # "DB_PASSWORD=mysecret123\n", one gold span
+
+
+def write_tool_input_fixture(directory: Path) -> tuple[Path, Path]:
+    """The fixture pair with TOOL_INPUT_ITEM moved to tool_input, as if the agent had written that line."""
+    records = [json.loads(line) for line in SESSIONS.read_text(encoding="utf-8").splitlines()]
+    for record in records:
+        for item in record["items"]:
+            if (record["session_id"], item["item_id"]) == TOOL_INPUT_ITEM:
+                item["channel"] = "tool_input"
+    sessions, gold = directory / "sessions_tool_input.jsonl", directory / "gold_tool_input.jsonl"
+    sessions.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records), encoding="utf-8")
+    shutil.copyfile(GOLD, gold)
+    return sessions, gold
 
 HAS_CREDSWEEPER = importlib.util.find_spec("credsweeper") is not None
 CREDSWEEPER_REASON = "credsweeper is not installed (pip install -r metric-1/evaluation/requirements.txt)"

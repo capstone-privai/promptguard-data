@@ -35,6 +35,8 @@ python metric-1/scripts/dataset_verify.py metric-1/data_test/sessions_from_prive
 | `tool_input` | 58,943 | 3,820 |
 | `tool_output` | 58,943 | 4,604 |
 
+`tool_input`의 정답 3,820개는 데이터에 그대로 두지만 채점하지 않는다. 에이전트가 직접 쓴 명령이라 가릴 대상이 아니라, 실행 직전에 placeholder를 원래 값으로 되돌리는 자리이기 때문이다([채점 기준](README.md#단위)). 채점하는 정답은 `instructions`와 `tool_output`의 6,804개(PASSWORD 6,645 / PRIVATE_KEY 159)다.
+
 시나리오 10종(`meta.scenario`)이 각각 220개씩이다: `capabilities_gtfobins`, `cron_wildcard`, `cron_writable_script`, `password_file`, `password_history`, `password_reuse`, `ssh_key_reuse`, `sudo_gtfobins`, `suid_gtfobins`, `weak_password`. `meta.split`은 원본의 training/validation이고, `meta.upstream_file`과 `meta.upstream_line`으로 원본 줄을 찾을 수 있다.
 
 ## 변환 규칙
@@ -62,7 +64,7 @@ assistant의 본문과 reasoning은 채널이 없어 뺐다. `turn_id`는 assist
 - **PRIVATE_KEY**: PEM 개인키 블록. BEGIN 줄부터 END 줄까지다. 출력이 잘려 END 줄이 없으면 마지막 본문 줄까지(12개)로 잡는다. BEGIN 줄만 있고 본문이 없으면(`head -n 1`로 형식만 확인한 경우) 비밀 내용이 없으므로 정답이 아니다.
   - 잘린 12개는 모두 `head -5`, `head -c 200` 같은 명령의 출력이라 base64를 풀어 보면 공개 헤더와 공개키 일부까지만 들어 있고 비밀 부분은 없다. 그래도 정답으로 둔다. 탐지기는 개인키 블록을 통째로 가려야 하고, 블록 앞부분만 보고 뒤에 비밀이 없다고 판단할 수는 없기 때문이다.
 - **터미널 줄바꿈**: 시나리오 터미널이 80칸이라 긴 값이 중간에 끊길 수 있다. 끊긴 값은 줄바꿈을 포함한 span 하나로 잡는다(3개).
-- 값이 등장하는 모든 위치를 정답으로 잡는다. 같은 값이 시스템 프롬프트, 에이전트 명령(`echo '…' | sudo -S -l`, `test_credentials(…)`), 그 명령이 다시 찍힌 도구 결과에 반복해서 나온다. 겹치는 span은 합치고, 개인키가 비밀번호보다 우선한다.
+- 값이 등장하는 모든 위치를 정답으로 잡는다. 같은 값이 시스템 프롬프트, 에이전트 명령(`echo '…' | sudo -S -l`, `test_credentials(…)`), 그 명령이 다시 찍힌 도구 결과에 반복해서 나온다. 겹치는 span은 합치고, 개인키가 비밀번호보다 우선한다. 에이전트 명령(`tool_input`)의 정답은 만들어 두되 채점하지 않는다(위 채널 표 아래).
 
 ### 정답에서 뺀 것 (labels 파일에만 기록)
 

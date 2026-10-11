@@ -12,7 +12,7 @@ from typing import Any
 
 import evaluation
 from evaluation.dataset.io import file_sha256
-from evaluation.dataset.schema import Session
+from evaluation.dataset.schema import SCORED_CHANNELS, Session
 
 REPO_ROOT = Path(__file__).resolve().parents[3]  # promptguard-data
 
@@ -96,6 +96,7 @@ def build_run_meta(
         "git": git_info(),
         "system_git": None if system_root is None else {"root": str(system_root), **git_info(system_root)},
         "system": system,
+        "scored_channels": list(SCORED_CHANNELS),
         "debug": debug,
         "dataset": {
             "sessions_path": str(sessions_path),
@@ -105,7 +106,7 @@ def build_run_meta(
             "use": use,
             "sessions": len(sessions),
             "items": sum(len(session.items) for session in sessions),
-            "gold_spans": sum(len(session.gold) for session in sessions),
+            "gold_spans": sum(len(session.gold) for session in sessions),  # every channel; metrics.json scores fewer
             "meta_summary": summarize_meta(sessions),
         },
         "versions": {

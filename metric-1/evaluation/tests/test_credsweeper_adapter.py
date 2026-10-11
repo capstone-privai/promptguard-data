@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
-from evaluation.tests.support import GOLD, SESSIONS, require_credsweeper
+from evaluation.tests.support import GOLD, SESSIONS, TOOL_INPUT_ITEM, require_credsweeper, write_tool_input_fixture
 
 require_credsweeper()
 
 from evaluation.adapters.credsweeper_adapter import REPLACEMENT, CredSweeperAdapter, select_non_overlapping  # noqa: E402
-from evaluation.adapters.promptguard_adapter import CHANNEL_MAP  # noqa: E402
+from evaluation.dataset.schema import CHANNELS, SCORED_CHANNELS  # noqa: E402
 from evaluation.run import evaluate  # noqa: E402
 from evaluation.scorer.span_scoring import SpanStatus  # noqa: E402
 
@@ -29,9 +31,23 @@ class CredSweeperAdapterTests(unittest.TestCase):
                     for gold in score.gold_results]
         self.assertEqual(statuses, [SpanStatus.FULL, SpanStatus.FULL])
 
-    def test_default_channels_are_promptguards(self) -> None:
-        self.assertEqual(CredSweeperAdapter().channels, tuple(CHANNEL_MAP))
+    def test_default_channels_are_the_scored_channels(self) -> None:
+        self.assertEqual(CredSweeperAdapter().channels, SCORED_CHANNELS)
         self.assertNotIn("tool_input", CredSweeperAdapter().channels)
+
+    def test_scanning_tool_input_changes_no_score(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions, gold = write_tool_input_fixture(Path(tmp))
+            default = evaluate(sessions, gold, CredSweeperAdapter())
+            everything = evaluate(sessions, gold, CredSweeperAdapter(channels=CHANNELS))
+        # Scanning tool_input masks the secret there, but neither that edit nor that gold span is scored.
+        self.assertEqual(everything.outputs[TOOL_INPUT_ITEM].text, f"DB_PASSWORD={REPLACEMENT}\n")
+        self.assertEqual(default.outputs[TOOL_INPUT_ITEM].edits, [])
+        self.assertEqual((everything.metrics["counts"]["edits_excluded"], default.metrics["counts"]["edits_excluded"]),
+                         (1, 0))
+        self.assertEqual(default.metrics["counts"]["gold_total"], 11)
+        for key in ("recall", "precision", "f2", "char_recall", "fp_per_1k_lines", "lines_total", "recall_by_channel"):
+            self.assertEqual(everything.metrics[key], default.metrics[key], key)
 
     def test_overlap_keeps_longest_then_earliest(self) -> None:
         self.assertEqual(select_non_overlapping([(0, 5), (2, 10), (12, 15), (13, 16), (20, 22), (20, 22)]),
