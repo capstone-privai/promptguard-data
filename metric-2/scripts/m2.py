@@ -309,7 +309,7 @@ def run_one(task: mt.Task, condition: str, rep: int, run_dir: Path, pg_root: Pat
     session_id = str(uuid.uuid4())
     result = {"task": task.id, "suite": task.suite, "category": task.category,
               "needs_secret_value": task.spec["needs_secret_value"], "family": task.meta.get("family"),
-              "channels": task.meta.get("channels", ["file"]),
+              "channels": task.meta.get("channels", ["file"]), "secrets_fingerprint": task.fingerprint,
               "condition": condition, "rep": rep, "model": model, "session_id": session_id,
               "started_at": datetime.now().isoformat(timespec="seconds"), "error": None, "capture": capture}
     detector = proxy = None
@@ -490,7 +490,7 @@ def cmd_run(args):
         "system_commit": mt.git(pg_root, "rev-parse", "HEAD", check=False).stdout.strip(),
         "data_commit": mt.git(REPO_ROOT, "rev-parse", "HEAD", check=False).stdout.strip(),
         "claude_version": subprocess.run(["claude", "--version"], capture_output=True, text=True).stdout.strip(),
-        "capture": not args.no_capture,
+        "capture": not args.no_capture, "secrets_module": str(mt.SECRETS_MODULE),
     }, indent=2), encoding="utf-8")
     say(f"{len(jobs)} run(s) -> {batch}")
 
@@ -740,6 +740,10 @@ def cmd_recheck(args):
         for path in sorted(Path(batch).glob("*/*/result.json")):
             r = json.loads(path.read_text(encoding="utf-8"))
             task = tasks[r["task"]]
+            if r.get("secrets_fingerprint", task.fingerprint) != task.fingerprint:
+                raise SystemExit(f"{path.parent}: built with other secret values than {mt.SECRETS_MODULE.name} gives "
+                                 f"now (another M2_SECRETS, or a changed secret); recheck would compare against "
+                                 f"the wrong values")
             if task.id not in built_cache:
                 with tempfile.TemporaryDirectory() as d:
                     built_cache[task.id] = mt.build(task, Path(d) / "ws")

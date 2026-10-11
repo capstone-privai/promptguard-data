@@ -2,20 +2,20 @@
 what an agent left behind.
 
 A task is a folder under metric-2/tasks/<task_id>/ (written by hand) or metric-2/tasks_gen/<task_id>/ (written by
-scripts/m2_gen.py):
+scripts/m2_gen.py, or by hand):
   task.json   prompt, category, secrets, checks, oracle solution (see metric-2/README.md)
   workspace/  the project the agent works in; {{secret:NAME}} marks where a secret value goes and
               {{decoy:NAME}} where a look-alike value goes that is not a secret
   check.py    optional, task-specific check functions named by {"kind": "python", "func": ...}
 
-Secret values come from the same deterministic generator as the metric 1 datasets
-(metric-1/scripts/dataset_build.py), seeded with the task id and the secret name, so every build of a task is
-byte-identical. They are public synthetic values: never use them to authenticate anywhere.
+Secret and decoy values come from the secrets module (scripts/m2_secrets.py, or the file M2_SECRETS names). It
+seeds every value with the task id and the secret name, so every build of a task is byte-identical. They are
+public synthetic values: never use them to authenticate anywhere.
 
 Gold for metric 2 is every declared secret: these are the only values the gold condition masks. Each derived
 form a task declares (base64, URL-encoded, JSON-escaped) is a gold value of its own, and the base value is gold
-too, so a decoded form that shows up in a tool result is masked as well. Decoys (a publishable key, a Firebase
-web key, a checksum) are generated the same way but are never gold: a task that needs one tests over-masking.
+too, so a decoded form that shows up in a tool result is masked as well. Decoys (a publishable key, a public SSH
+key, an image digest) are generated the same way but are never gold: a task that needs one tests over-masking.
 
 Besides the workspace files, a task can put secrets on other paths into the session (see the runner, m2.py):
 the prompt itself, the session environment, stdin, an appended system prompt, a fixture MCP server, git history
@@ -26,7 +26,6 @@ from __future__ import annotations
 import base64
 import configparser
 import hashlib
-import hmac
 import importlib.util
 import json
 import os
@@ -46,16 +45,25 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TASKS_DIR = REPO_ROOT / "metric-2" / "tasks"
 GEN_TASKS_DIR = REPO_ROOT / "metric-2" / "tasks_gen"
 TASK_DIRS = (TASKS_DIR, GEN_TASKS_DIR)
-sys.path.insert(0, str(REPO_ROOT / "metric-1" / "scripts"))
-import dataset_build as m1  # noqa: E402  (shared synthetic value generator)
+
+
+def load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # dataclasses look their module up here
+    spec.loader.exec_module(module)
+    return module
+
+
+# The secret generator is swappable: any module with Secret, make_secrets and make_decoys (see m2_secrets.py).
+SECRETS_MODULE = Path(os.environ.get("M2_SECRETS") or Path(__file__).with_name("m2_secrets.py")).resolve()
+secretgen = load_module(SECRETS_MODULE, "m2_secretgen")
+Secret = secretgen.Secret
 
 SEED_PREFIX = "metric2"
 SECRET_REF = re.compile(r"\{\{(secret|decoy):([a-z][a-z0-9_]*)\}\}")
 # A placeholder a masking layer may have written back into a file: [PASSWORD_1], [TOKEN_3], [API_KEY_2] ...
 PLACEHOLDER = re.compile(r"\[[A-Z][A-Z0-9_]*_\d+\]")
-ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-CLASSES = {"l": "abcdefghijkmnopqrstuvwxyz", "u": "ABCDEFGHJKLMNPQRSTUVWXYZ", "d": "23456789",
-           "s": "!#%*+-=?@^_~", "a": ALNUM, "h": "0123456789abcdef"}
 TEXT_SUFFIXES = {"", ".env", ".txt", ".md", ".json", ".yaml", ".yml", ".ini", ".cfg", ".conf", ".toml",
                  ".py", ".js", ".sh", ".log", ".sql", ".csv", ".production", ".staging", ".dev", ".prod",
                  ".properties", ".xml", ".tfvars", ".tf", ".hcl", ".php", ".rb", ".go", ".java", ".ts", ".mjs",
@@ -64,216 +72,8 @@ TEXT_SUFFIXES = {"", ".env", ".txt", ".md", ".json", ".yaml", ".yml", ".ini", ".
                  ".lock", ".tpl", ".out", ".pub"}
 # Every commit a build makes gets this author and a fixed date, so commit hashes are the same on every build.
 GIT_DATE = "2026-10-01T09:00:00+09:00"
-
-B64 = ALNUM + "+/"
-B64URL = ALNUM + "-_"
 HEX = "0123456789abcdef"
-UPPER_DIGITS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-DIGITS = "0123456789"
-B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-BECH32 = "QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L"
-
-
-# ---- secrets -----------------------------------------------------------------------------------------------
-
-def b64url(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode().rstrip("=")
-
-
-def jwt_with_claims(seed: str, claims: dict) -> str:
-    header = b64url(b'{"alg":"HS256","typ":"JWT"}')
-    payload = b64url(json.dumps(claims, separators=(",", ":")).encode())
-    signature = b64url(hmac.new(m1.value(seed + ":jwt-key", 32).encode(), f"{header}.{payload}".encode(),
-                                hashlib.sha256).digest())
-    return f"{header}.{payload}.{signature}"
-
-
-def from_pattern(seed: str, pattern: str) -> str:
-    """One character per pattern letter: l lower, u upper, d digit, s symbol, a alphanumeric, h hex."""
-    return "".join(m1.value(f"{seed}:{i}", 1, CLASSES[c]) for i, c in enumerate(pattern))
-
-
-def v(seed: str, length: int, alphabet: str = ALNUM) -> str:
-    return m1.value(seed, length, alphabet)
-
-
-def fake_pem(seed: str, label: str, n_bytes: int, width: int = 64) -> str:
-    """A PEM block with a random body. It has the shape of a key but is not a parsable key."""
-    body = base64.b64encode(hashlib.shake_256(f"{SEED_PREFIX}:pem:{seed}".encode()).digest(n_bytes)).decode()
-    lines = [body[i:i + width] for i in range(0, len(body), width)]
-    return f"-----BEGIN {label}-----\n" + "\n".join(lines) + f"\n-----END {label}-----"
-
-
-def pgp_block(seed: str) -> str:
-    body = base64.b64encode(hashlib.shake_256(f"{SEED_PREFIX}:pgp:{seed}".encode()).digest(480)).decode()
-    lines = [body[i:i + 64] for i in range(0, len(body), 64)]
-    return ("-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n" + "\n".join(lines) + "\n=" + v(seed + ":crc", 4, B64)
-            + "\n-----END PGP PRIVATE KEY BLOCK-----")
-
-
-# kind -> (gold type, generator(seed, spec) -> value). Provider formats follow the public shape of each credential
-# (prefix, length, alphabet) so detectors see what they would see in a real project; the values are random.
-KINDS = {
-    "password16": ("PASSWORD", lambda s, _: m1.value(s, 16, ALNUM)),
-    "password_dollar": ("PASSWORD", lambda s, _: m1.value(s + ":a", 6, ALNUM) + "$"
-                        + m1.value(s + ":b", 1, CLASSES["l"]) + m1.value(s + ":c", 8, ALNUM)),
-    # Passwords whose characters break a particular container unless escaped (metric 2 escape tasks).
-    "password_url_unsafe": ("PASSWORD", lambda s, _: v(s + ":a", 5) + "@" + v(s + ":b", 4) + ":" + v(s + ":c", 3)
-                            + "/" + v(s + ":d", 4)),
-    "password_yaml_unsafe": ("PASSWORD", lambda s, _: "@" + v(s + ":a", 8) + ": " + v(s + ":b", 6)),
-    "password_percent": ("PASSWORD", lambda s, _: v(s + ":a", 6) + "%" + v(s + ":b", 1, "abcdefgh") + v(s + ":c", 7)),
-    "password_xml_unsafe": ("PASSWORD", lambda s, _: v(s + ":a", 6) + "&" + v(s + ":b", 4) + "<" + v(s + ":c", 5)),
-    "password_json_unsafe": ("PASSWORD", lambda s, _: v(s + ":a", 6) + '"' + v(s + ":b", 4) + "\\" + v(s + ":c", 5)),
-    "password_backslash": ("PASSWORD", lambda s, _: v(s + ":a", 7) + "\\" + v(s + ":b", 7)),
-    "pattern": ("PASSWORD", lambda s, spec: from_pattern(s, spec["pattern"])),
-    "stripe_live": ("SECRET", lambda s, _: "sk_live_" + m1.value(s, 24, ALNUM)),
-    "stripe_test": ("SECRET", lambda s, _: "sk_test_" + m1.value(s, 24, ALNUM)),
-    "stripe_restricted": ("SECRET", lambda s, _: "rk_live_" + v(s, 32)),
-    "stripe_webhook": ("SECRET", lambda s, _: "whsec_" + v(s, 32)),
-    "jwt_claims": ("TOKEN", lambda s, spec: jwt_with_claims(s, spec["claims"])),
-    "literal": (None, lambda _s, spec: spec["value"]),
-    "github_pat": ("TOKEN", lambda s, _: "github_pat_" + v(s + ":a", 22) + "_" + v(s + ":b", 59)),
-    "github_oauth": ("TOKEN", lambda s, _: "gho_" + v(s, 36)),
-    "github_app": ("TOKEN", lambda s, _: "ghs_" + v(s, 36)),
-    "gitlab_pat": ("TOKEN", lambda s, _: "glpat-" + v(s, 20, B64URL)),
-    "slack_user": ("TOKEN", lambda s, _: f"xoxp-{v(s + ':a', 10, DIGITS)}-{v(s + ':b', 11, DIGITS)}-"
-                   f"{v(s + ':c', 13, DIGITS)}-{v(s, 32, HEX)}"),
-    "slack_app": ("TOKEN", lambda s, _: f"xapp-1-A{v(s + ':a', 10, UPPER_DIGITS)}-{v(s + ':b', 13, DIGITS)}-"
-                  f"{v(s, 64, HEX)}"),
-    "slack_webhook": ("SECRET", lambda s, _: f"https://hooks.slack.com/services/T{v(s + ':a', 10, UPPER_DIGITS)}/"
-                      f"B{v(s + ':b', 10, UPPER_DIGITS)}/{v(s, 24)}"),
-    "discord_webhook": ("SECRET", lambda s, _: f"https://discord.com/api/webhooks/{v(s + ':a', 18, DIGITS)}/"
-                        f"{v(s, 68, B64URL)}"),
-    "aws_temp_key": ("ACCESS_KEY", lambda s, _: "ASIA" + v(s, 16, m1.AWS_ACCESS_ID)),
-    "aws_session_token": ("TOKEN", lambda s, _: "IQoJb3JpZ2luX2VjE" + v(s, 280, B64)),
-    "gcp_api_key": ("SECRET", lambda s, _: "AIza" + v(s, 35, B64URL)),
-    "google_oauth_secret": ("SECRET", lambda s, _: "GOCSPX-" + v(s, 28, B64URL)),
-    "google_refresh_token": ("TOKEN", lambda s, _: "1//0" + v(s, 99, B64URL)),
-    "azure_storage_key": ("SECRET", lambda s, _: v(s, 86, B64) + "=="),
-    "azure_client_secret": ("SECRET", lambda s, _: v(s + ":a", 3) + v(s + ":b", 1, DIGITS) + "Q~"
-                            + v(s, 34, ALNUM + "-_.~")),
-    "openai_key": ("SECRET", lambda s, _: "sk-proj-" + v(s + ":a", 64, B64URL) + "T3BlbkFJ" + v(s + ":b", 64, B64URL)),
-    "sendgrid_key": ("SECRET", lambda s, _: "SG." + v(s + ":a", 22, B64URL) + "." + v(s + ":b", 43, B64URL)),
-    "mailgun_key": ("SECRET", lambda s, _: "key-" + v(s, 32, HEX)),
-    "twilio_auth_token": ("SECRET", lambda s, _: v(s, 32, HEX)),
-    "npm_token": ("TOKEN", lambda s, _: "npm_" + v(s, 36)),
-    "pypi_token": ("TOKEN", lambda s, _: "pypi-AgEIcHlwaS5vcmc" + v(s, 64, B64URL)),
-    "docker_pat": ("TOKEN", lambda s, _: "dckr_pat_" + v(s, 27, B64URL)),
-    "datadog_api_key": ("SECRET", lambda s, _: v(s, 32, HEX)),
-    "datadog_app_key": ("SECRET", lambda s, _: v(s, 40, HEX)),
-    "sentry_auth_token": ("TOKEN", lambda s, _: "sntrys_" + v(s, 64)),
-    "shopify_token": ("TOKEN", lambda s, _: "shpat_" + v(s, 32, HEX)),
-    "telegram_bot_token": ("TOKEN", lambda s, _: v(s + ":a", 10, DIGITS) + ":AA" + v(s, 33, B64URL)),
-    "discord_bot_token": ("TOKEN", lambda s, _: "MT" + v(s + ":a", 24) + "." + v(s + ":b", 6, B64URL) + "."
-                          + v(s, 38, B64URL)),
-    "vault_token": ("TOKEN", lambda s, _: "hvs." + v(s, 90, B64URL)),
-    "tfc_token": ("TOKEN", lambda s, _: v(s + ":a", 14) + ".atlasv1." + v(s, 67)),
-    "databricks_token": ("TOKEN", lambda s, _: "dapi" + v(s, 32, HEX)),
-    "hf_token": ("TOKEN", lambda s, _: "hf_" + v(s, 34)),
-    "square_token": ("TOKEN", lambda s, _: "EAAA" + v(s, 60, B64URL)),
-    "okta_token": ("TOKEN", lambda s, _: "00" + v(s, 40, B64URL)),
-    "session_cookie": ("TOKEN", lambda s, _: v(s, 43, B64URL)),
-    "fernet_key": ("SECRET", lambda s, _: base64.urlsafe_b64encode(hashlib.shake_256(s.encode()).digest(32)).decode()),
-    "laravel_key": ("SECRET", lambda s, _: "base64:" + base64.b64encode(hashlib.shake_256(s.encode()).digest(32)).decode()),
-    "django_secret": ("SECRET", lambda s, _: v(s + ":a", 1) + v(s, 49, ALNUM + "!@%^*-_=+")),
-    "rails_secret": ("SECRET", lambda s, _: v(s, 128, HEX)),
-    "totp_seed": ("SECRET", lambda s, _: v(s, 32, B32)),
-    "hmac_secret": ("SECRET", lambda s, _: v(s, 64, HEX)),
-    "rsa_private_key": ("PRIVATE_KEY", lambda s, _: fake_pem(s, "RSA PRIVATE KEY", 1190)),
-    "openssh_private_key": ("PRIVATE_KEY", lambda s, _: fake_pem(s, "OPENSSH PRIVATE KEY", 400, 70)),
-    "ec_private_key": ("PRIVATE_KEY", lambda s, _: fake_pem(s, "EC PRIVATE KEY", 121)),
-    "pgp_private_key": ("PRIVATE_KEY", lambda s, _: pgp_block(s)),
-    "age_secret_key": ("PRIVATE_KEY", lambda s, _: "AGE-SECRET-KEY-1" + v(s, 58, BECH32)),
-    **{kind: (kind_type, lambda s, _spec, g=generate: g(s)) for kind, (kind_type, generate) in m1.GENERATORS.items()},
-}
-
-# Look-alike values that are not secrets. They share a secret's shape (prefix, length, alphabet), so a detector
-# that goes by shape masks them, but a task needs them as they are.
-DECOY_KINDS = {
-    "publishable_live": lambda s, _: "pk_live_" + v(s, 24),
-    "publishable_test": lambda s, _: "pk_test_" + v(s, 24),
-    "firebase_web_key": lambda s, _: "AIza" + v(s, 35, B64URL),
-    "sha1": lambda s, _: v(s, 40, HEX),
-    "sha256": lambda s, _: v(s, 64, HEX),
-    "image_digest": lambda s, _: "sha256:" + v(s, 64, HEX),
-    "uuid": lambda s, _: m1.uuid_key(s),
-    "request_id": lambda s, _: "req_" + v(s, 24),
-    "trace_id": lambda s, _: v(s, 32, HEX),
-    "oauth_client_id": lambda s, _: v(s, 12, DIGITS) + "-" + v(s + ":b", 32, "abcdefghijklmnopqrstuvwxyz0123456789")
-                                    + ".apps.googleusercontent.example.invalid",
-    "aws_account_id": lambda s, _: v(s, 12, DIGITS),
-    "twilio_sid": lambda s, _: "AC" + v(s, 32, HEX),
-    "npm_integrity": lambda s, _: "sha512-" + base64.b64encode(hashlib.shake_256(s.encode()).digest(64)).decode(),
-    "ssh_fingerprint": lambda s, _: "SHA256:" + b64url(hashlib.sha256(s.encode()).digest()),
-    "ssh_public_key": lambda s, _: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI" + v(s, 43, B64) + " deploy@ci",
-    "gpg_key_id": lambda s, _: v(s, 16, "0123456789ABCDEF"),
-    "base64_blob": lambda s, _: base64.b64encode(hashlib.shake_256(s.encode()).digest(48)).decode(),
-    "commit_sha": lambda s, _: v(s, 40, HEX),
-    "nonce": lambda s, _: v(s, 22, B64),
-    "literal": lambda _s, spec: spec["value"],
-}
-
-
-@dataclass
-class Secret:
-    name: str
-    type: str
-    value: str
-    root: str = ""  # the declared base secret a derived form comes from
-
-
-def transform(value: str, name: str, arg: str | None) -> tuple[str, str | None]:
-    """Metric 1 transforms (base64, url, json, basic) and a few container encodings metric 2 tasks need."""
-    if name == "b64nl":  # base64 of the value plus a newline: `echo` without -n
-        return base64.b64encode((value + "\n").encode()).decode(), None
-    if name == "b64url":
-        return base64.urlsafe_b64encode(value.encode()).decode(), None
-    if name == "hex":
-        return value.encode().hex(), None
-    if name == "indent":  # a multi-line value under a YAML block scalar: continuation lines are indented
-        return value.replace("\n", "\n" + " " * int(arg or 2)), None
-    if name == "escape_n":  # newlines written as \n, e.g. a PEM in a double-quoted .env value
-        return value.replace("\n", "\\n"), None
-    if name == "xml":
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;"), None
-    if name == "url_safe":  # percent-encoding that keeps letters and digits readable
-        return quote(value, safe=""), None
-    if name == "dollar2":
-        return value.replace("$", "$$"), None
-    return m1.transform(value, name, arg)
-
-
-def make_secrets(task_id: str, specs: dict) -> dict[str, Secret]:
-    out: dict[str, Secret] = {}
-    for name, spec in specs.items():  # a derived secret names a base declared before it
-        if "from" in spec:
-            base = out[spec["from"]]
-            value, kind_type = base.value, base.type
-            for t in spec.get("transforms", []):
-                t_name, _, t_arg = t.partition("=")
-                value, new_type = transform(value, t_name, t_arg or None)
-                kind_type = new_type or kind_type
-            root = base.root
-        else:
-            kind_type, generate = KINDS[spec["kind"]]
-            value = generate(f"{SEED_PREFIX}:{task_id}:{name}", spec)
-            root = name
-        out[name] = Secret(name, spec.get("type") or kind_type, value, root)
-    return out
-
-
-def make_decoys(task_id: str, specs: dict) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for name, spec in specs.items():
-        if "from" in spec:
-            value = out[spec["from"]]
-            for t in spec.get("transforms", []):
-                t_name, _, t_arg = t.partition("=")
-                value, _ = transform(value, t_name, t_arg or None)
-        else:
-            value = DECOY_KINDS[spec["kind"]](f"{SEED_PREFIX}:{task_id}:decoy:{name}", spec)
-        out[name] = value
-    return out
+MIN_SECRET_LENGTH = 8  # the gold detector (detector_worker.MIN_GOLD_LEN) and the leak scan skip shorter values
 
 
 def gold_rows(secrets: dict[str, Secret]) -> list[dict]:
@@ -300,7 +100,7 @@ def leak_forms(secrets: dict[str, Secret]) -> list[tuple[str, str, str]]:
     out, seen = [], set()
 
     def add(root, how, text):
-        if len(text) >= 8 and text not in seen:
+        if len(text) >= MIN_SECRET_LENGTH and text not in seen:
             seen.add(text)
             out.append((root, how, text))
 
@@ -344,6 +144,12 @@ class Task:
     def suite(self) -> str:
         return "gen" if self.dir.parent == GEN_TASKS_DIR else "core"
 
+    @property
+    def fingerprint(self) -> str:
+        """Short hash of the values this build gets: a run recorded under another secrets module (or an edited
+        secret) has a different one, and its saved workspace cannot be checked against these values."""
+        return values_fingerprint(self.secrets, self.decoys)
+
     def fill(self, text: str) -> str:
         def value(m: re.Match) -> str:
             return self.decoys[m.group(2)] if m.group(1) == "decoy" else self.secrets[m.group(2)].value
@@ -359,13 +165,18 @@ class Task:
         return value
 
 
+def values_fingerprint(secrets: dict, decoys: dict[str, str]) -> str:
+    rows = sorted((n, s.value) for n, s in secrets.items()) + sorted(decoys.items())
+    return hashlib.sha256(json.dumps(rows).encode()).hexdigest()[:16]
+
+
 def load_task(path: Path) -> Task:
     spec = json.loads((path / "task.json").read_text(encoding="utf-8"))
     if spec["id"] != path.name:
         raise ValueError(f"{path}: task.json id {spec['id']!r} != folder name")
     task = Task(spec["id"], path, spec)
-    task.secrets = make_secrets(task.id, spec.get("secrets", {}))
-    task.decoys = make_decoys(task.id, spec.get("decoys", {}))
+    task.secrets = secretgen.make_secrets(task.id, spec.get("secrets", {}))
+    task.decoys = secretgen.make_decoys(task.id, spec.get("decoys", {}))
     return task
 
 
@@ -846,10 +657,7 @@ def check_redacted_copy(task: Task, ws: Path, check: dict, built: dict[str, str]
 
 
 def load_check_module(task: Task):
-    spec = importlib.util.spec_from_file_location(f"m2check_{task.id.replace('-', '_')}", task.dir / "check.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_module(task.dir / "check.py", f"m2check_{task.id.replace('-', '_')}")
 
 
 def integrity(task: Task, ws: Path, built: dict[str, str]) -> tuple[bool, str]:
