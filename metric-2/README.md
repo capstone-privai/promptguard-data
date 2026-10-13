@@ -6,7 +6,7 @@
 |---|---|---|
 | `none` | 아무것도 가리지 않는다 | PromptGuard Mod를 붙이되, 탐지기가 아무것도 찾지 않는다 |
 | `gold` | 과제에 심은 비밀값만 정확히 가린다 (이상적인 탐지기) | 같은 Mod, 탐지기가 정답 값 목록을 그대로 돌려준다 |
-| `promptguard` | PromptGuard가 찾은 것을 가린다 (평가 대상 시스템) | 같은 Mod, 원래 CredSweeper 탐지기 |
+| `promptguard` | PromptGuard가 찾은 것을 가린다 (평가 대상 시스템) | 같은 Mod, 시스템의 탐지기(`src/detector`의 앙상블: CredSweeper, gitleaks, 자체 규칙의 다수결) |
 
 세 조건 모두 형제 저장소 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)의 Native Mod(`src/native-mod`)와 MCP bridge를 **그대로** 쓰고, 그 뒤의 탐지기 프로세스만 바꿔 끼운다. 그래서 세 조건은 "무엇을 가렸는가" 말고는 같다(같은 훅, 같은 placeholder 형식 `[TYPE_n]`, 같은 지연 경로).
 

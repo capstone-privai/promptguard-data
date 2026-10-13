@@ -129,11 +129,15 @@ def _scripted_sessions() -> list[list[dict[str, Any]]]:
          {"text": overlap, "result": {"ok": False, "findings": [], "errors": ["SPAN_TOO_LARGE"]}},
          {"text": overlap, "result": {"ok": True, "findings": [], "errors": ["INVALID_OFFSET_RANGE"]}},
          {"text": overlap, "result": found(finding(overlap, "abcd"))}],
+        # A value masked once is re-masked where the detector misses it later, and inside a longer value.
+        [{"text": repeated, "result": found(finding(repeated, "Qw3rTy9uIo"))},
+         {"text": "echo Qw3rTy9uIo; B=Zx8cVb7nMm\n", "result": found(finding("echo Qw3rTy9uIo; B=Zx8cVb7nMm\n", "Zx8cVb7nMm"))},
+         {"text": "x=Qw3rTy9uIoQw3rTy9uIo y=Zx8cVb7nMm\n", "result": found()}],
     ]
 
 
 def _worker_sessions() -> list[list[dict[str, Any]]]:
-    detector = load_worker(SYSTEM_ROOT).Adapter()
+    detector = load_worker(SYSTEM_ROOT).load_detector()
     sessions = [[{"text": item.text, "result": detector.scan(item.text, CHANNEL_MAP[item.channel])}
                  for item in session.items if item.channel in CHANNEL_MAP]
                 for session in load_sessions(SESSIONS, GOLD)]

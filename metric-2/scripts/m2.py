@@ -6,12 +6,12 @@ under a masking condition and checks what it left behind. Every run also goes th
 
   none         the PromptGuard mod is attached, but its detector finds nothing: nothing is masked
   gold         the PromptGuard mod is attached, and its detector returns exactly the task's gold secrets
-  promptguard  the PromptGuard mod with its own CredSweeper detector: the system under test
+  promptguard  the PromptGuard mod with its own detector (the src/detector ensemble): the system under test
   plain        Claude Code without the mod (optional sanity baseline)
 
 none, gold and promptguard all run the unchanged mod and MCP bridge from promptguard-claude-demoV0; only the
 detector process behind the bridge differs (scripts/detector_worker.py for none and gold, the demo's
-CredSweeper worker for promptguard). So the conditions differ in what gets masked and nothing else.
+src/detector/worker.py for promptguard). So the conditions differ in what gets masked and nothing else.
 
 Tasks are picked with --tasks: ids, short ids (t01, g0042), suites (core, gen) or field:value selectors
 (category:use, family:cfgdiag, channel:prompt, format:yaml, kind:github_pat).
@@ -78,8 +78,10 @@ def say(*args):
 
 def system_root(arg: str | None) -> Path:
     root = Path(arg or os.environ.get("PROMPTGUARD_CLAUDE_ROOT") or REPO_ROOT.parent / "promptguard-claude-demoV0")
-    if not (root / "src" / "native-mod" / "hooks" / "register.mjs").is_file():
-        raise SystemExit(f"PromptGuard Claude Code demo not found at {root}; pass --system-root or set PROMPTGUARD_CLAUDE_ROOT")
+    for required in (("native-mod", "hooks", "register.mjs"), ("detector", "worker.py"), ("detector", "mcp-bridge.cjs")):
+        if not (root / "src" / Path(*required)).is_file():
+            raise SystemExit(f"no src/{'/'.join(required)} under {root}; pass --system-root or set PROMPTGUARD_CLAUDE_ROOT "
+                             "to a promptguard-claude-demoV0 checkout with the src/detector layout")
     return root.resolve()
 
 
@@ -110,7 +112,7 @@ class Detector:
             python = pg_root / ".venv" / "bin" / "python"
             if not python.is_file():
                 raise RuntimeError(f"{python} missing; run install.sh in {pg_root} first")
-            argv, cwd = [str(python), str(pg_root / "src" / "credsweeper-adapter" / "worker.py")], pg_root
+            argv, cwd = [str(python), str(pg_root / "src" / "detector" / "worker.py")], pg_root
         else:
             argv, cwd = [sys.executable, str(DETECTOR), "--mode", condition], run_dir
             if condition == "gold":
@@ -177,8 +179,10 @@ def claude_command(task: mt.Task, condition: str, run_dir: Path, session_id: str
     if api_url:
         env["ANTHROPIC_BASE_URL"] = api_url
     if condition != "plain":
-        bridge = pg_root / "src" / "credsweeper-adapter" / "mcp-bridge.cjs"
-        servers["pgdetector"] = {"command": "node", "args": [str(bridge)], "env": {"PG_DETECTOR_URL": detector.url}}
+        bridge = pg_root / "src" / "detector" / "mcp-bridge.cjs"
+        # The bridge reads PG_MOD_DETECTOR_URL first; set both so an inherited value cannot win.
+        servers["pgdetector"] = {"command": "node", "args": [str(bridge)],
+                                 "env": {"PG_MOD_DETECTOR_URL": detector.url, "PG_DETECTOR_URL": detector.url}}
         argv += ["--plugin-dir", str(pg_root / "src" / "native-mod")]
         env.update({"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1", "PG_DETECTOR_URL": detector.url,
                     "PG_MOD_AUDIT": str(run_dir / "audit.json"), "PG_SESSION_HASH": secrets.token_hex(32)})

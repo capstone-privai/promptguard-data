@@ -36,7 +36,7 @@ try:
     SYSTEM_ROOT: Path | None = resolve_system_root()
 except SystemRootError:
     SYSTEM_ROOT = None
-# The PromptGuard worker runs CredSweeper, so PromptGuard tests need the checkout and its pinned CredSweeper.
+# The PromptGuard detector runs CredSweeper, so PromptGuard tests need the checkout and its pinned CredSweeper.
 try:
     load_worker(SYSTEM_ROOT)
     HAS_PROMPTGUARD, SKIP_REASON = True, ""
@@ -64,22 +64,25 @@ def found(*findings: dict[str, Any]) -> dict[str, Any]:
 
 
 class ScriptedWorker:
-    """Stands in for the checkout's worker module: `Adapter().scan` answers from a text → result table
-    (an exception is raised), and finds nothing in any other text."""
+    """Stands in for the checkout's pgdetector package: `load_detector().scan` answers from a text → result
+    table (an exception is raised), and finds nothing in any other text."""
 
-    CREDSWEEPER_VERSION = "scripted"
+    DESCRIPTION = {"detector": "scripted"}
 
     def __init__(self, results: dict[str, Any]):
         table = results
 
-        class Adapter:
+        class Detector:
+            def describe(self) -> dict[str, Any]:
+                return dict(ScriptedWorker.DESCRIPTION)
+
             def scan(self, text: str, source: str) -> Any:
                 result = table.get(text, found())
                 if isinstance(result, Exception):
                     raise result
                 return result
 
-        self.Adapter = Adapter
+        self.load_detector = Detector
 
 
 def require_credsweeper() -> None:

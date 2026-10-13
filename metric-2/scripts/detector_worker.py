@@ -2,7 +2,7 @@
 
 The mod in promptguard-claude-demoV0 (src/native-mod) sends every text bound for the model to a local
 detector over HTTP (POST /scan-batch, through its MCP bridge) and replaces each finding with a [TYPE_n]
-placeholder. This worker speaks the same protocol as src/credsweeper-adapter/worker.py, so the mod runs
+placeholder. This worker speaks the same protocol as src/detector/worker.py, so the mod runs
 unchanged and only what counts as a finding differs:
 
   --mode none   no findings: the mod runs but masks nothing

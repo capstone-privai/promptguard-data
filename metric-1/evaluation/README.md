@@ -1,6 +1,6 @@
 # 지표 1 채점기
 
-`data_test/`의 세션을 평가 대상 시스템에 통과시키고, `data_answer/`의 정답 span과 비교해 비밀값을 얼마나 잘 가렸는지 채점한다. PromptGuard는 별도 저장소([promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0))에 있다. 그 시스템은 Claude Code Native Mod가 모델로 가는 텍스트를 CredSweeper worker에 보내고, 찾은 값마다 `[PASSWORD_1]` 같은 placeholder를 덮어쓴다. 채점기는 그 체크아웃의 worker 코드(`src/credsweeper-adapter/worker.py`)를 프로세스 안에서 그대로 불러 탐지하고, Mod의 치환 규칙(`src/native-mod/hooks/register.mjs`의 `placeholder`, `redactText`)대로 텍스트를 바꾼다. Claude Code, MCP bridge, HTTP 서버는 띄우지 않는다. macOS와 Linux에서 Python 3.10 이상, 표준 라이브러리, 시스템과 같은 고정 버전 `credsweeper`(1.19.0)로 돈다.
+`data_test/`의 세션을 평가 대상 시스템에 통과시키고, `data_answer/`의 정답 span과 비교해 비밀값을 얼마나 잘 가렸는지 채점한다. PromptGuard는 별도 저장소([promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0))에 있다. 그 시스템은 Claude Code Native Mod가 모델로 가는 텍스트를 탐지기 worker(`src/detector/worker.py`)에 보내고, 찾은 값마다 `[PASSWORD_1]` 같은 placeholder를 덮어쓴다. worker는 `src/detector/pgdetector` 패키지의 앙상블(CredSweeper, gitleaks, 자체 규칙을 `detector.json`의 합의 규칙으로 묶은 것)을 HTTP로 내놓는다. 채점기는 그 패키지를 프로세스 안에서 그대로 불러(`pgdetector.load_detector()`) 탐지하고, Mod의 치환 규칙(`src/native-mod/hooks/register.mjs`의 `placeholder`, `redactText`, `remaskText`)대로 텍스트를 바꾼다. Claude Code, MCP bridge, HTTP 서버는 띄우지 않는다. macOS와 Linux에서 Python 3.10 이상, 표준 라이브러리, 시스템과 같은 고정 버전 `credsweeper`(1.19.0)로 돈다. gitleaks가 PATH에 없으면 시스템처럼 gitleaks 어댑터만 빠지고, 어떤 어댑터가 투표했는지는 `run_meta.json`의 `system.detector`에 남는다.
 
 데이터를 만드는 일(비밀 주입, 원문 수집)은 [scripts/](../scripts/)가 맡고, 이 패키지는 그 결과물을 읽기만 한다.
 
@@ -61,8 +61,8 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 
 | system | 동작 |
 |---|---|
-| `promptguard` | 세션마다 Mod의 placeholder 장부 하나를 두고 item을 순서대로 처리한다. 처리하는 채널(아래 표)의 item은 worker의 `Adapter.scan`으로 탐지하고, Mod처럼 뒤쪽 탐지부터 placeholder로 바꾼다. 같은 값은 세션 안에서 같은 placeholder가 된다. 나머지 채널은 그대로 통과한다. |
-| `credsweeper` | 같은 채널(`prompt`, `instructions`, `tool_output`)을 CredSweeper 기본 규칙만으로 검사해 탐지 결과를 전부 `[SECRET]`으로 가린다. PromptGuard worker의 추가 규칙(`rules-demo.yaml`)과 걸러내기(무해한 변수명, 유형 없는 `Credential` 규칙)는 일부러 적용하지 않는다. |
+| `promptguard` | 세션마다 Mod의 placeholder 장부 하나를 두고 item을 순서대로 처리한다. 처리하는 채널(아래 표)의 item은 시스템 탐지기의 `scan`으로 탐지하고, Mod처럼 뒤쪽 탐지부터 placeholder로 바꾼다. 같은 값은 세션 안에서 같은 placeholder가 된다. 그다음 Mod의 remask처럼, 세션에서 이미 가린 원래 값이 다시 나오면 탐지기가 놓쳤어도 같은 placeholder로 바꾼다(긴 값부터). 나머지 채널은 그대로 통과한다. |
+| `credsweeper` | 같은 채널(`prompt`, `instructions`, `tool_output`)을 CredSweeper 기본 규칙만으로 검사해 탐지 결과를 전부 `[SECRET]`으로 가린다. PromptGuard 탐지기의 추가 규칙(`credsweeper-rules.yaml`), 다른 어댑터의 투표와 걸러내기(무해한 변수명, 유형 없는 `Credential` 규칙)는 일부러 적용하지 않는다. |
 | `gitleaks` | `scripts/run_gitleaks.py`가 미리 돌린 gitleaks(기본 설정) 탐지 결과를 읽어 전부 `[SECRET]`으로 가린다. 채점기는 하위 프로세스를 띄우지 않으므로 gitleaks는 채점 전에 따로 돌린다. 검사 채널은 그 스크립트의 `--channels`(기본은 채점하는 세 채널)를 따른다. gitleaks는 item 전체를 한 번에 검사하므로 item별 지연 시간은 없고, 전체 검사 시간은 `run_meta.json`의 `scan_seconds`에 남는다. |
 | `oracle` | 정답 span을 정확히 가린다. recall 1.0, precision 1.0이 나와야 한다. |
 | `identity` | 아무것도 바꾸지 않는다. recall 0.0, precision N/A가 나와야 한다. |
@@ -171,12 +171,12 @@ metric-1/
     dataset/   형식, 로더, 검증기              (시스템을 불러오지 않음)
     scorer/    edit 검증, span 채점            (시스템을 불러오지 않음)
     report/    집계, 메타, 파일 쓰기           (시스템을 불러오지 않음)
-    adapters/  평가 대상 시스템, 체크아웃 탐색  (system_root.py가 PromptGuard worker를 불러오는 유일한 곳)
+    adapters/  평가 대상 시스템, 체크아웃 탐색  (system_root.py가 PromptGuard 탐지기를 불러오는 유일한 곳)
     run.py     데이터 → 어댑터 → 채점 → 집계
     cli.py     명령행
 ```
 
-- PromptGuard 체크아웃의 코드는 `adapters/system_root.py`만 불러온다(`worker.py`를 import). `dataset/`, `scorer/`, `report/`는 시스템을 불러오지 않는다. 예전 시스템(promptguard-demo-v0)의 `promptguard` 패키지는 어디서도 import하지 않는다. `evaluation/` 어디서도(테스트 제외) `subprocess`나 네트워크 모듈을 import하지 않는다. `tests/test_dependency_rules.py`가 이 규칙을 검사한다.
+- PromptGuard 체크아웃의 코드는 `adapters/system_root.py`만 불러온다(`src/detector`의 `pgdetector` 패키지를 import). 그 패키지의 gitleaks 어댑터는 텍스트마다 gitleaks 하위 프로세스를 띄운다. `dataset/`, `scorer/`, `report/`는 시스템을 불러오지 않는다. 예전 시스템(promptguard-demo-v0)의 `promptguard` 패키지는 어디서도 import하지 않는다. `evaluation/` 어디서도(테스트 제외) `subprocess`나 네트워크 모듈을 import하지 않는다. `tests/test_dependency_rules.py`가 이 규칙을 검사한다.
 - Mod의 치환은 JavaScript라서 어댑터의 `ModSession`이 같은 규칙으로 다시 구현한다. `tests/test_system_contract.py`가 Node로 실제 `register.mjs`를 돌려, 같은 worker 결과에 같은 텍스트가 나오는지(실패할 입력이면 둘 다 실패하는지) 확인한다. `CHANNEL_MAP`의 `source`가 Mod에 있는지, `GOLD_TYPES`와 `CHANNELS`가 `dataset_build.py`와 같은지, PromptGuard의 `CHANNEL_MAP`, CredSweeper 어댑터의 기본 채널, `run_gitleaks.py`의 기본 채널이 `SCORED_CHANNELS`와 같은지, `run_all.py`가 채점 채널 밖을 검사하지 않는지도 확인한다. 채점기는 자체 `Edit` 타입을 쓰고, edit 검증이 출력과 어긋나는 edit를 잡아낸다.
 - 여기서 PromptGuard 코드를 고치지 않는다. 평가에 시스템 변경이 필요하면 [SYSTEM_REQUESTS.md](SYSTEM_REQUESTS.md)에 적는다.
 - 테스트 fixture에는 실제 서비스 형식의 비밀(클라우드 키, API 키 접두사, PEM 블록)을 넣지 않는다. `DB_PASSWORD=mysecret123` 같은 값을 쓴다.
@@ -192,5 +192,5 @@ cd metric-1 && python -m unittest discover -s evaluation/tests -t .
 ## 알려진 한계
 
 - worker의 HTTP·MCP 전송 계층은 재현하지 않는다. 실제 Mod에서는 요청 본문이 8MB를 넘거나 bridge가 5초 안에 답을 받지 못하면 훅이 실패해 원문이 나가지만(fail-open), 채점기는 그런 item도 끝까지 탐지한다. `latency_ms.max`가 5,000ms에 가까우면 이 차이를 의심한다.
-- 지연 시간은 worker의 탐지와 치환만 잰 값이다. Mod와 bridge를 오가는 시간은 들어가지 않는다.
+- 지연 시간은 탐지기의 탐지와 Mod 치환을 프로세스 안에서 잰 값이다. Mod와 bridge를 오가는 시간은 들어가지 않는다.
 - 실행 폴더 이름은 초 단위 현지 시각이다. 같은 초에 같은 설정으로 실행하면 `-2`, `-3`, …이 붙는다.

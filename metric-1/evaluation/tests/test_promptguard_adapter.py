@@ -10,6 +10,7 @@ from evaluation.adapters.promptguard_adapter import CHANNEL_MAP, PromptGuardAdap
 from evaluation.dataset.io import load_sessions
 from evaluation.dataset.schema import Item, Session
 from evaluation.run import evaluate, evaluate_sessions
+from evaluation.scorer.edits import verify
 from evaluation.scorer.span_scoring import SpanStatus
 from evaluation.tests.support import (GOLD, HAS_PROMPTGUARD, SESSIONS, SKIP_REASON, TOOL_INPUT_ITEM, ScriptedWorker,
                                       finding, found, write_tool_input_fixture)
@@ -87,7 +88,8 @@ class PromptGuardAdapterTests(unittest.TestCase):
         self.assertEqual(described["processed_channels"], ["prompt", "instructions", "tool_output"])
         self.assertEqual(described["channel_map"], CHANNEL_MAP)
         self.assertEqual(described["failed_open_items"], 0)
-        self.assertEqual(described["detector_version"], self.adapter.worker.CREDSWEEPER_VERSION)
+        self.assertEqual(described["detector"], self.adapter.detector.describe())
+        self.assertIn("credsweeper", [adapter["name"] for adapter in described["detector"]["adapters"]])
 
 
 class FailOpenTests(unittest.TestCase):
@@ -121,6 +123,23 @@ class FailOpenTests(unittest.TestCase):
         outputs = PromptGuardAdapter(worker).run_session(_session(first, second))
         self.assertEqual(outputs[0].text, first)
         self.assertEqual(outputs[1].text, "other=[PASSWORD_2]\n")
+
+    def test_known_values_are_remasked_with_edits(self) -> None:
+        first, second = "A_PASSWORD=Qw3rTy9uIo\n", "🔐 echo Qw3rTy9uIo B_PASSWORD=Zx8cVb7nMm Qw3rTy9uIo\n"
+        worker = ScriptedWorker({first: found(finding(first, "Qw3rTy9uIo")),
+                                 second: found(finding(second, "Zx8cVb7nMm"))})
+        outputs = PromptGuardAdapter(worker).run_session(_session(first, second))
+        self.assertEqual(outputs[1].text, "🔐 echo [PASSWORD_1] B_PASSWORD=[PASSWORD_2] [PASSWORD_1]\n")
+        self.assertEqual([edit.replacement for edit in outputs[1].edits], ["[PASSWORD_1]", "[PASSWORD_2]", "[PASSWORD_1]"])
+        self.assertEqual(verify(second, outputs[1].text, outputs[1].edits), outputs[1].edits)
+
+    def test_remask_inside_a_placeholder_is_one_edit(self) -> None:
+        # A one-character value also matches inside the placeholders already written, as in the mod.
+        text = "A=Qw3rTy9uIo\n"
+        worker = ScriptedWorker({text: found(finding(text, "Qw3rTy9uIo"), finding(text, "A", "api key"))})
+        output = PromptGuardAdapter(worker).run_session(_session(text))[0]
+        self.assertEqual(output.text, "[[API_KEY_1]PI_KEY_1]=[P[API_KEY_1]SSWORD_1]\n")
+        self.assertEqual(verify(text, output.text, output.edits), output.edits)
 
     def test_fault_injection_mode_is_refused(self) -> None:
         with patch.dict(os.environ, {"PG_DETECTOR_MODE": "crash"}), self.assertRaises(ValueError):

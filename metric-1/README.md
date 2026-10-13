@@ -2,7 +2,7 @@
 
 코딩 에이전트가 주고받는 텍스트에서 비밀값을 얼마나 정확히 찾아 가리는지를 span 단위로 채점한다. 데이터는 특정 에이전트에 묶이지 않는 형식으로 만든다. 지금 데이터는 합성 파일럿 v0.1이며 사람 검토를 기다린다.
 
-평가 대상 시스템(PromptGuard)은 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)에 있고, 채점기가 그 체크아웃의 CredSweeper worker를 불러 쓰고 Claude Code Mod의 치환 규칙을 따른다.
+평가 대상 시스템(PromptGuard)은 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)에 있고, 채점기가 그 체크아웃의 탐지기(`src/detector`의 앙상블)를 불러 쓰고 Claude Code Mod의 치환 규칙을 따른다.
 
 ## 폴더
 
