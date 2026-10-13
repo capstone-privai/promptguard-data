@@ -71,36 +71,41 @@ def aggregate(
     }
 
     statuses = [result.status for _channel, result in gold]
-    full = statuses.count(SpanStatus.FULL)
+    exact = statuses.count(SpanStatus.EXACT)
+    over = statuses.count(SpanStatus.OVER)
     partial = statuses.count(SpanStatus.PARTIAL)
     missed = statuses.count(SpanStatus.MISSED)
-    edits_tp = sum(1 for result in edits if result.overlaps_gold)
-    edits_fp = len(edits) - edits_tp
+    edits_tp = sum(1 for result in edits if result.within_gold)
+    edits_fp = sum(1 for result in edits if not result.overlaps_gold)
+    edits_over = len(edits) - edits_tp - edits_fp
     gold_chars = sum(result.end - result.start for _channel, result in gold)
     exposed_chars = sum(result.exposed_chars for _channel, result in gold)
 
-    recall = ratio(full, len(gold))
+    recall = ratio(exact, len(gold))
     precision = ratio(edits_tp, len(edits))
 
     def recall_where(predicate) -> float | None:
         selected = [result for channel, result in gold if predicate(channel, result)]
-        return ratio(sum(1 for result in selected if result.status is SpanStatus.FULL), len(selected))
+        return ratio(sum(1 for result in selected if result.status is SpanStatus.EXACT), len(selected))
 
     return {
         "recall": recall,
         "precision": precision,
         "f2": f2_score(precision, recall),
         "char_recall": ratio(gold_chars - exposed_chars, gold_chars),
+        "over_rate": ratio(over, len(gold)),
         "partial_rate": ratio(partial, len(gold)),
         "missed_rate": ratio(missed, len(gold)),
         "fp_per_1k_lines": None if not lines_total else edits_fp / lines_total * 1000,
         "counts": {
             "gold_total": len(gold),
-            "full": full,
+            "exact": exact,
+            "over": over,
             "partial": partial,
             "missed": missed,
             "edits_total": len(edits),
             "edits_tp": edits_tp,
+            "edits_over": edits_over,
             "edits_fp": edits_fp,
             "gold_chars_total": gold_chars,
             "exposed_chars_total": exposed_chars,

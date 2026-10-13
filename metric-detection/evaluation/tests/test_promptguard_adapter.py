@@ -34,9 +34,9 @@ class PromptGuardAdapterTests(unittest.TestCase):
     def _status(self, session_id: str, item_id: int, value: str) -> SpanStatus:
         return self.status[(session_id, item_id, self.items[(session_id, item_id)].text.index(value))]
 
-    def test_repository_examples_are_fully_masked(self) -> None:
-        self.assertEqual(self._status("s-0001", 2, "mysecret123"), SpanStatus.FULL)
-        self.assertEqual(self._status("s-0001", 2, "secret123@"), SpanStatus.FULL)
+    def test_repository_examples_are_masked_exactly(self) -> None:
+        self.assertEqual(self._status("s-0001", 2, "mysecret123"), SpanStatus.EXACT)
+        self.assertEqual(self._status("s-0001", 2, "secret123@"), SpanStatus.EXACT)
         # The mod substitutes from the end of the text, so the later value gets the lower number.
         text = self.result.outputs[("s-0001", 2)].text
         self.assertIn("DB_PASSWORD=[PASSWORD_2]\n", text)
@@ -64,16 +64,16 @@ class PromptGuardAdapterTests(unittest.TestCase):
         self.assertEqual((output.text, output.edits, output.elapsed_ms), (text, [], None))
 
     def test_tool_input_gold_is_not_counted(self) -> None:
-        # The same secret masked as tool_output (one full span, one edit) drops out of both sides as tool_input.
+        # The same secret masked as tool_output (one exact span, one edit) drops out of both sides as tool_input.
         with tempfile.TemporaryDirectory() as tmp:
             result = evaluate(*write_tool_input_fixture(Path(tmp)), self.adapter)
         self.assertEqual(result.outputs[TOOL_INPUT_ITEM].edits, [])
         before, after = self.result.metrics["counts"], result.metrics["counts"]
-        self.assertEqual(self._status(*TOOL_INPUT_ITEM, "mysecret123"), SpanStatus.FULL)
+        self.assertEqual(self._status(*TOOL_INPUT_ITEM, "mysecret123"), SpanStatus.EXACT)
         self.assertEqual((after["gold_total"], after["gold_excluded"]), (before["gold_total"] - 1, 1))
-        self.assertEqual(after["full"], before["full"] - 1)
+        self.assertEqual(after["exact"], before["exact"] - 1)
         self.assertEqual((after["edits_total"], after["edits_tp"]), (before["edits_total"] - 1, before["edits_tp"] - 1))
-        self.assertEqual(result.metrics["recall"], after["full"] / after["gold_total"])
+        self.assertEqual(result.metrics["recall"], after["exact"] / after["gold_total"])
         self.assertNotIn("tool_input", result.metrics["recall_by_channel"])
 
     def test_offsets_are_converted_to_code_points(self) -> None:

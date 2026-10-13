@@ -155,24 +155,26 @@ metric-detection의 정답 span은 **실제로 인증에 쓰이는 자격증명 
 
 ### 판정
 
-판정은 **span 정확 일치가 아니라 글자 단위로 덮었는지**로 한다.
+판정은 **정확히 비밀값 부분만 가렸는지**로 한다. 비밀값을 다 가려도 그 앞뒤 텍스트까지 같이 가렸으면 실패다.
 
-- **정답 span**: 그 item의 edit들을 합친 구간이 span의 모든 글자를 덮으면 `full`, 일부만 덮으면 `partial`, 한 글자도 덮지 못하면 `missed`다. `full`만 성공이고, `partial`은 비밀값 일부가 노출된 것이므로 실패다.
-- **edit**: 정답 span과 한 글자라도 겹치면 참양성, 겹치지 않으면 과잉 마스킹(거짓양성)이다. 정답이 없는 item에서 나온 edit는 모두 과잉 마스킹이다.
-- 경계가 정답보다 넓어도 감점하지 않는다. 비밀값을 여러 edit로 나눠 가려도 합쳐서 다 덮으면 `full`이다. edit 하나가 정답 span 둘을 덮으면 두 span 모두 `full`이고, 그 edit는 참양성 하나로 센다.
+- **정답 span**: 그 item의 edit들이 span의 모든 글자를 덮고, span에 걸친 edit가 하나도 span 밖으로 넘치지 않으면 `exact`다. 모든 글자를 덮었지만 span에 걸친 edit 중 하나라도 밖으로 넘치면 `over`, 일부만 덮으면 `partial`, 한 글자도 덮지 못하면 `missed`다. `exact`만 성공이다. `partial`은 비밀값 일부가 노출된 것이고, `over`는 키 이름이나 주변 텍스트까지 가려 모델이 문맥을 잃은 것이다.
+- **edit**: 정답 span 하나 안에 들어가면 참양성이다. 정답과 겹치지만 밖으로 넘치면 넓은 마스킹, 정답과 한 글자도 겹치지 않으면 과잉 마스킹(거짓양성)이다. 정답이 없는 item에서 나온 edit는 모두 과잉 마스킹이다.
+- 비밀값을 여러 edit로 나눠 가려도 모두 span 안에 있고 합쳐서 다 덮으면 `exact`다. 키 이름을 비밀값과 별도의 edit로 가린 경우(`DB_PASSWORD=`와 `mysecret123`을 따로 가림) 비밀값은 `exact`이고 키 이름의 edit는 과잉 마스킹으로 센다. edit 하나가 맞닿은 정답 span 둘을 한꺼번에 덮으면 두 span 모두 `over`다(지금 데이터에는 맞닿은 정답 span이 없다).
 - 유형(`type`)은 맞히지 않아도 된다. 유형은 유형별 recall 같은 분석에만 쓴다. 대체 문자열의 내용(`[SECRET]`, placeholder 등)도 보지 않는다.
 
 예를 들어 item `DB_PASSWORD=mysecret123`의 정답이 `mysecret123`일 때 다음과 같이 판정한다.
 
 | 시스템이 가린 구간 | 정답 span | edit |
 |---|---|---|
-| `mysecret123` | `full` | 참양성 |
-| `DB_PASSWORD=mysecret123` | `full` (넓게 가려도 성공) | 참양성 |
+| `mysecret123` | `exact` | 참양성 |
+| `DB_PASSWORD=mysecret123` | `over` (넓게 가려 실패) | 넓은 마스킹 |
 | `mysecret` | `partial` (`123` 노출, 실패) | 참양성 |
 | `DB_PASSWORD` | `missed` | 과잉 마스킹 |
 | 없음 | `missed` | 없음 |
 
-정답보다 넓게 가린 정도는 지금 지표에 반영되지 않는다. 정답 밖으로 얼마나 넘쳤는지는 `per_edit.jsonl`의 좌표로 따로 확인해야 한다.
+정답 경계는 데이터셋이 정한다. 따옴표, 접두어(`Bearer `), PEM 머리글처럼 경계가 애매한 형식은 탐지기가 정답과 다르게 잘라 `over`나 `partial`이 되기 쉽다. 다 가렸는지만 보려면 `recall`에 `over_rate`를 더한다. 정답 밖으로 얼마나 넘쳤는지는 `per_edit.jsonl`의 좌표로 확인한다.
+
+2026-10-14 이전에는 다 덮기만 하면(`exact`와 `over`를 합쳐) 성공으로 셌다. 데이터셋별 문서와 분석 문서에 적힌 점수는 그 기준으로 잰 것이라, 지금 기준으로 다시 재면 recall과 precision이 같거나 낮게 나온다.
 
 ### edit 검증
 
@@ -182,12 +184,12 @@ metric-detection의 정답 span은 **실제로 인증에 쓰이는 자격증명 
 
 | 지표 | 정의 |
 |---|---|
-| **recall** (주) | `full` 정답 span / 전체 정답 span (채점하는 세 채널) |
-| **precision** (주) | 정답과 겹치는 edit / 전체 edit (채점하는 세 채널) |
+| **recall** (주) | `exact` 정답 span / 전체 정답 span (채점하는 세 채널) |
+| **precision** (주) | 정답 span 안에 들어간 edit / 전체 edit (채점하는 세 채널) |
 | F2 | `5PR / (4P + R)`. 비밀을 놓치는 쪽이 더 위험하므로 recall에 가중을 둔다 |
 | 1,000줄당 과잉 마스킹 | 정답과 겹치지 않는 edit / 채점하는 세 채널의 줄 수 × 1000 |
 | char recall | 가려진 정답 글자 수 / 전체 정답 글자 수 |
-| partial, missed 비율 | `partial` / `missed` 정답 span의 비율 |
+| over, partial, missed 비율 | `over` / `partial` / `missed` 정답 span의 비율 |
 | 유형별, 채널별 recall | 정답을 유형, 채널로 나눠 잰 recall |
 
 분모가 0이면 `N/A`다. 지연 시간과 결과 파일의 정확한 정의는 [evaluation/README.md](evaluation/README.md#지표)에 있다.

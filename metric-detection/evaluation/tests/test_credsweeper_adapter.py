@@ -29,7 +29,7 @@ class CredSweeperAdapterTests(unittest.TestCase):
         self.assertIn(f"DB_PASSWORD={REPLACEMENT}\n", output.text)
         statuses = [gold.status for score in result.scores if (score.session_id, score.item_id) == ("s-0001", 2)
                     for gold in score.gold_results]
-        self.assertEqual(statuses, [SpanStatus.FULL, SpanStatus.FULL])
+        self.assertEqual(statuses, [SpanStatus.EXACT, SpanStatus.EXACT])
 
     def test_default_channels_are_the_scored_channels(self) -> None:
         self.assertEqual(CredSweeperAdapter().channels, SCORED_CHANNELS)

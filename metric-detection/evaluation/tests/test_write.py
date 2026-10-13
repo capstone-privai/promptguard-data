@@ -56,7 +56,8 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(set(spans[0]), {"session_id", "item_id", "span_id", "start", "end", "type", "channel", "scored",
                                          "status", "exposed_chars"})
         edits = [json.loads(line) for line in (run_dir / "per_edit.jsonl").read_text(encoding="utf-8").splitlines()]
-        self.assertEqual(set(edits[0]), {"session_id", "item_id", "start", "end", "channel", "scored", "overlaps_gold"})
+        self.assertEqual(set(edits[0]), {"session_id", "item_id", "start", "end", "channel", "scored", "overlaps_gold",
+                                         "within_gold"})
         metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
         self.assertEqual(metrics["counts"]["gold_total"], 12)
         self.assertEqual(metrics["counts"]["gold_total"], sum(span["scored"] for span in spans))

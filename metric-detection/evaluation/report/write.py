@@ -55,7 +55,7 @@ def _per_span(result: RunResult) -> list[dict[str, Any]]:
 def _per_edit(result: RunResult) -> list[dict[str, Any]]:
     return [{"session_id": edit.session_id, "item_id": edit.item_id, "start": edit.start, "end": edit.end,
              "channel": score.channel, "scored": score.channel in SCORED_CHANNELS,
-             "overlaps_gold": edit.overlaps_gold}
+             "overlaps_gold": edit.overlaps_gold, "within_gold": edit.within_gold}
             for score in result.scores for edit in score.edit_results]
 
 
@@ -71,7 +71,7 @@ def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
     lines = [
         f"{level} Primary metrics", "",
         "| Metric | Value |", "|---|---|",
-        f"| Recall (span protection) | {fmt(metrics['recall'])} ({counts['full']}/{counts['gold_total']}) |",
+        f"| Recall (exact masking) | {fmt(metrics['recall'])} ({counts['exact']}/{counts['gold_total']}) |",
         f"| Precision | {fmt(metrics['precision'])} ({counts['edits_tp']}/{counts['edits_total']}) |",
         "",
         f"{level} Secondary metrics", "",
@@ -79,6 +79,7 @@ def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
         f"| F2 | {fmt(metrics['f2'])} |",
         f"| Over-masking per 1,000 lines | {fmt(metrics['fp_per_1k_lines'], 2)} ({counts['edits_fp']} edits outside gold) |",
         f"| Character recall | {fmt(metrics['char_recall'])} |",
+        f"| Over-wide masking rate | {fmt(metrics['over_rate'])} ({counts['over']} spans, {counts['edits_over']} edits) |",
         f"| Partial exposure rate | {fmt(metrics['partial_rate'])} ({counts['partial']}) |",
         f"| Missed rate | {fmt(metrics['missed_rate'])} ({counts['missed']}) |",
         f"| Latency p50 / p95 / max (ms) | {fmt(latency['p50'], 2)} / {fmt(latency['p95'], 2)} / "

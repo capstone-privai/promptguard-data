@@ -128,18 +128,19 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 - 정답은 데이터셋에서만 온다. 시스템이 보지 못한 비밀도 놓친 것으로 센다.
 - 채점하는 채널은 `prompt`, `instructions`, `tool_output`이다(`dataset/schema.py`의 `SCORED_CHANNELS`). `tool_input`은 모델이 직접 쓴 도구 인자라 가릴 대상이 아니고, 실행 직전에 placeholder를 원래 값으로 되돌리는 자리다. 그래서 모든 시스템에서 `tool_input` item의 정답 span, edit, 줄 수를 아래 지표의 분자와 분모 양쪽에서 뺀다. 시스템이 `tool_input`을 검사해 가렸어도(`--channels all`, `oracle`) 점수는 같다. item과 정답은 데이터에 그대로 두고 채점할 때만 뺀다. 뺀 양은 `metrics.json`의 `counts.gold_excluded`, `counts.edits_excluded`, `excluded_by_channel`에 남는다.
 - 채점에는 시스템이 보고한 edit(원문 좌표의 `start`, `end`, `replacement`)만 쓴다. item을 채점하기 전에 edit를 원문에 적용해 보고, 결과가 시스템의 실제 출력과 한 글자라도 다르면 종료 코드 2로 멈춘다. 후보, 예측, 감사 로그는 채점에 쓰지 않고, 출력 텍스트끼리 diff하지도 않는다.
-- 정답 span의 모든 글자가 edit 합집합 안에 있으면 `full`, 한 글자도 없으면 `missed`, 그 사이면 `partial`이다. edit는 정답 span과 조금이라도 겹치면 참양성이다. 대체 문자열의 내용은 보지 않는다. 판정 예시는 [metric-detection README](../README.md#판정)에 있다.
+- 정답 span의 모든 글자가 edit 합집합 안에 있고 span에 걸친 edit가 모두 span 안에 있으면 `exact`, 모든 글자를 덮었지만 span 밖으로 넘친 edit가 있으면 `over`, 한 글자도 없으면 `missed`, 그 사이면 `partial`이다. `exact`만 성공이다. edit는 정답 span 하나 안에 들어가면 참양성(`within_gold`), 정답과 겹치지 않으면 과잉 마스킹(`overlaps_gold`가 false)이고, 그 사이(겹치지만 넘침)는 어느 쪽도 아닌 넓은 마스킹이다. 대체 문자열의 내용은 보지 않는다. 판정 예시는 [metric-detection README](../README.md#판정)에 있다.
 
 ## 지표
 
 | 키 | 정의 |
 |---|---|
-| `recall` | full 정답 span / 전체 정답 span. 정답, edit, 줄은 모두 채점 채널의 것만 센다 |
-| `precision` | 정답과 겹치는 edit / 전체 edit |
+| `recall` | exact 정답 span / 전체 정답 span. 정답, edit, 줄은 모두 채점 채널의 것만 센다 |
+| `precision` | 정답 span 안에 들어간 edit / 전체 edit. 정답 밖으로 넘친 edit는 참양성이 아니다 |
 | `f2` | `5PR / (4P + R)`. 둘 다 0이면 `0.0`, 하나라도 `None`이면 `None` |
 | `fp_per_1k_lines` | 정답과 겹치지 않는 edit / 전체 줄 수 × 1000 |
 | `char_recall` | 가려진 정답 글자 수 / 전체 정답 글자 수 |
-| `partial_rate`, `missed_rate` | partial / missed 정답 span의 비율 |
+| `over_rate`, `partial_rate`, `missed_rate` | over / partial / missed 정답 span의 비율. 다 덮었는지만 보는 옛 recall은 `recall + over_rate`다 |
+| `counts.edits_tp`, `counts.edits_over`, `counts.edits_fp` | 정답 span 안에 들어간 edit, 정답과 겹치지만 넘친 edit, 정답과 겹치지 않는 edit의 수 |
 | `recall_by_type`, `recall_by_channel` | 유형별, 채널별 recall. 해당 그룹에 정답이 없으면 `None` |
 | `latency_ms` | 시스템이 처리한 item의 p50 / p95 / max / n (선형 보간 백분위). 같은 기계에서 잰 실행끼리만 비교한다 |
 | `density_per_1k_lines`, `lines_total`, `composition` | 1,000줄당 정답 수, 전체 줄 수(`count("\n")`에 끝 줄이 개행 없이 끝나면 1을 더함), 유형별·채널별 정답 수 |
@@ -156,7 +157,7 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 | `run_meta.json` | 시작 시각, 이 저장소의 git commit·branch(`git`), 평가한 PromptGuard 체크아웃의 경로·commit·branch(`system_git`), 시스템 설정(PromptGuard는 처리 채널과 `failed_open_items` 포함), 채점 채널(`scored_channels`), 세션·정답 파일의 경로와 SHA-256, 용도(`use`), 세션·item·정답 수(정답 수는 데이터 전체), meta 요약, 버전, 플랫폼 |
 | `metrics.json` | 위 지표 |
 | `per_span.jsonl` | 정답 span 하나당 한 줄: `session_id`, `item_id`, `span_id`, `start`, `end`, `type`, `channel`, `scored`, `status`, `exposed_chars` |
-| `per_edit.jsonl` | edit 하나당 한 줄: `session_id`, `item_id`, `start`, `end`, `channel`, `scored`, `overlaps_gold` |
+| `per_edit.jsonl` | edit 하나당 한 줄: `session_id`, `item_id`, `start`, `end`, `channel`, `scored`, `overlaps_gold`, `within_gold` |
 | `report.md` | 위 내용을 사람이 읽기 좋게 정리한 요약 |
 | `debug/items.jsonl` | `--debug` 전용. PromptGuard는 item마다 worker 결과(위치, 유형, 규칙, 값의 HMAC)와 fail-open 이유. 원문 위치를 알려 주므로 공유하지 않는다 |
 

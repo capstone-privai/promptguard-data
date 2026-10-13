@@ -20,41 +20,46 @@ class AggregateTests(unittest.TestCase):
         ]
         self.scores = [
             ItemScore("s1", 0, "tool_output",
-                      [_gold(0, 0, 10, SpanStatus.FULL, 0), _gold(0, 20, 30, SpanStatus.PARTIAL, 4)],
-                      [EditResult("s1", 0, 0, 10, True), EditResult("s1", 0, 20, 26, True),
-                       EditResult("s1", 0, 40, 45, False)]),
+                      [_gold(0, 0, 10, SpanStatus.EXACT, 0), _gold(0, 20, 30, SpanStatus.PARTIAL, 4),
+                       _gold(0, 50, 55, SpanStatus.OVER, 0)],
+                      [EditResult("s1", 0, 0, 10, True, True), EditResult("s1", 0, 20, 26, True, True),
+                       EditResult("s1", 0, 40, 45, False, False), EditResult("s1", 0, 48, 55, True, False)]),
             ItemScore("s1", 1, "prompt", [_gold(1, 0, 5, SpanStatus.MISSED, 5, "TOKEN")], []),
-            ItemScore("s2", 0, "tool_input", [_gold(0, 0, 5, SpanStatus.FULL, 0, "TOKEN")],
-                      [EditResult("s2", 0, 0, 5, True)]),
-            ItemScore("s2", 1, "tool_output", [], [EditResult("s2", 1, 0, 1, False)]),
+            ItemScore("s2", 0, "tool_input", [_gold(0, 0, 5, SpanStatus.EXACT, 0, "TOKEN")],
+                      [EditResult("s2", 0, 0, 5, True, True)]),
+            ItemScore("s2", 1, "tool_output", [], [EditResult("s2", 1, 0, 1, False, False)]),
         ]
         self.elapsed = {("s1", 0): 2.0, ("s1", 1): None, ("s2", 0): 4.0, ("s2", 1): 10.0}
 
     def test_metric_values(self) -> None:
-        # The tool_input item (3 lines, one full gold span, one edit) is left out of every count.
+        # The tool_input item (3 lines, one exact gold span, one edit) is left out of every count. Only the exact
+        # span counts toward recall, and only edits inside a gold span toward precision; the over-wide edit is
+        # neither a true positive nor over-masking outside gold.
         metrics = aggregate(self.sessions, self.scores, self.elapsed)
         self.assertEqual(metrics["lines_total"], 7)
-        self.assertEqual(metrics["recall"], 1 / 3)
-        self.assertEqual(metrics["precision"], 2 / 4)
-        self.assertAlmostEqual(metrics["f2"], 5 * 0.5 * (1 / 3) / (4 * 0.5 + 1 / 3))
-        self.assertEqual(metrics["char_recall"], (25 - 9) / 25)
-        self.assertEqual(metrics["partial_rate"], 1 / 3)
-        self.assertEqual(metrics["missed_rate"], 1 / 3)
+        self.assertEqual(metrics["recall"], 1 / 4)
+        self.assertEqual(metrics["precision"], 2 / 5)
+        self.assertAlmostEqual(metrics["f2"], 5 * 0.4 * 0.25 / (4 * 0.4 + 0.25))
+        self.assertEqual(metrics["char_recall"], (30 - 9) / 30)
+        self.assertEqual(metrics["over_rate"], 1 / 4)
+        self.assertEqual(metrics["partial_rate"], 1 / 4)
+        self.assertEqual(metrics["missed_rate"], 1 / 4)
         self.assertEqual(metrics["fp_per_1k_lines"], 2 / 7 * 1000)
-        self.assertEqual(metrics["density_per_1k_lines"], 3 / 7 * 1000)
+        self.assertEqual(metrics["density_per_1k_lines"], 4 / 7 * 1000)
         self.assertEqual(metrics["counts"], {
-            "gold_total": 3, "full": 1, "partial": 1, "missed": 1, "edits_total": 4, "edits_tp": 2,
-            "edits_fp": 2, "gold_chars_total": 25, "exposed_chars_total": 9, "gold_excluded": 1, "edits_excluded": 1,
+            "gold_total": 4, "exact": 1, "over": 1, "partial": 1, "missed": 1, "edits_total": 5, "edits_tp": 2,
+            "edits_over": 1, "edits_fp": 2, "gold_chars_total": 30, "exposed_chars_total": 9, "gold_excluded": 1,
+            "edits_excluded": 1,
         })
         self.assertEqual(metrics["scored_channels"], ["prompt", "instructions", "tool_output"])
         self.assertEqual(metrics["excluded_by_channel"], {"tool_input": {"items": 1, "lines": 3, "gold": 1, "edits": 1}})
-        self.assertEqual(metrics["composition"]["by_type"]["PASSWORD"], 2)
+        self.assertEqual(metrics["composition"]["by_type"]["PASSWORD"], 3)
         self.assertEqual(metrics["composition"]["by_type"]["TOKEN"], 1)
-        self.assertEqual(metrics["composition"]["by_channel"], {"prompt": 1, "instructions": 0, "tool_output": 2})
-        self.assertEqual(metrics["recall_by_type"]["PASSWORD"], 0.5)
+        self.assertEqual(metrics["composition"]["by_channel"], {"prompt": 1, "instructions": 0, "tool_output": 3})
+        self.assertEqual(metrics["recall_by_type"]["PASSWORD"], 1 / 3)
         self.assertEqual(metrics["recall_by_type"]["TOKEN"], 0.0)
         self.assertIsNone(metrics["recall_by_type"]["PRIVATE_KEY"])
-        self.assertEqual(metrics["recall_by_channel"], {"prompt": 0.0, "instructions": None, "tool_output": 0.5})
+        self.assertEqual(metrics["recall_by_channel"], {"prompt": 0.0, "instructions": None, "tool_output": 1 / 3})
         self.assertEqual((metrics["sessions"], metrics["items"]), (2, 4))
 
     def test_tool_input_changes_nothing_but_the_excluded_counts(self) -> None:
@@ -64,8 +69,8 @@ class AggregateTests(unittest.TestCase):
                             [score for score in self.scores if score.channel != "tool_input"], self.elapsed)
         noisy = ItemScore("s2", 0, "tool_input",
                           [_gold(0, 0, 5, SpanStatus.MISSED, 5, "TOKEN"), _gold(0, 9, 12, SpanStatus.PARTIAL, 1)],
-                          [EditResult("s2", 0, 10, 11, True), EditResult("s2", 0, 20, 30, False),
-                           EditResult("s2", 0, 40, 50, False)])
+                          [EditResult("s2", 0, 10, 11, True, True), EditResult("s2", 0, 20, 30, False, False),
+                           EditResult("s2", 0, 40, 50, False, False)])
         for tool_input in (self.scores[2], noisy):
             with self.subTest(gold=len(tool_input.gold_results), edits=len(tool_input.edit_results)):
                 scores = self.scores[:2] + [tool_input] + self.scores[3:]
@@ -83,7 +88,7 @@ class AggregateTests(unittest.TestCase):
     def test_empty_gold_and_edits_give_none(self) -> None:
         sessions = [Session("s", [Item(0, "t0", "tool_output", "")], [])]
         metrics = aggregate(sessions, [ItemScore("s", 0, "tool_output", [], [])], {("s", 0): None})
-        for key in ("recall", "precision", "f2", "char_recall", "partial_rate", "missed_rate",
+        for key in ("recall", "precision", "f2", "char_recall", "over_rate", "partial_rate", "missed_rate",
                     "fp_per_1k_lines", "density_per_1k_lines"):
             self.assertIsNone(metrics[key], key)
 

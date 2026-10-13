@@ -11,7 +11,8 @@ from evaluation.scorer.edits import Edit, verify
 
 
 class SpanStatus(str, Enum):
-    FULL = "full"  # every character masked
+    EXACT = "exact"  # every character masked, and no edit touching the span masks text outside it
+    OVER = "over"  # every character masked, but an edit touching the span spills outside it
     PARTIAL = "partial"  # some characters masked
     MISSED = "missed"  # no character masked
 
@@ -34,7 +35,8 @@ class EditResult:
     item_id: int
     start: int
     end: int
-    overlaps_gold: bool
+    overlaps_gold: bool  # shares a character with some gold span
+    within_gold: bool  # lies inside one gold span, so it masks secret characters only
 
 
 @dataclass(frozen=True)
@@ -71,8 +73,10 @@ def score_item(
 ) -> ItemScore:
     """Verify the edits against the output, then judge each gold span and each edit.
 
-    Replacement text is never inspected, so a placeholder that happens to share characters
-    with the secret cannot affect the result.
+    A gold span succeeds only when exactly its characters are masked: the edits cover all of it
+    and none of the edits touching it extends past its boundaries. Splitting the span across
+    several edits is fine. Replacement text is never inspected, so a placeholder that happens
+    to share characters with the secret cannot affect the result.
     """
     ordered = verify(original, output, edits)
     merged = _union(ordered)
@@ -80,11 +84,18 @@ def score_item(
     for span in sorted(gold, key=lambda span: (span.start, span.end)):
         length = span.end - span.start
         covered = _covered(span.start, span.end, merged)
-        status = SpanStatus.FULL if covered == length else SpanStatus.MISSED if covered == 0 else SpanStatus.PARTIAL
+        if covered == length:
+            spills = any(edit.start < span.end and span.start < edit.end
+                         and (edit.start < span.start or edit.end > span.end) for edit in ordered)
+            status = SpanStatus.OVER if spills else SpanStatus.EXACT
+        else:
+            status = SpanStatus.MISSED if covered == 0 else SpanStatus.PARTIAL
         gold_results.append(GoldResult(session_id, item_id, span.span_id, span.start, span.end, span.type, status,
                                        length - covered))
     edit_results = [
-        EditResult(session_id, item_id, edit.start, edit.end, any(edit.start < span.end and span.start < edit.end for span in gold))
+        EditResult(session_id, item_id, edit.start, edit.end,
+                   any(edit.start < span.end and span.start < edit.end for span in gold),
+                   any(span.start <= edit.start and edit.end <= span.end for span in gold))
         for edit in ordered
     ]
     return ItemScore(session_id, item_id, channel, gold_results, edit_results)
