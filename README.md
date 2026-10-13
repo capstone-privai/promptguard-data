@@ -1,25 +1,24 @@
 # PromptGuard 평가 데이터
 
-PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **지표 1: 탐지·마스킹 성능**, **지표 2: 작업 성공**, **지표 4: 탐지기 호출 지연**이 있다. 지표 1은 코딩 에이전트가 주고받는 텍스트에서 비밀값을 얼마나 정확히 찾는지를 span 단위로 채점하고, 지표 2는 비밀을 가렸을 때 에이전트가 과제를 여전히 해내는지를 Claude Code로 직접 돌려 잰다.
+PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **metric-detection: 탐지·마스킹 성능**, **metric-task: 작업 성공**, **metric-latency: 탐지기 호출 지연**이 있다. metric-detection은 코딩 에이전트가 주고받는 텍스트에서 비밀값을 얼마나 정확히 찾는지를 span 단위로 채점하고, metric-task는 비밀을 가렸을 때 에이전트가 과제를 여전히 해내는지를 Claude Code로 직접 돌려 잰다.
 
 | 폴더 | 내용 | 상태 |
 |---|---|---|
-| [metric-1/](metric-1/) | 탐지·마스킹 평가 데이터, 정답 span, 생성·검증 도구, 채점기 | 합성 파일럿 v0.1(사람 검토 대기) + 외부 소스 6개 |
-| [metric-2/](metric-2/) | 마스킹 조건별 과제 성공과 서버 누출 평가: 과제 26개, Claude Code 실행기, API 요청 기록 프록시, 결과 | Sonnet 5.5로 3회 반복한 결과 + 요청 기록을 켠 시험 실행(10개 × 3조건) |
-| [metric-3/](metric-3/) | KEEP 판단 정확도 평가 데이터 | 준비용 폴더 |
-| [metric-4/](metric-4/) | 탐지기 호출 지연 평가기: 탐지기를 HTTP 블랙박스로 띄워 합성 입력, Final Guard 재생, Mod 호출 기록 재생으로 잰다 | 시스템 앙상블과 어댑터별 첫 측정 |
-| [docs/](docs/) | 분석 문서: [기존 시스템의 recall이 낮은 이유](docs/README_baseline-recall.md), [새 외부 소스로 본 기존 시스템의 약점](docs/README_baseline-new-sources.md) | 지표 1 채점 결과(2026-10-08) 기준 |
+| [metric-detection/](metric-detection/) | 탐지·마스킹 평가 데이터, 정답 span, 생성·검증 도구, 채점기 | 합성 파일럿 v0.1(사람 검토 대기) + 외부 소스 6개 |
+| [metric-task/](metric-task/) | 마스킹 조건별 과제 성공과 서버 누출 평가: 과제 26개, Claude Code 실행기, API 요청 기록 프록시, 결과 | Sonnet 5.5로 3회 반복한 결과 + 요청 기록을 켠 시험 실행(10개 × 3조건) |
+| [metric-latency/](metric-latency/) | 탐지기 호출 지연 평가기: 탐지기를 HTTP 블랙박스로 띄워 합성 입력, Final Guard 재생, Mod 호출 기록 재생으로 잰다 | 시스템 앙상블과 어댑터별 첫 측정 |
+| [metric-detection/docs/](metric-detection/docs/) | 분석 문서: [기존 시스템의 recall이 낮은 이유](metric-detection/docs/README_baseline-recall.md), [새 외부 소스로 본 기존 시스템의 약점](metric-detection/docs/README_baseline-new-sources.md) | metric-detection 채점 결과(2026-10-08) 기준 |
 
-이 저장소는 데이터, 생성·검증 도구, 채점기를 맡는다. 평가 대상 시스템(PromptGuard)은 Claude Code에 붙는 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)이다. 지표 1 채점기는 그 체크아웃의 탐지기(`src/detector`의 앙상블)를 불러 쓰고 Native Mod의 치환 규칙을 따르며, 지표 2는 Native Mod를 그대로 쓴다. [metric-1/docs/](metric-1/docs/)의 분석 문서는 이전 시스템(promptguard-demo-v0)으로 잰 결과다.
+이 저장소는 데이터, 생성·검증 도구, 채점기를 맡는다. 평가 대상 시스템(PromptGuard)은 Claude Code에 붙는 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)이다. metric-detection 채점기는 그 체크아웃의 탐지기(`src/detector`의 앙상블)를 불러 쓰고 Native Mod의 치환 규칙을 따르며, metric-task는 Native Mod를 그대로 쓴다. [metric-detection/docs/](metric-detection/docs/)의 분석 문서는 이전 시스템(promptguard-demo-v0)으로 잰 결과다.
 
-## 지표 1
+## metric-detection
 
-데이터셋 구성, 형식, 사용 용도, 생성·검증 방법, 채점 기준은 [metric-1/README.md](metric-1/README.md)에 있다. 채점기 옵션과 지표의 정확한 정의는 [metric-1/evaluation/README.md](metric-1/evaluation/README.md)에 있다. 기존 시스템(CredSweeper, gitleaks)의 약점 분석은 [docs/](docs/)에 있다.
+데이터셋 구성, 형식, 사용 용도, 생성·검증 방법, 채점 기준은 [metric-detection/README.md](metric-detection/README.md)에 있다. 채점기 옵션과 지표의 정확한 정의는 [metric-detection/evaluation/README.md](metric-detection/evaluation/README.md)에 있다. 기존 시스템(CredSweeper, gitleaks)의 약점 분석은 [metric-detection/docs/](metric-detection/docs/)에 있다.
 
-## 지표 2
+## metric-task
 
-과제 26개를 Claude Code로 풀게 하면서, PromptGuard Native Mod 뒤의 탐지기만 바꿔 세 조건(마스킹 없음, 정답 비밀만 마스킹, PromptGuard)을 비교한다. 실행마다 로컬 기록 프록시가 Anthropic API로 나간 요청 본문을 남기고, 과제의 비밀이 서버에 도착했는지와 요청의 어느 자리(시스템 프롬프트, 도구 결과 등)로 갔는지를 잰다. 과제 구성, 바로 실행하는 방법(`m2.py play`), 결과와 실패 사례는 [metric-2/README.md](metric-2/README.md)에, 결과를 읽는 기준은 [metric-2/EVALUATION.md](metric-2/EVALUATION.md)에 있다.
+과제 26개를 Claude Code로 풀게 하면서, PromptGuard Native Mod 뒤의 탐지기만 바꿔 세 조건(마스킹 없음, 정답 비밀만 마스킹, PromptGuard)을 비교한다. 실행마다 로컬 기록 프록시가 Anthropic API로 나간 요청 본문을 남기고, 과제의 비밀이 서버에 도착했는지와 요청의 어느 자리(시스템 프롬프트, 도구 결과 등)로 갔는지를 잰다. 과제 구성, 바로 실행하는 방법(`m2.py play`), 결과와 실패 사례는 [metric-task/README.md](metric-task/README.md)에, 결과를 읽는 기준은 [metric-task/EVALUATION.md](metric-task/EVALUATION.md)에 있다.
 
-## 지표 4
+## metric-latency
 
-PromptGuard의 탐지기가 그 순간 받은 텍스트를 검사하는 시간을 탐지기 호출(`POST /scan-batch`) 단위로 잰다. 평가기는 시스템 코드를 import하지 않고 탐지기를 worker의 HTTP 프로토콜로만 다룬다. 워크로드(합성 입력, 지표 2 요청 기록으로 재생한 Final Guard 호출, 지표 2에서 기록한 Mod 호출), 실행 방법, 평가기가 시스템에 기대는 것은 [metric-4/README.md](metric-4/README.md)에 있다.
+PromptGuard의 탐지기가 그 순간 받은 텍스트를 검사하는 시간을 탐지기 호출(`POST /scan-batch`) 단위로 잰다. 평가기는 시스템 코드를 import하지 않고 탐지기를 worker의 HTTP 프로토콜로만 다룬다. 워크로드(합성 입력, metric-task 요청 기록으로 재생한 Final Guard 호출, metric-task에서 기록한 Mod 호출), 실행 방법, 평가기가 시스템에 기대는 것은 [metric-latency/README.md](metric-latency/README.md)에 있다.
