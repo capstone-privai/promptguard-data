@@ -229,6 +229,7 @@ python3 metric-2/scripts/m2.py run ... --name main --resume            # 끝나�
 - `--tasks`는 과제 id, 짧은 id(`t01`), suite(`core`, `gen`), 또는 `필드:값` 선택자를 받는다: `category:use`, `family:<이름>`, `channel:prompt`, `format:yaml`, `kind:<비밀 종류>`. `list --tasks ...`로 무엇이 골리는지 먼저 볼 수 있다.
 - `run`은 `claude -p`(headless)로 돌린다. 작업 폴더에서 `--permission-mode acceptEdits`, 허용 도구는 `Bash, Read, Edit, Write, Glob, Grep`와 Mod의 탐지기 도구(`mcp__pgdetector__scan_batch`), 과제가 더하는 도구(`allowed_tools`, fixture MCP)다. `--setting-sources project --strict-mcp-config`로 개인 설정과 다른 MCP 서버를 끈다.
 - 기록 프록시는 기본으로 켜져 있다. 끄려면 `--no-capture`(`run`, `play` 모두).
+- `--detector-capture`(`run`, `play`)를 주면 Mod가 탐지기에 보낸 호출을 모두 `detector_calls.jsonl.xz`에 남긴다. bridge와 탐지기 사이에 기록 프록시([scripts/detector_capture.py](scripts/detector_capture.py))를 끼우므로 호출마다 로컬 HTTP 한 번이 더 든다. [지표 4](../metric-4/README.md)가 이 파일로 탐지기를 같은 입력에 다시 잰다. 기본은 꺼져 있다.
 - 실행 하나당 `runs/metric-2/<batch>/<과제>/<조건>-r<n>/`에 `result.json`(채점, 노출, 서버 누출, Mod 통계), `transcript.jsonl`, `api_requests.jsonl.xz`(API로 나간 요청 본문), `audit.json`(Mod의 감사 로그), `diff.patch`, `answer.json`, `workspace_after/`가 남는다. 비밀값이 들어 있으므로 `runs/`는 git에 올리지 않는다.
 - Claude Code가 `~/.claude` 아래에 만든 그 세션의 흔적(프로젝트 폴더, file-history)은 transcript를 옮긴 뒤 지운다.
 - **유효하지 않은 실행**은 집계에서 뺀다: Mod의 감사 로그에 실패(`blocked`)가 있거나, API가 요청을 거절했거나(사용량 제한 429 등), transcript가 없을 때다. API 거절은 2분, 4분 뒤 자동으로 다시 시도한다(`--retries`).
@@ -379,6 +380,7 @@ metric-2/
   requirements.txt       rstr, PyYAML
   scripts/m2_gen.py      tasks_gen/ 생성기
   scripts/api_capture.py 기록 프록시와 요청 본문의 비밀 찾기
+  scripts/detector_capture.py  Mod의 탐지기 호출 기록 프록시 (--detector-capture, 지표 4 재생용)
   scripts/fixture_mcp.py 정해진 응답을 돌려주는 stdio MCP 서버 (mcp 경로)
   scripts/detector_worker.py   none/gold 조건의 탐지기 (원래 worker와 같은 HTTP 규약)
   results/summary.md     main 배치(Sonnet 5.5, 3회)의 요약

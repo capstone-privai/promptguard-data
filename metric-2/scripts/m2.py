@@ -48,6 +48,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import api_capture  # noqa: E402
+import detector_capture  # noqa: E402
 import m2_tasks as mt  # noqa: E402
 
 REPO_ROOT = mt.REPO_ROOT
@@ -98,11 +99,13 @@ def free_port() -> int:
 # ---- one run -----------------------------------------------------------------------------------------------
 
 class Detector:
-    """The detector process behind the mod's MCP bridge, for one run."""
+    """The detector process behind the mod's MCP bridge, for one run. With record, the bridge talks to it through
+    detector_capture.py, which keeps every call in detector_calls.jsonl.xz (metric 4 replays them)."""
 
-    def __init__(self, condition: str, task: mt.Task, run_dir: Path, pg_root: Path):
+    def __init__(self, condition: str, task: mt.Task, run_dir: Path, pg_root: Path, record: bool = False):
         self.proc = None
         self.url = None
+        self.capture = None
         if condition == "plain":
             return
         port = free_port()
@@ -133,15 +136,21 @@ class Detector:
                 try:
                     with urllib.request.urlopen(self.url + "/health", timeout=1) as r:
                         if r.status == 200:
-                            return
+                            break
                 except OSError:
                     time.sleep(0.2)
-            raise RuntimeError("detector did not become healthy within 90s")
+            else:
+                raise RuntimeError("detector did not become healthy within 90s")
         finally:
             if gold_file:
                 gold_file.unlink(missing_ok=True)
+        if record:
+            self.capture = detector_capture.DetectorCapture(run_dir / detector_capture.CAPTURE_FILE, self.url)
+            self.url = self.capture.start()
 
     def stop(self):
+        if self.capture:
+            self.capture.stop()
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
             try:
@@ -295,7 +304,8 @@ def server_stats(task: mt.Task, run_dir: Path) -> dict | None:
 
 
 def run_one(task: mt.Task, condition: str, rep: int, run_dir: Path, pg_root: Path, model: str | None,
-            headless: bool = True, budget: float = 2.0, timeout: int = 900, capture: bool = True) -> dict:
+            headless: bool = True, budget: float = 2.0, timeout: int = 900, capture: bool = True,
+            record_detector: bool = False) -> dict:
     run_dir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=f"{task.id[:5]}-{condition}-", dir=_work_root()))
     ws = work / "workspace"
@@ -305,11 +315,12 @@ def run_one(task: mt.Task, condition: str, rep: int, run_dir: Path, pg_root: Pat
               "needs_secret_value": task.spec["needs_secret_value"], "family": task.meta.get("family"),
               "channels": task.meta.get("channels", ["file"]), "secrets_fingerprint": task.fingerprint,
               "condition": condition, "rep": rep, "model": model, "session_id": session_id,
-              "started_at": datetime.now().isoformat(timespec="seconds"), "error": None, "capture": capture}
+              "started_at": datetime.now().isoformat(timespec="seconds"), "error": None, "capture": capture,
+              "detector_capture": record_detector and condition != "plain"}
     detector = proxy = None
     started = time.time()
     try:
-        detector = Detector(condition, task, run_dir, pg_root)
+        detector = Detector(condition, task, run_dir, pg_root, record=record_detector)
         if capture:
             proxy = api_capture.CaptureProxy(run_dir / CAPTURE_FILE, upstream_url())
         api_url = proxy.start() if proxy else None
@@ -475,7 +486,8 @@ def cmd_play(args):
     print(f"condition: {args.condition}")
     print(f"prompt:    {task.prompt}\n")
     print("Claude Code starts with this prompt already sent. Exit it (/exit or Ctrl+D) when done; the result is checked then.\n")
-    r = run_one(task, args.condition, 1, run_dir, pg_root, args.model, headless=False, capture=not args.no_capture)
+    r = run_one(task, args.condition, 1, run_dir, pg_root, args.model, headless=False, capture=not args.no_capture,
+                record_detector=args.detector_capture)
     print()
     for c in r["checks"]:
         print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['detail']}")
@@ -501,7 +513,8 @@ def cmd_run(args):
         "system_commit": mt.git(pg_root, "rev-parse", "HEAD", check=False).stdout.strip(),
         "data_commit": mt.git(REPO_ROOT, "rev-parse", "HEAD", check=False).stdout.strip(),
         "claude_version": subprocess.run(["claude", "--version"], capture_output=True, text=True).stdout.strip(),
-        "capture": not args.no_capture, "secrets_module": str(mt.SECRETS_MODULE),
+        "capture": not args.no_capture, "detector_capture": args.detector_capture,
+        "secrets_module": str(mt.SECRETS_MODULE),
     }, indent=2), encoding="utf-8")
     say(f"{len(jobs)} run(s) -> {batch}")
 
@@ -512,7 +525,7 @@ def cmd_run(args):
             if run_dir.exists():
                 shutil.rmtree(run_dir)
             r = run_one(task, condition, rep, run_dir, pg_root, args.model, budget=args.budget, timeout=args.timeout,
-                        capture=not args.no_capture)
+                        capture=not args.no_capture, record_detector=args.detector_capture)
             print_result(r, run_dir)
             if not api_failed(r) or attempt == args.retries:
                 return r
@@ -812,6 +825,8 @@ def main():
     p.add_argument("--model", help="default: your Claude Code default model")
     p.add_argument("--system-root", help="promptguard-claude-demoV0 checkout (default ../promptguard-claude-demoV0)")
     p.add_argument("--no-capture", action="store_true", help="do not route API requests through the recording proxy")
+    p.add_argument("--detector-capture", action="store_true",
+                   help="record every call the mod makes to its detector (detector_calls.jsonl.xz, for metric 4)")
     p.set_defaults(func=cmd_play)
     p = sub.add_parser("run", help="run tasks headless (claude -p) under each condition")
     p.add_argument("--tasks", nargs="*", default=["all"])
@@ -826,6 +841,8 @@ def main():
     p.add_argument("--retries", type=int, default=2, help="retries of a run the API refused (usage limit, overload)")
     p.add_argument("--system-root")
     p.add_argument("--no-capture", action="store_true", help="do not route API requests through the recording proxy")
+    p.add_argument("--detector-capture", action="store_true",
+                   help="record every call the mod makes to its detector (detector_calls.jsonl.xz, for metric 4)")
     p.set_defaults(func=cmd_run)
     p = sub.add_parser("recheck", help="re-run the checks on saved runs (after fixing a checker)")
     p.add_argument("batches", nargs="+")
