@@ -61,6 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--channels", help="comma-separated channels to scan, or 'all' (credsweeper only, for diagnosis; "
                                         f"default: {','.join(SCORED_CHANNELS)}). Only those channels are scored "
                                         "whatever is scanned")
+    run.add_argument("--detectors", help="comma-separated adapters of the PromptGuard ensemble to keep, by their "
+                                         "detector.json names (promptguard only; default: every adapter)")
+    run.add_argument("--consensus", help="vote among the kept adapters: any, majority, unanimous or at_least:N "
+                                         "(promptguard only; default: detector.json)")
     run.add_argument("--findings", help="findings file from metric-detection/scripts/run_gitleaks.py (gitleaks only, required)")
     run.add_argument("--out", default=str(DEFAULT_OUT), help="parent folder for run folders (default: metric-detection/results)")
     run.add_argument("--debug", action="store_true", help="also write debug/ with raw candidates (contains secrets)")
@@ -89,8 +93,8 @@ def default_use(args: argparse.Namespace) -> str:
 
 def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path | None]:
     """Return an adapter factory, the run folder label and the system checkout (if any)."""
-    if args.system != "promptguard" and args.system_root:
-        raise ConfigError("--system-root applies to --system promptguard only")
+    if args.system != "promptguard" and (args.system_root or args.detectors or args.consensus):
+        raise ConfigError("--system-root, --detectors and --consensus apply to --system promptguard only")
     if args.system != "credsweeper" and (args.ml or args.channels):
         raise ConfigError("--ml and --channels apply to --system credsweeper only")
     if (args.system == "gitleaks") != bool(args.findings):
@@ -104,7 +108,13 @@ def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path
             worker = load_worker(root)
         except SystemRootError as exc:
             raise ConfigError(str(exc)) from exc
-        return (lambda: PromptGuardAdapter(worker, debug=args.debug)), "promptguard", root
+        detectors = list(dict.fromkeys(name.strip() for name in args.detectors.split(","))) if args.detectors else None
+        if detectors is not None and not all(detectors):
+            raise ConfigError(f"empty name in --detectors {args.detectors!r}")
+        label = "_".join(["promptguard", *(["+".join(detectors)] if detectors else []),
+                          *([args.consensus.replace(":", "-")] if args.consensus else [])])
+        return (lambda: PromptGuardAdapter(worker, debug=args.debug, detectors=detectors, consensus=args.consensus),
+                label, root)
     if args.system == "credsweeper":
         ml = args.ml == "on"
         label = f"credsweeper_ml-{'on' if ml else 'off'}"

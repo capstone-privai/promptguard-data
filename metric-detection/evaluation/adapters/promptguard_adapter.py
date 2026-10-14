@@ -7,7 +7,9 @@ and MCP transport. The substitution is JavaScript, so `ModSession` follows its `
 tests/test_system_contract.py runs register.mjs under Node and checks that both give the same text.
 
 Load the detector package with system_root.load_worker() before constructing the adapter, or let the adapter
-do it.
+do it. `detectors` and `consensus` evaluate other configurations of the same ensemble (one adapter alone, or
+another vote): the detector is built by the system's own load_detector() and then keeps only the named
+adapters, so the system's config file is never edited.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import os
 import re
 import time
 from collections import Counter
+from collections.abc import Sequence
 from types import ModuleType
 from typing import Any
 
@@ -152,15 +155,29 @@ class ModSession:
 class PromptGuardAdapter:
     name = "promptguard"
 
-    def __init__(self, worker: ModuleType | None = None, debug: bool = False):
+    def __init__(self, worker: ModuleType | None = None, debug: bool = False,
+                 detectors: Sequence[str] | None = None, consensus: str | None = None):
         if os.environ.get("PG_DETECTOR_MODE", "normal") != "normal":
             # The worker's fault injection (crash exits the process) is for the demo's own failure tests.
             raise ValueError("unset PG_DETECTOR_MODE; the worker would inject faults")
         self.worker = worker or load_worker()
-        self.detector = self.worker.load_detector()
+        self.detector = self.worker.load_detector(consensus=consensus) if consensus else self.worker.load_detector()
+        if detectors:
+            self.detector = self._subset(self.detector, detectors)
         self.debug = debug
         self.failed_open = 0
         self.detector.scan(_WARMUP_TEXT, "warmup")  # keep rule loading out of the recorded latencies
+
+    @staticmethod
+    def _subset(detector: Any, names: Sequence[str]) -> Any:
+        """The same ensemble with only the named adapters voting, under the same consensus policy."""
+        skipped = {item["name"]: item["reason"] for item in detector.skipped}
+        if unknown := [name for name in names if name not in detector.names]:
+            reasons = [f"{name}: {skipped[name]}" if name in skipped else name for name in unknown]
+            raise ValueError(f"detector(s) {reasons} not available; the ensemble has {detector.names}")
+        kept = [adapter for adapter in detector.adapters if adapter.name in names]
+        dropped = [{"name": name, "reason": "not selected"} for name in detector.names if name not in names]
+        return type(detector)(kept, detector.policy, detector.skipped + dropped)
 
     def describe(self) -> dict[str, Any]:
         return {

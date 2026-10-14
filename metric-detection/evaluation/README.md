@@ -29,6 +29,12 @@ python metric-detection/scripts/run_all.py --jobs 4                  # 전부 �
 python metric-detection/scripts/run_all.py --datasets sessions_2 --systems credsweeper gitleaks
 ```
 
+`--ensemble`을 붙이면 PromptGuard를 탐지기 구성 6가지로 나눠 돌린다. 어댑터 셋(`credsweeper`, `gitleaks`, `promptguard-rules`)을 하나씩 단독으로 쓰는 구성과, 셋 모두가 `any`(1표), `majority`(2표, 시스템 기본), `unanimous`(3표)로 투표하는 구성이다. `summary.md` 끝에 구성 × 데이터셋 표(recall, precision, F2, 1,000줄당 과잉 마스킹)가 붙는다. 다른 구성은 `--pg-configs`로 고른다(`credsweeper+gitleaks@any`처럼 `어댑터+어댑터@규칙`).
+
+```bash
+python metric-detection/scripts/run_all.py --ensemble --systems promptguard --jobs 4
+```
+
 결과는 `metric-detection/results/all_<YYYYmmdd-HHMMSS>/`에 모인다. 조합마다 실행 폴더 하나, `logs/`에 각 조합의 출력, `gitleaks/`에 탐지 결과, `summary.csv`와 `summary.md`에 조합별 상태와 주요 지표가 있다. 모든 조합이 성공하면 종료 코드 0, 실패하거나 건너뛴 조합이 있으면 1이다. 축을 좁히는 옵션은 `--help`에 있다.
 
 각 데이터셋의 특성과 점수를 읽을 때 주의할 점은 [데이터셋별 해석](#데이터셋별-해석)에 있다.
@@ -47,6 +53,8 @@ python metric-detection/scripts/run_all.py --datasets sessions_2 --systems creds
 | `--gold PATH` | 전부 | 정답 파일 (기본: 위의 짝짓기 규칙) |
 | `--use rule_eval\|ml_eval` | run | 모든 세션의 `meta.allowed_use`에 이 용도가 있어야 실행한다. 기본은 `credsweeper --ml on`이면 `ml_eval`, 그 밖에는 `rule_eval` |
 | `--system-root DIR` | promptguard | promptguard-claude-demoV0 체크아웃 경로 |
+| `--detectors LIST` | promptguard | 앙상블에서 남길 어댑터(쉼표 구분, `detector.json`의 `name`). 기본은 설정된 어댑터 전부. 예: `--detectors credsweeper`는 CredSweeper 어댑터 하나만 투표한다 |
+| `--consensus RULE` | promptguard | 남긴 어댑터 사이의 합의 규칙: `any`, `majority`, `unanimous`, `at_least:N`. 기본은 `detector.json`의 규칙(`majority`) |
 | `--ml on\|off` | credsweeper | CredSweeper ML 검증 (기본 off, PromptGuard worker 설정과 같음) |
 | `--channels LIST\|all` | credsweeper | 검사할 채널(쉼표 구분). 기본은 채점하는 세 채널 `prompt,instructions,tool_output`. 진단용이며, 어떤 채널을 검사하든 채점은 세 채널만 한다 |
 | `--findings PATH` | gitleaks (필수) | `scripts/run_gitleaks.py`가 쓴 탐지 결과. 채점하는 세션 파일에서 만든 것이어야 한다(SHA-256 확인) |

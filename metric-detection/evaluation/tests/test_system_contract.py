@@ -92,6 +92,20 @@ class DataContractTests(unittest.TestCase):
         for command in commands:
             self.assertNotIn("--channels", command)
 
+    def test_run_all_ensemble_configs_name_the_system_adapters(self) -> None:
+        run_all = _script("run_all")
+        if SYSTEM_ROOT is None:
+            self.skipTest("no promptguard-claude-demoV0 checkout")
+        config = json.loads((SYSTEM_ROOT / "src" / "detector" / "detector.json").read_text(encoding="utf-8"))
+        adapters = {entry["name"] for entry in config["adapters"]}
+        args = argparse.Namespace(resolved_system_root=Path("checkout"))
+        for spec in run_all.ENSEMBLE_CONFIGS:
+            combo = run_all.Combo(Path("sessions.jsonl"), "promptguard", pg=spec)
+            self.assertLessEqual(set(filter(None, combo.detectors.split("+"))), adapters, spec)
+            command = run_all.evaluate_command(combo, args, Path("batch"), None)
+            self.assertEqual("--detectors" in command, bool(combo.detectors), spec)
+            self.assertEqual("--consensus" in command, bool(combo.consensus), spec)
+
     def test_evaluation_uses_match_dataset_policy(self) -> None:
         dataset_policy = _script("dataset_policy")
         self.assertEqual(set(USES), set(dataset_policy.USES) - {"ml_train"})

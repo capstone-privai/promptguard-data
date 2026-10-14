@@ -91,6 +91,19 @@ class PromptGuardAdapterTests(unittest.TestCase):
         self.assertEqual(described["detector"], self.adapter.detector.describe())
         self.assertIn("credsweeper", [adapter["name"] for adapter in described["detector"]["adapters"]])
 
+    def test_detector_subset_and_consensus(self) -> None:
+        names = self.adapter.detector.names
+        single = PromptGuardAdapter(detectors=[names[0]]).describe()["detector"]
+        self.assertEqual([adapter["name"] for adapter in single["adapters"]], [names[0]])
+        self.assertEqual(single["required_votes"], 1)
+        self.assertLessEqual(set(names[1:]), {item["name"] for item in single["skipped"]})
+        unanimous = PromptGuardAdapter(consensus="unanimous").describe()["detector"]
+        self.assertEqual((unanimous["consensus"], unanimous["required_votes"]), ("unanimous", len(names)))
+        with self.assertRaises(ValueError):
+            PromptGuardAdapter(detectors=["no-such-adapter"])
+        with self.assertRaises(ValueError):
+            PromptGuardAdapter(consensus="no-such-mode")
+
 
 class FailOpenTests(unittest.TestCase):
     """When the mod's hook throws, Claude Code skips it and the model gets the text unchanged."""
