@@ -87,11 +87,11 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 ## 기준 시스템 점수
 
-`metric-detection/results/all_new_sources`(CredSweeper 1.18.5, gitleaks 8.30.1, PromptGuard `promptguard-demo-v0@915492b` mock predictor). CredSweeper와 gitleaks는 네 채널을 모두 검사했고, PromptGuard는 `tool_output`만 처리한다. 아래 값은 같은 실행 기록을 2026-10-11에 바꾼 기준대로 다시 집계한 것이다. `tool_input`(정답 없음)에서 나온 edit와 그 줄 75,990줄을 뺐다.
+`metric-detection/results/all_20261014-021351`(2026-10-14, 정확 일치 채점. CredSweeper 1.19.0, gitleaks 8.30.1, PromptGuard `promptguard-claude-demoV0@8973016`의 탐지기 앙상블). 세 시스템 모두 채점하는 세 채널(`prompt`, `instructions`, `tool_output`)을 검사한다. `tool_input`(정답 없음)의 edit와 줄 75,990줄은 채점하지 않는다.
 
 | 시스템 | recall | precision | 1,000줄당 과잉 마스킹 | 과잉 마스킹 수 |
 |---|---|---|---|---|
-| PromptGuard | 1.000 | 0.004 | 0.98 | 516 |
+| PromptGuard | 1.000 | 0.003 | 1.32 | 696 |
 | CredSweeper ml=off | 1.000 | 0.003 | 1.16 | 611 |
 | CredSweeper ml=on | 1.000 | 0.008 | 0.49 | 258 |
 | gitleaks | 1.000 | 0.111 | 0.03 | 16 |

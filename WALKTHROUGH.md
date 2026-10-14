@@ -247,14 +247,16 @@ for l in sys.stdin: r = json.loads(l); print(r['where'][0], r['type'], '-', r['r
 ### 3-5. 기존 시스템 점수 보기
 
 ```bash
-cat metric-detection/results/all_new_sources/summary.md
+cat metric-detection/results/all_20261014-021351/summary.md
 ```
+
+2026-10-14 전체 실행(정확 일치 채점, `promptguard-claude-demoV0@8973016`) 기준이다.
 
 | 소스 | 무엇이 보이나 |
 |---|---|
-| Nemotron-PII | 모든 탐지기의 recall이 낮다 (CredSweeper 0.31, PromptGuard 0.21, gitleaks 0.10). 자연어 속 비밀은 `key=value` 꼴이 아니라서 못 찾는다 |
-| openhands-feedback, SWE-Gym | 실제 에이전트 트래픽에서의 과잉 마스킹: CredSweeper(ML off)는 1,000줄당 0.85~1.2번, ML on은 0.2~0.4번, PromptGuard는 0.5~0.85번 비밀이 아닌 것을 가린다 |
-| Nosey Parker | 형식별 recall: PromptGuard 0.78, gitleaks 0.63. 비밀번호 형식이 가장 약하다 |
+| Nemotron-PII | 모든 탐지기의 recall이 낮다 (CredSweeper 0.26, PromptGuard 0.18, gitleaks 0.08). 자연어 속 비밀은 `key=value` 꼴이 아니라서 못 찾는다 |
+| openhands-feedback, SWE-Gym | 실제 에이전트 트래픽에서의 과잉 마스킹: CredSweeper(ML off)는 1,000줄당 0.66~1.2번, ML on은 0.1~0.5번, PromptGuard는 0.74~1.3번 비밀이 아닌 것을 가린다 |
+| Nosey Parker | 형식별 recall: CredSweeper 0.78, PromptGuard 0.62, gitleaks 0.60. gitleaks는 비밀번호 형식이 가장 약하다(0.10) |
 
 다시 돌리려면:
 

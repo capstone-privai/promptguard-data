@@ -74,17 +74,17 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 ## 기준 시스템 점수
 
-`metric-detection/results/all_new_sources`. 모든 item이 `tool_output`이라 세 시스템이 같은 텍스트를 본다.
+`metric-detection/results/all_20261014-021351`(2026-10-14, 정확 일치 채점. CredSweeper 1.19.0, gitleaks 8.30.1, PromptGuard `promptguard-claude-demoV0@8973016`의 탐지기 앙상블). 모든 item이 `tool_output`이라 세 시스템이 같은 텍스트를 본다.
 
-| 시스템 | recall | precision | F2 | partial 비율 | recall (PASSWORD / SECRET / TOKEN) |
-|---|---|---|---|---|---|
-| PromptGuard | 0.775 | 0.758 | 0.772 | 0.043 | 0.687 / 0.781 / 0.816 |
-| CredSweeper ml=off | 0.789 | 0.749 | 0.781 | 0.028 | 0.687 / 0.796 / 0.830 |
-| CredSweeper ml=on | 0.726 | 0.846 | 0.748 | 0.020 | 0.388 / 0.781 / 0.830 |
-| gitleaks | 0.627 | 0.887 | 0.666 | 0.000 | 0.164 / 0.737 / 0.738 |
+| 시스템 | recall | precision | F2 | over 비율 | partial 비율 | recall (PASSWORD / SECRET / TOKEN) |
+|---|---|---|---|---|---|---|
+| PromptGuard | 0.624 | 0.749 | 0.646 | 0.037 | 0.006 | 0.627 / 0.562 / 0.695 |
+| CredSweeper ml=off | 0.778 | 0.739 | 0.770 | 0.011 | 0.028 | 0.687 / 0.781 / 0.816 |
+| CredSweeper ml=on | 0.715 | 0.834 | 0.736 | 0.011 | 0.020 | 0.388 / 0.766 / 0.816 |
+| gitleaks | 0.604 | 0.855 | 0.642 | 0.023 | 0.000 | 0.104 / 0.723 / 0.723 |
 
 - **Nosey Parker 자신은 평가하지 않는다.** 이 예시는 Nosey Parker의 규칙 테스트라 그 도구는 거의 다 맞힌다. 여기서 보는 것은 CredSweeper, gitleaks, PromptGuard가 Nosey Parker가 아는 형식을 얼마나 아는가다.
-- 예시가 한두 줄짜리라 `fp_per_1k_lines`(PromptGuard 88, gitleaks 26)는 크게 나온다. 다른 데이터와 비교하지 않는다.
+- 예시가 한두 줄짜리라 `fp_per_1k_lines`(PromptGuard 57, gitleaks 26)는 크게 나온다. 다른 데이터와 비교하지 않는다.
 - 어느 형식을 어느 도구가 놓쳤는지는 [새 외부 소스로 본 기존 시스템의 약점](docs/README_baseline-new-sources.md#4-서비스-형식-규칙의-범위)에 있다.
 
 ## 알려진 한계

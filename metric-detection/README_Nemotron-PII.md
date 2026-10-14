@@ -103,14 +103,16 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 ## 기준 시스템 점수
 
-`metric-detection/results/all_new_sources`(CredSweeper 1.18.5, gitleaks 8.30.1, PromptGuard `promptguard-demo-v0@915492b` mock predictor). CredSweeper와 gitleaks는 네 채널을 모두 검사했고, PromptGuard는 `tool_output`만 처리한다.
+`metric-detection/results/all_20261014-021351`(2026-10-14, 정확 일치 채점. CredSweeper 1.19.0, gitleaks 8.30.1, PromptGuard `promptguard-claude-demoV0@8973016`의 탐지기 앙상블). 세 시스템 모두 채점하는 세 채널(`prompt`, `instructions`, `tool_output`)을 검사한다.
 
 | 시스템 | recall | precision | F2 | 1,000줄당 과잉 마스킹 | recall (prompt / tool_output) | recall (PASSWORD / SECRET / TOKEN) |
 |---|---|---|---|---|---|---|
-| PromptGuard | 0.206 | 0.710 | 0.240 | 3.10 | 0.000 / 0.404 | 0.159 / 0.316 / 0.088 |
-| CredSweeper ml=off | 0.309 | 0.652 | 0.345 | 6.05 | 0.209 / 0.404 | 0.233 / 0.465 / 0.175 |
-| CredSweeper ml=on | 0.212 | 0.719 | 0.247 | 3.05 | 0.133 / 0.288 | 0.119 / 0.368 / 0.145 |
-| gitleaks | 0.098 | 0.757 | 0.118 | 1.15 | 0.074 / 0.120 | 0.003 / 0.215 / 0.141 |
+| PromptGuard | 0.175 | 0.695 | 0.206 | 1.65 | 0.110 / 0.238 | 0.161 / 0.209 / 0.139 |
+| CredSweeper ml=off | 0.255 | 0.540 | 0.285 | 6.05 | 0.147 / 0.359 | 0.191 / 0.380 / 0.163 |
+| CredSweeper ml=on | 0.200 | 0.678 | 0.233 | 3.04 | 0.121 / 0.276 | 0.105 / 0.356 / 0.143 |
+| gitleaks | 0.076 | 0.588 | 0.092 | 1.15 | 0.048 / 0.102 | 0.001 / 0.159 / 0.139 |
+
+정확 일치 채점에서는 비밀값 바로 뒤의 마침표나 마크다운 `**`까지 가린 경우가 `over`(실패)가 된다. 이런 정답이 PromptGuard 125개(3.2%), CredSweeper ml=off 206개(5.3%)다. 다 가렸는지만 보면 recall은 0.208, 0.309다.
 
 세 시스템 모두 recall이 낮다. 비밀번호가 `key=value` 꼴이 아니라 문장 속에 있기 때문이다("The password for accessing the project documents is …", "use the API key … for authentication"). [README_baseline-recall.md](docs/README_baseline-recall.md)의 원인 1(키 이름 없는 자리의 값)이 자연어에서 그대로 드러난다. 값 앞 문맥별 recall과 마크다운·표·쿠키에서 놓치는 이유는 [새 외부 소스로 본 기존 시스템의 약점](docs/README_baseline-new-sources.md)에 있다.
 
