@@ -305,6 +305,9 @@ def main():
     ap.add_argument("--kingfisher", type=Path, required=True, help="Kingfisher checkout at the v1 rules commit")
     ap.add_argument("--allow-leftovers", action="store_true",
                     help="write the output even if verification finds original pieces; their places go in the report")
+    ap.add_argument("--exclude-rows", type=Path,
+                    help="CSV from check_msr_sanitized.py (file,data_row,...): rows left out of the written CSVs. "
+                         "Every row is still sanitized, since their values also stand in other rows' text")
     a = ap.parse_args()
 
     tables = {}
@@ -553,8 +556,15 @@ def main():
     a.out.mkdir(parents=True, exist_ok=True)
     other = collections.Counter()
     (a.out / "Data").mkdir(exist_ok=True)
-    for name, table in out_tables.items():
-        write_csv(a.out / "Data" / name, *table)
+    skip = collections.defaultdict(set)
+    if a.exclude_rows:
+        with a.exclude_rows.open(newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                skip[r["file"]].add(int(r["data_row"]))
+        report["excluded_rows"] = {"list": a.exclude_rows.name, "per_file": {k: len(v) for k, v in sorted(skip.items())}}
+    for name, (header, rows, eol) in out_tables.items():
+        drop = skip[f"Data/{name}"]
+        write_csv(a.out / "Data" / name, header, [r for k, r in enumerate(rows, start=1) if k not in drop], eol)
     for rel, t in out_others.items():
         dst = a.out / rel
         dst.parent.mkdir(parents=True, exist_ok=True)

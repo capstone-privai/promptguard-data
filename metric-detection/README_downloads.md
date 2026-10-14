@@ -49,24 +49,38 @@
 
 [scripts/sanitize_msr_issues.py](scripts/sanitize_msr_issues.py)가 양성 값을 모두 같은 형식의 가짜로 바꾼 사본을 `../msr-issue-secrets/sanitized/`에 쓴다. 가짜를 만드는 규칙은 [scripts/fmtkeep.py](scripts/fmtkeep.py)에 있다. 원본과 가짜의 대응표는 어디에도 쓰지 않고, 출력과 보고서(`SANITIZE_REPORT.json`)에는 개수와 모양만 남긴다.
 
-**지키는 것**: 라벨, id, 행 순서, 텍스트가 아닌 열이 원본과 같다. 텍스트 필드도 길이가 같아 원본에서 계산한 위치(offset)를 그대로 쓸 수 있다. 예외는 URL 인코딩된 base64가 들어 있어 `%2B`·`%2F`의 위치가 바뀐 3개 필드다. 가짜는 고정 접두사(Kingfisher v1 규칙, 데이터에서 배운 접두사, 업체 접두사 목록), 자리별 글자 종류와 문자 집합, 체크섬, base64 정규형, JWT의 JSON 키와 헤더, DER/PEM 구조, SSH 키 형식, 그리고 원본이 맞는 Kingfisher 규칙 집합을 유지한다.
+**지키는 것**: 라벨, id, 행 순서, 텍스트가 아닌 열이 원본과 같다. 텍스트 필드도 길이가 같아 원본에서 계산한 위치(offset)를 그대로 쓸 수 있다. 예외는 URL 인코딩된 base64가 들어 있어 `%2B`·`%2F`의 위치가 바뀐 3개 필드다. 가짜는 고정 접두사(Kingfisher v1 규칙, 데이터에서 배운 접두사, 업체 접두사 목록), 자리별 글자 종류와 문자 집합, 체크섬, base64 정규형, JWT의 JSON 키와 헤더, DER/PEM 구조, SSH 키 형식, 그리고 원본이 맞는 Kingfisher 규칙 집합을 유지하도록 만든다. 실제로 어긋난 행은 아래 "뺀 행"처럼 결과에서 뺐다.
 
 **값이 아니라 토큰 단위로 바꾼다**: 양성 값 5,850개(약한 값 제외) 중 2,118개는 본문에서 더 긴 토큰의 일부였다. Artifactory 후보는 JWT나 base64에서 잘라 낸 73자, Alibaba 후보는 30자 조각, Contentful 후보는 앞 두 글자가 빠진 값이다. 후보만 바꾸면 토큰의 나머지가 실제 값으로 남으므로, 값이 나오는 자리마다 감싸는 토큰(같은 문자 구간, JWT, base64 블롭, 여러 줄 블롭, PEM 블록)으로 넓혀 그 토큰을 치환하고, 값의 가짜는 토큰 가짜에서 같은 위치를 잘라 쓴다. 잘린 context_window나 이스케이프된 표기에 남은 조각은 12자 조각(무작위 문자열처럼 보이고 가짜에서 6자 이상 바뀌는 것)으로 원래 토큰에 맞춰 바꾼다.
 
 **일부러 두는 것**: JWT/JOSE 헤더(`{"alg":..,"typ":..}`, 공개 메타데이터)와 헤더 뒤 `.eyJ`, 키 이름과 공개 구조. 8자 미만이거나 단어 같은 약한 값은 후보 문자열 전체가 나오는 자리에서만 바꾼다(흔한 단어를 데이터 전체에서 바꾸지 않도록).
 
-**남은 원본**: 마지막 검증에서 `Data/main_data.csv` 51237번째 데이터 행의 `context_window` 한 칸에 원본 12자 조각 2개가 원래 자리에 남았다(`SANITIZE_REPORT.json`의 `leftover_places`). 원인을 더 찾지 않고 `--allow-leftovers`로 그대로 썼다. 이 행을 공개하거나 예시로 인용하지 않는다.
+**뺀 행**: [scripts/check_msr_sanitized.py](scripts/check_msr_sanitized.py)로 원본과 결과를 비교했다. 그 결과 형식이 원본과 다르거나 치환이 깔끔하지 않은 양성 행 1,097개(양성 11,753개 중 9.3%)를 결과 CSV에서 뺐다. 목록은 [msr_excluded_rows.csv](msr_excluded_rows.csv)에 있다(파일, 원본 기준 데이터 행 번호, 사유만 있고 값은 없다). 음성 행은 그대로 두었다. 사유는 다음과 같다.
+- `format:*`: 후보 문자열의 토큰이 원본과 형식 지문에서 다르다. 예를 들어 Kingfisher v1 규칙 집합이 545행에서, base64 형태가 217행에서, JWT 구조가 100행에서 다르고, `ya29.` 접두사를 잃은 행이 4개다. 값의 가짜를 토큰 가짜에서 잘라 쓰다 보니 조각 단위의 규칙 일치나 base64 정규형은 보장되지 않는다. 이런 행에서는 정규식 탐지기의 결과가 원본과 달라질 수 있다.
+- `text`(271행): 같은 값이 여러 토큰에 들어 있어서, 본문의 그 위치가 후보의 가짜와 다르다.
+- `length`(2행): URL 인코딩된 변형 때문에 필드 길이가 바뀌었다.
+- `leftover`(1행): 치환기 검증에서 원본 조각이 남은 `main_data.csv` 51237행이다.
 
-**한계**: 값 131개는 서로 다른 두 토큰 이상에 들어 있어 토큰마다 가짜가 따로 만들어졌다. 그래서 같은 행에서 후보 문자열의 가짜와 본문의 해당 위치가 다른 경우가 645곳 있다(일치 21,355곳). 판정 위치를 본문에서 다시 찾는 평가라면 이 행들을 확인해야 한다.
+파일별로 뺀 양성 행은 main_data 557/5,873, train 414/4,377, val 51/586, test 71/888, test_wild 4/29이다. 유형별로는 잘린 창이 많은 Artifactory(154/755)와 Alibaba(96/542)가 상대적으로 많이 빠졌다. 원래 train/val/test와 행 수가 달라졌으므로, 논문 수치와 비교할 때는 이 점을 밝힌다.
 
 **독립 검사 결과(미해결)**: 치환기와 별개로, 양성 값이 나오는 자리마다 그 주변 문자 구간에서 무작위처럼 보이는 16자 창이 원래 자리에 그대로 남았는지 셌다. 33,597곳 중 3,804곳에서 남은 창이 나왔다. 표본으로 본 것은 모두 일부러 두는 공개 구조였다. SSH 공개키 머리(`AAAAB3NzaC1yc2EAAAADAQAB…`), PKCS#8 개인키의 DER 머리, JWT 헤더와 페이로드의 JSON 키(base64), 환경변수 이름 같은 것들이다. 다만 전부 확인하지는 않았다. 서로 다른 남은 창 43,162개 중 6,060개는 양성 값 하나에만 나온다. 공유 구조라고 단정할 수 없으니, 데이터를 밖으로 내보내기 전에는 이 검사를 더 정밀하게(디코딩한 구조 기준으로) 다시 해야 한다.
 
-**다시 만들기**: 아래 "다시 받기"의 MSR 줄로 zip을 받아 압축을 풀고 실행한다. 가짜는 매번 무작위라 실행마다 다르다. 약 12분 걸린다.
+**다시 만들기**: 아래 "다시 받기"의 MSR 줄로 zip을 받아 압축을 풀고 실행한다. 약 12분 걸린다. `--exclude-rows`를 주면 목록의 행을 결과 CSV에서 뺀다. 치환은 모든 행에 대해 한다. 빠지는 행의 값이 같은 이슈를 담은 다른 행의 본문에도 나오기 때문이다.
 
 ```bash
 cd metric-detection/scripts
-python3 sanitize_msr_issues.py --src ../../../msr-issue-secrets/raw/extracted/Secret-Leak-Detection-Issue-Report \
-    --out ../../../msr-issue-secrets/sanitized --kingfisher ../../../kingfisher-v1 --allow-leftovers
+SRC=../../../msr-issue-secrets/raw/extracted/Secret-Leak-Detection-Issue-Report
+OUT=../../../msr-issue-secrets/sanitized
+python3 sanitize_msr_issues.py --src $SRC --out $OUT --kingfisher ../../../kingfisher-v1 --allow-leftovers \
+    --exclude-rows ../msr_excluded_rows.csv
+```
+
+가짜는 실행마다 무작위로 새로 만들어진다. 그래서 같은 목록으로 빼도 새 결과에서는 다른 행이 어긋날 수 있다. 목록 자체를 새로 만들려면 `--exclude-rows` 없이 치환한 다음 검사기로 목록을 다시 쓰고 행을 뺀다.
+
+```bash
+python3 sanitize_msr_issues.py --src $SRC --out $OUT --kingfisher ../../../kingfisher-v1 --allow-leftovers
+python3 check_msr_sanitized.py --src $SRC --out $OUT --kingfisher ../../../kingfisher-v1 \
+    --list ../msr_excluded_rows.csv --drop
 ```
 
 `--allow-leftovers`를 빼면 검증에서 원본이 하나라도 남을 때 아무것도 쓰지 않고 멈춘다.
