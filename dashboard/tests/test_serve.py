@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import contextlib
+import io
 import sys
 import tempfile
 import threading
@@ -16,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import serve  # noqa: E402
+from pipeline.service import Config, Service  # noqa: E402
 
 KEY = "0123456789abcdef"
 
@@ -31,6 +34,7 @@ class ServeTest(unittest.TestCase):
         data = Path(self.tmp.name)
         (data / "index.json").write_text("{}", encoding="utf-8")
         (data / "failures.json").write_text("{}", encoding="utf-8")
+        (data / ".lock").write_text("12345\n", encoding="utf-8")
         (data / "repo.git").mkdir()
         (data / "repo.git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
         result = data / "results" / "detection" / KEY
@@ -65,7 +69,7 @@ class ServeTest(unittest.TestCase):
             self.assertEqual(self.status(path), 200, path)
 
     def test_everything_else_is_not(self):
-        for path in ("/data/failures.json", "/data/repo.git/HEAD", f"/data/results/detection/{KEY}/meta.json",
+        for path in ("/data/failures.json", "/data/.lock", "/data/repo.git/HEAD", f"/data/results/detection/{KEY}/meta.json",
                      "/data/results/detection/../../index.json", "/data/results/detection/zz/summary.json",
                      f"/data/results/detection/{KEY}/examples/../summary.json", "/serve.py", "/../serve.py"):
             self.assertEqual(self.status(path), 404, path)
@@ -77,6 +81,20 @@ class ServeTest(unittest.TestCase):
 
     def test_refresh_needs_a_service(self):
         self.assertEqual(self.status("/api/refresh", method="POST"), 404)
+
+
+class OnceTest(unittest.TestCase):
+    def test_does_nothing_while_another_process_evaluates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            holder = Service(Config(data_dir=Path(tmp), repo_url="unused"))
+            self.assertTrue(holder.acquire())
+            try:
+                with contextlib.redirect_stderr(io.StringIO()) as err:
+                    code = serve.main(["--once", "--data-dir", tmp, "--repo", "/nonexistent"])
+            finally:
+                holder.release()
+        self.assertEqual(code, serve.BUSY)
+        self.assertIn("another dashboard process", err.getvalue())
 
 
 if __name__ == "__main__":

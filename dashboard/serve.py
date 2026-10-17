@@ -32,10 +32,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipeline.paths import DEFAULT_DATA_DIR, WEB_ROOT  # noqa: E402
 from pipeline.runner import tool_version  # noqa: E402
-from pipeline.service import Config, Service  # noqa: E402
+from pipeline.service import Config, DataDirBusy, Service  # noqa: E402
 
 DEFAULT_REPO = "https://github.com/capstone-privai/promptguard-claude-demoV0.git"
 RESTART = 75  # exit status when the code changed on disk: run again to load it (systemd Restart=on-failure)
+BUSY = 3  # --once exit status when another process evaluates in the data directory: nothing was done
 STATIC = re.compile(r"[A-Za-z0-9_-]+\.(?:js|css|svg|png|ico)")
 DATA = re.compile(r"index\.json|results/(?:detection|latency|task)/[0-9a-f]{16}/"
                   r"(?:summary\.json|latency\.json|task\.json|examples/[A-Za-z0-9_-][A-Za-z0-9_.-]*\.json)")
@@ -193,7 +194,11 @@ def main(argv: list[str] | None = None) -> int:
         service = Service(config)
         if args.once:
             signal.signal(signal.SIGTERM, lambda *_args: service.stop())  # stop the running job, record no failure
-            service.run_until_done()
+            try:
+                service.run_until_done()
+            except DataDirBusy as busy:
+                print(f"{busy} ({data_dir}); did nothing", file=sys.stderr)
+                return BUSY
             return RESTART if service.code_changed else 0
 
     auth = "Basic " + base64.b64encode(args.auth.encode()).decode() if args.auth else None

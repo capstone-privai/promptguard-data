@@ -473,7 +473,7 @@ function drawSparklines(root = document) {
 function statusDot() {
   const status = state.status || (state.index && state.index.status) || {};
   if (status.state === "error") return "dot bad";
-  if (status.state === "evaluating" || status.state === "syncing" || status.state === "starting") return "dot busy";
+  if (["evaluating", "syncing", "starting", "waiting"].includes(status.state)) return "dot busy";
   const latest = commits().at(-1);
   if (latest && tracks().some((track) => latest[track] && latest[track].state === "failed")) return "dot bad";
   if (latest && tracks().some((track) => latest[track] && ["queued", "running"].includes(latest[track].state))) return "dot busy";
@@ -487,6 +487,7 @@ function statusText() {
     return `${status.message || "평가 중"}${progress}`;
   }
   if (status.state === "syncing") return status.message || "저장소를 받는 중";
+  if (status.state === "waiting") return status.message || "다른 프로세스가 평가하는 중";
   if (status.state === "error") return `서비스 오류: ${status.message || ""}`;
   if (status.state === "serve-only") return "평가는 돌리지 않고 결과만 보여 주는 중";
   return status.last_sync ? `최신 상태 · ${dateTimeLabel(status.last_sync)}에 확인` : "";

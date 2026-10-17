@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -14,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pipeline import runner  # noqa: E402
 from pipeline.repo import Commit  # noqa: E402
-from pipeline.service import Config, Service, result_key  # noqa: E402
+from pipeline.service import Config, DataDirBusy, Service, result_key  # noqa: E402
 
 
 def commit(sha: str, fingerprint: str) -> Commit:
@@ -77,6 +78,64 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(self.service.code_changed)
         self.assertTrue(self.service.stopping.is_set())
         self.assertIn("changed on disk", out.getvalue())
+
+    def holder(self) -> Service:
+        """Another evaluator holding the data directory (here: the same process, another open lock file)."""
+        other = Service(Config(data_dir=self.data, repo_url="unused"))
+        self.addCleanup(other.release)
+        self.addCleanup(self.service.release)
+        self.assertTrue(other.acquire())
+        return other
+
+    def test_one_evaluator_per_data_directory(self):
+        other = self.holder()
+        self.service.plan = lambda: self.fail("planned while another process evaluates here")
+        with self.assertRaises(DataDirBusy) as caught:
+            self.service.cycle()
+        self.assertEqual(caught.exception.holder, str(os.getpid()))
+        other.failures["detection:0000000000000000"] = {"error": "x", "at": "x", "commit": "x"}
+        other._save_failures()
+        other.release()
+        self.assertTrue(self.service.acquire())
+        self.assertIn("detection:0000000000000000", self.service.failures)  # what the other process recorded
+
+    def test_the_server_keeps_serving_and_waits(self):
+        self.holder()
+        self.service.wake.wait = lambda timeout: self.service.stopping.set()  # one round of the loop
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.service.run_forever(600)
+        status = self.service.snapshot()
+        self.assertEqual(status["state"], "waiting")
+        self.assertIn(str(os.getpid()), status["message"])
+
+    def test_once_releases_the_directory_when_finished(self):
+        other = self.holder()
+        other.release()
+        self.plan["commits"] = []
+        self.service.plan = lambda: self.plan
+        self.service.run_until_done()
+        self.assertTrue(other.acquire())
+
+    def test_once_releases_the_directory_after_an_error(self):
+        other = self.holder()
+        other.release()
+
+        def fail_plan():
+            raise RuntimeError("planning failed")
+
+        self.service.plan = fail_plan
+        with self.assertRaisesRegex(RuntimeError, "planning failed"):
+            self.service.run_until_done()
+        self.assertTrue(other.acquire())
+
+    def test_the_server_releases_the_directory_after_stopping(self):
+        other = self.holder()
+        other.release()
+        self.plan["commits"] = []
+        self.service.plan = lambda: self.plan
+        self.service.wake.wait = lambda timeout: self.service.stop()
+        self.service.run_forever(600)
+        self.assertTrue(other.acquire())
 
     def test_retry_clears_failures(self):
         self.service.failures["detection:0000000000000000"] = {"error": "x", "at": "x", "commit": "x"}

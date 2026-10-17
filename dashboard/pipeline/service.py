@@ -10,7 +10,11 @@ Keys are computed from the code files on disk, but a running process keeps the c
 changes that code, the service stops before its next cycle instead of keying results by code it does not run; the
 supervisor (or the next --once) starts the new code.
 
+One process evaluates per data directory: two would delete each other's work folders and checkouts. The one holding
+.lock evaluates; another --once does nothing, and another server keeps serving and evaluates once the lock is free.
+
 Data directory:
+  .lock                           held by the process that evaluates here (its pid inside)
   repo.git/                       bare clone of the PromptGuard repository
   checkouts/, venvs/, validated/  exported commits, Pythons with the pinned CredSweeper, dataset validation cache
   results/detection/<key>/        runner.py output
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import threading
@@ -34,11 +39,24 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+try:
+    import fcntl
+except ImportError:  # Windows: no lock; run one evaluator per data directory by hand
+    fcntl = None
+
 from pipeline import catalog, latency, repo, runner, task
 from pipeline.paths import DASHBOARD_ROOT, DATA_TEST, METRIC_DETECTION, REPO_ROOT
 
 TRACKS = ("detection", "latency")
 KEY = re.compile(r"[0-9a-f]{16}")
+
+
+class DataDirBusy(Exception):
+    """Another process holds the data directory's lock and evaluates there."""
+
+    def __init__(self, holder: str):
+        super().__init__(f"another dashboard process (pid {holder}) is evaluating in this data directory")
+        self.holder = holder
 
 
 def now() -> str:
@@ -102,6 +120,40 @@ class Service:
         self._meta_cache: dict[Path, dict[str, Any]] = {}
         self.code = code_hash()
         self.code_changed = False
+        self._lock_file = None  # open while this process holds the data directory
+
+    # ------------------------------------------------------------------ data directory lock
+
+    def acquire(self) -> bool:
+        """Hold <data>/.lock, so that this process alone evaluates here. False while another process holds it; the
+        lock goes with the process."""
+        if self._lock_file is not None or fcntl is None:
+            return True
+        self.data.mkdir(parents=True, exist_ok=True)
+        handle = (self.data / ".lock").open("a+", encoding="utf-8")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            return False
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"{os.getpid()}\n")
+        handle.flush()
+        self._lock_file = handle
+        self.failures = self._read("failures.json") or {}  # the previous holder may have recorded some
+        return True
+
+    def release(self) -> None:
+        if self._lock_file is not None:
+            self._lock_file.close()  # closing the file drops the lock
+            self._lock_file = None
+
+    def lock_holder(self) -> str:
+        try:
+            return (self.data / ".lock").read_text(encoding="utf-8").strip() or "?"
+        except OSError:
+            return "?"
 
     # ------------------------------------------------------------------ status
 
@@ -196,6 +248,8 @@ class Service:
             self.code_changed = True
             self.stop()
             return False
+        if not self.acquire():
+            raise DataDirBusy(self.lock_holder())
         plan = self.plan()
         pending = self.jobs(plan)
         self.write_index(plan, pending, running=None)
@@ -311,23 +365,37 @@ class Service:
     # ------------------------------------------------------------------ loop
 
     def run_forever(self, poll_seconds: float) -> None:
-        while not self.stopping.is_set():
-            ran = False
-            try:
-                ran = self.cycle()
-            except Exception as exc:  # noqa: BLE001 - keep serving; the UI shows the error
-                log(f"cycle failed: {str(exc)[:200]}")
-                self.set_status(state="error", message=str(exc)[:500])
-                (self.data / "logs").mkdir(parents=True, exist_ok=True)
-                with (self.data / "logs" / "service.log").open("a", encoding="utf-8") as out:
-                    out.write(f"{now()}\n{traceback.format_exc()}\n")
-            if not ran and not self.stopping.is_set():
-                self.wake.wait(poll_seconds)
-                self.wake.clear()
+        waiting = False
+        try:
+            while not self.stopping.is_set():
+                ran, pause = False, poll_seconds
+                try:
+                    ran = self.cycle()
+                    waiting = False
+                except DataDirBusy as busy:  # keep serving; evaluate once the other process is done
+                    if not waiting:
+                        log(f"{busy}; waiting for it")
+                    waiting = True
+                    self.set_status(state="waiting", message=f"다른 프로세스(pid {busy.holder})가 이 데이터 폴더에서 평가하는 중")
+                    pause = min(poll_seconds, 30)
+                except Exception as exc:  # noqa: BLE001 - keep serving; the UI shows the error
+                    log(f"cycle failed: {str(exc)[:200]}")
+                    self.set_status(state="error", message=str(exc)[:500])
+                    (self.data / "logs").mkdir(parents=True, exist_ok=True)
+                    with (self.data / "logs" / "service.log").open("a", encoding="utf-8") as out:
+                        out.write(f"{now()}\n{traceback.format_exc()}\n")
+                if not ran and not self.stopping.is_set():
+                    self.wake.wait(pause)
+                    self.wake.clear()
+        finally:
+            self.release()
 
     def run_until_done(self) -> None:
-        while not self.stopping.is_set() and self.cycle():
-            pass
+        try:
+            while not self.stopping.is_set() and self.cycle():
+                pass
+        finally:
+            self.release()
 
     def stop(self) -> None:
         self.stopping.set()

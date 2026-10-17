@@ -6,6 +6,7 @@
 - 2번, 표시 전용인 `catalog.py`의 데이터셋 순서가 벤치마크 지문에 들어감: 지문에는 데이터셋을 이름순으로 넣는다(`tests/test_runner.py`).
 - 3번, 커밋을 연달아 고르면 다른 커밋의 숫자가 굳음: `loadResults()`가 마지막 호출의 응답만 반영하고, 그 호출만 화면을 다시 그린다.
 - 4번, 요청이 한 번만 실패해도 실시간 갱신이 꺼지고 화면이 빔: `pollStatus()`는 4xx(API가 없는 정적 사본)일 때만 폴링을 끄고 네트워크 오류와 5xx는 다음 주기에 다시 묻는다. `refreshIndex()`는 받기에 실패하면 이전 index를 그대로 두고, index가 한 번도 없으면 다음 폴링 때 다시 받는다.
+- 5번, 같은 데이터 폴더에서 평가가 둘 돌면 서로의 작업 폴더를 지움: Linux/macOS에서 `Service`가 `.lock`을 잡아 평가 프로세스를 하나로 제한한다. 잠금을 못 잡은 `--once`는 종료 코드 3으로 끝나고, 서버는 화면을 제공하며 기다린다. 평가 루프가 끝나면 잠금을 푼다(`tests/test_service.py`, `tests/test_serve.py`).
 
 줄 번호는 작성 시점 기준이니 함수 이름으로 찾는다. 하나를 고치면 이 문서에서 그 항목을 지운다.
 
@@ -23,19 +24,10 @@
 
 | # | 심각도 | 어디 | 증상 |
 |---|---|---|---|
-| 5 | 중간 | `runner.py` `evaluate()`, `service.py` `run_job()` | 같은 데이터 폴더에서 평가가 둘 돌면 서로의 작업 폴더를 지운다 |
 | 6 | 낮음 | `collect.py` `Collector.payload()`, `merge()` | 예시 창과 태그가 샤드 나눔(`--jobs`)에 따라 달라진다 |
 | 7 | 낮음 | `latency.py` `evaluate()`, `headline()` | timeout을 "시스템 값"이라고 보여 주지만 5000ms 고정이고, 헤드라인 `over_timeout`의 기준이 패널과 다르다 |
 | 8 | 낮음 | `runner.py` `code_fingerprint()` | 저장소 경로에 `tests` 폴더가 끼면 채점 코드 지문이 고정된다 |
 | 9 | 낮음 | `app.js` `duration()` | 119.6초를 "1분 60초"로 보여 준다 |
-
-## 5. 같은 데이터 폴더에서 평가가 둘 돌면 서로의 작업 폴더를 지운다
-
-- **어디**: 데이터 폴더 잠금이 없다. [runner.py](pipeline/runner.py) `evaluate()`는 시작할 때 `results/detection/<키>.work`를 지우고(238–239행), `<키>.tmp`에 결과를 만든다(260행). [service.py](pipeline/service.py) `run_job()`은 커밋을 `checkouts/<지문 12자>`에 꺼내고(221행) 끝나면 지운다(252행). `failures.json`과 `index.json`도 프로세스마다 따로 덮어쓴다.
-- **증상**: systemd 서비스가 도는 중에 팀원이 같은 폴더로 `serve.py --once`를 돌리면, 두 프로세스가 같은 작업(가장 새 커밋의 탐지 성능)을 잡고 서로의 `.work`와 체크아웃을 지운다. 먼저 돌던 쪽의 샤드가 출력 폴더를 잃거나 detector를 import하지 못해 실패로 기록되고, `POST /api/refresh?retry=1` 전까지 다시 돌지 않는다.
-- **재현**: 결과가 없는 커밋이 남은 데이터 폴더에 `python3 dashboard/serve.py --once --data-dir <폴더> --repo <PromptGuard 경로>`를 두 개 동시에 띄운다. 두 번째가 시작하자마자 첫 번째의 `results/detection/<키>.work/`가 지워진다. 실제로 돌리지 않고 코드 경로로 확인했다.
-- **고칠 방향**: 서비스 모드와 `--once`는 시작할 때 데이터 폴더의 잠금 파일(예: `fcntl.flock`으로 `<data_dir>/.lock`)을 잡고, 못 잡으면 이유를 출력하고 바로 끝낸다. 종료 코드는 serve.py의 `RESTART`(75)와 겹치지 않게 정한다. `--serve-only`와 `--export`는 읽기만 하니 잠그지 않는다. 서버는 Linux라 `fcntl`이면 된다.
-- **끝 기준**: 잠금이 잡힌 상태에서 두 번째 프로세스가 메시지와 함께 바로 끝나는 테스트가 있다.
 
 ## 6. 예시 창과 태그가 샤드 나눔에 따라 달라진다
 

@@ -46,6 +46,8 @@ python3 dashboard/serve.py --host 0.0.0.0 --port 8765 --auth team:비밀번호
 
 계속 띄워 두려면 systemd 같은 것에 맡긴다. 멈출 때(SIGTERM) 돌던 평가는 중단하고 실패로 남기지 않으므로, 다시 띄우면 그 작업부터 다시 한다. 평가 시작, 끝, 실패는 표준 출력에 한 줄씩 남는다(`journalctl -u pg-dashboard`).
 
+같은 데이터 폴더에서는 한 프로세스만 평가한다. Linux/macOS에서 `<data_dir>/.lock`을 `fcntl.flock`으로 잠그고, 평가 루프가 끝날 때 푼다. 다른 프로세스가 잠금을 잡고 있으면 `--once`는 아무 작업 없이 이유와 보유 PID를 출력하고 종료 코드 3으로 끝난다. 서버 모드는 화면을 계속 제공하며 대기 상태를 표시하고, 최대 30초 간격으로 잠금을 다시 시도한다. `--serve-only`와 `--export`는 잠그지 않는다. 프로세스가 비정상 종료되어도 잠금은 풀리므로, 남은 `.lock` 파일은 지우지 않는다. Windows에서는 이 잠금이 적용되지 않으니 데이터 폴더마다 평가 프로세스를 하나만 띄운다.
+
 코드를 `git pull`로 받으면 `systemctl restart pg-dashboard`로 다시 띄운다. 잊어도, 대시보드나 채점 코드(`metric-detection/evaluation`, `metric-latency/scripts`)가 바뀐 것을 다음 주기에 알아채고 종료 코드 75로 스스로 끝나며, `Restart=on-failure`가 새 코드로 다시 띄운다. 돌던 프로세스가 옛 코드로 새 결과 키를 만들어 모든 커밋을 헛되이 다시 평가하지 않게 하려는 것이다. `--once`도 같은 경우 75로 끝나고, 다음 실행이 이어 한다.
 
 ```ini
@@ -83,6 +85,7 @@ cron으로 돌리고 정적 서버에 올리는 방법도 된다: `python3 dashb
 
 | 경로 (`runs/dashboard/` 아래) | 내용 |
 |---|---|
+| `.lock` | 평가 프로세스의 잠금 파일. 보유 PID를 적으며, 파일이 남아 있어도 잠금이 잡혀 있다는 뜻은 아니다 |
 | `index.json` | 커밋 목록과 커밋마다 결과의 상태·요약. 화면이 처음 읽는 파일 |
 | `results/detection/<키>/` | `summary.json`(데이터셋 × 하위 분류 × 채널 × 유형별 개수), `examples/<데이터셋>.json`(예시 창), `meta.json` |
 | `results/latency/<키>/` | `latency.json`(요약), `m4/`(m4.py의 원래 표본. 텍스트 없음) |
