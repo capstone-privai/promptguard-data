@@ -62,13 +62,23 @@ class Commit:
                 "subject": self.subject, "title": self.title}
 
 
+def remote_identity(url: str, *, base: Path | None = None) -> str:
+    """Normalize local paths the way Git stores clone origins; leave URL/scp remotes exact."""
+    if "://" in url or re.match(r"^[^/]+:", url):
+        return url
+    local = Path(url).expanduser()
+    return str(((base or Path.cwd()) / local).resolve())
+
+
 def sync(url: str, path: Path, branch: str) -> None:
     """Clone (bare) on first use, then fetch only if origin still matches the requested repository."""
+    url = remote_identity(url)
     if not (path / "HEAD").is_file():
         shutil.rmtree(path, ignore_errors=True)
         path.parent.mkdir(parents=True, exist_ok=True)
         git("clone", "--bare", "--single-branch", "--branch", branch, url, str(path), cwd=path.parent)
-    if git("remote", "get-url", "origin", cwd=path).strip() != url:
+    origin = git("remote", "get-url", "origin", cwd=path).strip()
+    if remote_identity(origin, base=path) != url:
         # Do not publish the old project's commits under a new configured URL. Keep the old clone/results intact.
         # Avoid including either URL here: authenticated remotes may contain credentials.
         raise RepoError("the data directory belongs to a different repository; use a separate --data-dir")

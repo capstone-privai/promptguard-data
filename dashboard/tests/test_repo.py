@@ -84,7 +84,20 @@ class RepoTest(unittest.TestCase):
         with self.assertRaisesRegex(repo.RepoError, "different repository"):
             repo.sync(str(other), self.bare, "main")
         self.assertEqual(repo.commits(self.bare, "main"), before)
-        self.assertEqual(repo.git("remote", "get-url", "origin", cwd=self.bare).strip(), str(self.src))
+        self.assertEqual(Path(repo.git("remote", "get-url", "origin", cwd=self.bare).strip()).resolve(),
+                         self.src.resolve())
+
+    def test_relative_local_remote_works_for_clone_and_reuse(self):
+        relative = os.path.relpath(self.src, Path.cwd())
+        bare = self.root / "fresh" / "repo.git"
+        repo.sync(relative, bare, "main")
+        repo.sync(relative, bare, "main")
+        self.assertEqual(repo.commits(bare, "main"), repo.commits(self.bare, "main"))
+
+    def test_local_path_alias_does_not_look_like_a_different_repository(self):
+        alias = self.root / "alias"
+        alias.symlink_to(self.src, target_is_directory=True)
+        repo.sync(str(alias), self.bare, "main")
 
     def test_timeout_changes_without_changing_the_detector_fingerprint(self):
         before = repo.commits(self.bare, "main")[-1]
