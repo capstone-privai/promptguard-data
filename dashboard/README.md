@@ -97,9 +97,11 @@ cron으로 돌리고 정적 서버에 올리는 방법도 된다: `python3 dashb
 | `results/task/<키>/` | `task.json`(metric-task 배치 요약) |
 | `repo.git`, `checkouts/`, `venvs/`, `validated/`, `logs/` | 저장소 사본, 꺼낸 커밋, 고정 버전 CredSweeper 환경, 데이터셋 검증 캐시, 기록 |
 
-## metric-task 결과 넣기
-
 Guard 재생 지연은 측정·실패·미측정 요청 수와 캐시 통과 수를 구분한다. 실패하거나 일부 호출의 시간이 없는 요청은 지연 백분위수에서 제외하고, 정상적인 캐시 통과는 0ms로 센다. 지연 결과 버전은 `LATENCY_VERSION=3`이며, 이전 결과는 다음 서비스 실행에서 재측정 대상이 된다.
+
+Guard capture는 배치·과제·조건 이름과 실제 경로의 지문으로 구분하고 중복 지정한 같은 파일은 한 번만 재생한다. 환경 지문에는 capture 출처와 내용 해시를 함께 넣으므로, 내용이 같은 별도 파일도 서로 다른 결과 키를 사용한다.
+
+## metric-task 결과 넣기
 
 대시보드는 metric-task를 돌리지 않는다. 누군가 `main`을 체크아웃한 PromptGuard로 배치를 돌리면([metric-task/README.md](../metric-task/README.md#한꺼번에-돌리기)), 그 배치 폴더를 서버의 `runs/metric-task/` 아래(또는 `--task-runs`로 지정한 곳)에 둔다. 읽는 파일은 배치 폴더의 `batch.json`과 `runs.csv`뿐이다. 둘 다 비밀값이 없으므로 실행별 폴더(transcript, API 기록)는 서버에 올리지 않아도 된다.
 

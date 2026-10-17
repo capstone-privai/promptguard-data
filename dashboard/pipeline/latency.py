@@ -36,11 +36,7 @@ import m4_workloads as workloads  # noqa: E402
 
 def capture_files(paths: Sequence[str]) -> list[Path]:
     """The metric-task API captures behind --guard paths (folders are searched like m4.py does)."""
-    found = []
-    for raw in paths:
-        path = Path(raw)
-        found += sorted(path.rglob(workloads.CAPTURE_FILE)) if path.is_dir() else [path]
-    return found
+    return workloads.capture_paths(list(paths), workloads.CAPTURE_FILE)
 
 
 def environment(adapters: str, guard: Sequence[str], repeat: int, warmup: int) -> dict[str, Any]:
@@ -51,7 +47,8 @@ def environment(adapters: str, guard: Sequence[str], repeat: int, warmup: int) -
     captures = capture_files(guard)
     machine = {"platform": platform.platform(), "machine": platform.machine(), "cpu_count": os.cpu_count()}
     parts = {"code": digest.hexdigest(), "adapters": adapters, "repeat": repeat, "warmup": warmup,
-             "guard": [hashlib.sha256(path.read_bytes()).hexdigest() for path in captures],
+             "guard": [{"capture": workloads.capture_identity(path),
+                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in captures],
              "machine": machine, "gitleaks": tool_version(["gitleaks", "version"]), "version": LATENCY_VERSION}
     return {"fingerprint": hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest(),
             "adapters": adapters, "repeat": repeat, "warmup": warmup, "guard_captures": len(captures),

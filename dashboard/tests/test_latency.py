@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import subprocess
 import json
+import lzma
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -107,6 +109,66 @@ class GuardCondenseTest(unittest.TestCase):
                 old = latency.environment("each", [], 5, 3)["fingerprint"]
         self.assertGreaterEqual(latency.LATENCY_VERSION, 3)
         self.assertNotEqual(result_key("latency", "system", old), result_key("latency", "system", current))
+
+
+class GuardSessionIdentityTest(unittest.TestCase):
+    def captures(self, root):
+        paths = [root / batch / "t01/none-r1" / latency.workloads.CAPTURE_FILE for batch in ("one", "two")]
+        for path in paths:
+            path.parent.mkdir(parents=True)
+            with lzma.open(path, "wt") as handle:
+                handle.write(json.dumps({"method": "POST", "path": "/v1/messages", "body": '{"text":"same"}'}) + "\n")
+        return paths
+
+    def test_same_capture_content_from_different_sources_changes_result_key(self):
+        from pipeline.service import result_key
+        with tempfile.TemporaryDirectory() as tmp, patch.object(latency, "tool_version", return_value=None):
+            paths = self.captures(Path(tmp))
+            contexts = [latency.environment("each", [str(path)], 1, 1)["fingerprint"] for path in paths]
+        self.assertNotEqual(result_key("latency", "system", contexts[0]), result_key("latency", "system", contexts[1]))
+
+    def test_environment_and_replay_deduplicate_the_same_capture(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(latency, "tool_version", return_value=None):
+            root = Path(tmp)
+            path = self.captures(root)[0]
+            alias = root / "alias.xz"
+            alias.symlink_to(path)
+            one = latency.environment("each", [str(path)], 1, 1)
+            overlap = latency.environment("each", [str(path.parent), str(path), str(alias)], 1, 1)
+            self.assertEqual(overlap["guard_captures"], 1)
+            self.assertEqual(one["fingerprint"], overlap["fingerprint"])
+
+    def test_two_batches_keep_two_sessions_and_a_100ms_p95(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self.captures(root)
+            for path, value in zip(paths, (10, 100)):
+                with lzma.open(path, "wt") as handle:
+                    handle.write(json.dumps({"method": "POST", "path": "/v1/messages",
+                                             "body": json.dumps({"text": str(value)})}) + "\n")
+            run = root / "run"
+            run.mkdir()
+            detector = SimpleNamespace(label="ensemble", kind="fake", startup_ms=0, config=None, system_root=None,
+                                       start=lambda folder: None, stop=lambda: None, describe=lambda: {})
+            args = SimpleNamespace(timeout_ms=5000, client_timeout=1, warmup=1, repeat=1)
+
+            def sample(recorder, items):
+                ms = float(items[0]["text"]) if items[0]["source"] == "outbound" else 1
+                return {"ok": True, "status": 200, "error": None, "call_ms": ms, "detector_ms": ms,
+                        "over_timeout": False, "findings": 0}, [0] * len(items)
+
+            with patch.object(latency.m4.Recorder, "sample", sample), patch.object(latency.m4, "say"):
+                latency.m4.measure(detector, args, run, lambda: latency.workloads.guard_sessions([str(root)]))
+            calls = [json.loads(line) for line in (run / "calls.jsonl").read_text().splitlines()]
+            requests = [json.loads(line) for line in (run / "requests.jsonl").read_text().splitlines()]
+            write_guard_run(run, calls, requests)
+            guard = latency.condense(run)["detectors"][0]["guard"]
+            self.assertEqual((guard["sessions"], guard["p95"], guard["requests"]), (2, 100, 2))
+            latency.m4.main(["report", str(run), "--out", str(root / "report")])
+            report = (root / "report/summary.md").read_text().split("## Final Guard 재생:")[1]
+            row = next(line for line in report.splitlines() if line.startswith("| ensemble |"))
+            self.assertTrue(row.startswith("| ensemble | 2 | 2 |"), row)
+            self.assertIn("| 10.0 | 100.0 | 100.0 |", row)
 
 
 class CondenseTest(unittest.TestCase):

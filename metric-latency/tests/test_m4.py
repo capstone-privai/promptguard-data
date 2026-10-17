@@ -40,6 +40,32 @@ class SynthTests(unittest.TestCase):
 
 
 class GuardReplayTests(unittest.TestCase):
+    def test_capture_sources_have_distinct_stable_session_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = [root / parent / "batch/t01/none-r1" / wl.CAPTURE_FILE for parent in ("one", "two")]
+            for path in paths:
+                path.parent.mkdir(parents=True)
+                with lzma.open(path, "wt") as handle:
+                    handle.write(json.dumps({"method": "POST", "path": "/v1/messages", "body": '{"text":"same"}'}) + "\n")
+            sessions = wl.guard_sessions([str(root)])
+            self.assertEqual(len({session.name for session in sessions}), 2)
+            self.assertTrue(all(session.name.startswith("batch/t01/none-r1@") for session in sessions))
+            self.assertEqual(wl.guard_sessions([str(paths[0])])[0].name, sessions[0].name)
+
+    def test_overlapping_paths_and_symlinks_do_not_duplicate_captures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "batch/t01/none-r1" / wl.CAPTURE_FILE
+            path.parent.mkdir(parents=True)
+            with lzma.open(path, "wt") as handle:
+                handle.write(json.dumps({"method": "POST", "path": "/v1/messages", "body": '{"text":"one"}'}) + "\n")
+            alias = root / "alias.xz"
+            alias.symlink_to(path)
+            sessions = wl.guard_sessions([str(root), str(path), str(alias)])
+            self.assertEqual(len(sessions), 1)
+            self.assertEqual(sessions[0].requests, [["one"]])
+
     def _replay(self, requests, findings=frozenset(), fail_on=None):
         sent = []
 
@@ -85,10 +111,22 @@ class GuardReplayTests(unittest.TestCase):
             with lzma.open(path, "wt", encoding="utf-8") as f:
                 f.writelines(json.dumps(r) + "\n" for r in records)
             sessions = wl.guard_sessions([tmp])
-        self.assertEqual([(s.name, s.requests) for s in sessions], [("t01/none-r1", [["s", "m"], ["m"]])])
+        self.assertEqual([s.requests for s in sessions], [[["s", "m"], ["m"]]])
+        self.assertTrue(sessions[0].name.startswith(f"{path.parents[2].name}/t01/none-r1@"))
 
 
 class RecordedTests(unittest.TestCase):
+    def test_recorded_sources_use_distinct_session_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for batch in ("one", "two"):
+                path = root / batch / "t01/promptguard-r1" / wl.RECORDED_FILE
+                path.parent.mkdir(parents=True)
+                with lzma.open(path, "wt") as handle:
+                    handle.write(json.dumps({"path": "/scan-batch", "seq": 0, "items": []}) + "\n")
+            sessions = wl.recorded_sessions([str(root)])
+            self.assertEqual(len({session.name for session in sessions}), 2)
+
     def test_replayed_in_arrival_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "t01" / "promptguard-r1" / wl.RECORDED_FILE

@@ -43,6 +43,7 @@ Mod의 훅 처리(placeholder 치환, remask, audit 쓰기), MCP bridge, Guard�
 
 - **Guard 재생**은 `POST /v1/messages`, `/v1/messages/count_tokens` 본문의 모든 문자열 값(키는 빼고)을 모으고, 한 요청 안의 중복을 없앤 뒤, 캐시에 없는 것만 256개씩 보낸다. 찾은 것이 없는 문자열만 캐시에 들어간다. 찾은 것이 있는 batch가 나오면 그 요청은 막히므로 남은 batch는 보내지 않는다. 호출이 실패해도 막힌다(fail-closed). 재생하는 탐지기가 실제로 찾은 것에 따라 캐시가 달라지므로, 어댑터마다 보내는 문자열이 조금씩 다를 수 있다.
 - **기록 재생**용 파일은 metric-task를 `--detector-capture`로 돌리면 실행 폴더마다 생긴다. 실행기가 Mod의 bridge와 탐지기 사이에 기록 프록시([metric-task/scripts/detector_capture.py](../metric-task/scripts/detector_capture.py))를 끼운다. 파일에는 Mod가 본 그대로의 텍스트(과제의 비밀 포함)가 들어 있으므로 `runs/`에만 둔다.
+- **세션 식별자**는 배치·과제·조건 이름과 capture의 실제 경로 지문을 함께 쓴다. 별도 배치나 다른 경로의 파일은 내용이 같아도 구분하고, 같은 파일을 폴더·직접 경로·symlink로 중복 지정하면 한 번만 재생한다. Guard와 Native Mod 기록 재생에 공통으로 적용한다. 예전 식별자로 기록한 표본은 출처를 복원할 수 없으므로 새로 재생해야 한다.
 
 ```bash
 python3 metric-task/scripts/m2.py run --tasks core --conditions promptguard --reps 1 --jobs 1 --detector-capture --name pg_rec

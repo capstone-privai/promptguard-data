@@ -18,6 +18,7 @@ finding). Those constants are the only system knowledge in this file.
 from __future__ import annotations
 
 import json
+import hashlib
 import lzma
 import random
 import string
@@ -134,18 +135,36 @@ def _read_jsonl_xz(path: Path) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def _find(paths: list[str], filename: str) -> list[Path]:
-    found = []
+def capture_paths(paths: list[str], filename: str) -> list[Path]:
+    """Canonical capture paths in replay order, once per source even when roots overlap or use symlinks."""
+    found, seen = [], set()
     for raw in paths:
         path = Path(raw)
-        found += [path] if path.is_file() else sorted(path.rglob(filename))
+        candidates = [path] if path.is_file() else sorted(path.rglob(filename))
+        for candidate in candidates:
+            canonical = candidate.resolve()
+            if canonical not in seen:
+                seen.add(canonical)
+                found.append(canonical)
+    return found
+
+
+def _find(paths: list[str], filename: str) -> list[Path]:
+    found = capture_paths(paths, filename)
     if not found:
         raise SystemExit(f"no {filename} under {paths}")
     return found
 
 
+def capture_identity(path: Path) -> str:
+    """A source identity, not a content hash: separate captures may contain identical requests."""
+    return hashlib.sha256(b"capture-v2\0" + path.resolve().as_posix().encode()).hexdigest()
+
+
 def _session_name(path: Path) -> str:
-    return "/".join(path.parts[-3:-1])  # <task>/<condition>-r<n>
+    canonical = path.resolve()
+    label = "/".join(canonical.parts[-4:-1])  # <batch>/<task>/<condition>-r<n>
+    return f"{label}@{capture_identity(canonical)}"
 
 
 def guard_sessions(paths: list[str]) -> list[Session]:
