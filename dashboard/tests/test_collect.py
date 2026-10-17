@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -16,6 +17,7 @@ from pipeline.runner import prf  # noqa: E402
 from evaluation.adapters.base import ItemOutput  # noqa: E402
 from evaluation.adapters.reference import IdentityAdapter, OracleAdapter  # noqa: E402
 from evaluation.dataset.io import load_sessions  # noqa: E402
+from evaluation.dataset.schema import GoldSpan, Item, Session  # noqa: E402
 from evaluation.run import evaluate_sessions  # noqa: E402
 from evaluation.scorer.edits import Edit, apply_edits  # noqa: E402
 
@@ -63,7 +65,7 @@ def payload_for(sessions, adapter, dataset="fixture", per_bucket=collect.PER_BUC
         collector.add(session, item, score, result.outputs[(score.session_id, score.item_id)])
     payload = collector.payload()
     payload.update(counts=result.metrics["counts"], lines_total=result.metrics["lines_total"])
-    return payload, result.metrics
+    return json.loads(json.dumps(payload)), result.metrics  # shards cross a JSON file boundary
 
 
 class PlaceholderTypeTest(unittest.TestCase):
@@ -135,6 +137,8 @@ class CountsTest(unittest.TestCase):
         self.assertEqual(one["items"], two["items"])
         self.assertEqual({(e["session"], e["item"]) for e in one["examples"]},
                          {(e["session"], e["item"]) for e in two["examples"]})
+        self.assertEqual(one["examples"], two["examples"])
+        self.assertEqual(one["overview"], two["overview"])
 
     def test_tool_input_is_left_out(self):
         sessions = load_sessions(FIXTURES / "sessions.jsonl", FIXTURES / "gold.jsonl")
@@ -153,6 +157,35 @@ class CountsTest(unittest.TestCase):
 
 
 class ExamplesTest(unittest.TestCase):
+    def test_windows_use_only_globally_selected_bucket_candidates(self):
+        dataset = "repro"
+        text = ("x" * 79 + "\n") * 10
+        names = [f"s{index}" for index in range(200)]
+        target = max(names, key=lambda name: collect.rank_of(dataset, name, 0))
+        others = [name for name in names if name != target][:3]
+        sessions = [Session(target, [Item(0, "t", "tool_output", text)],
+                            [GoldSpan(0, 0, 100, 110, "PASSWORD")])]
+        sessions += [Session(name, [Item(0, "t", "tool_output", text)], []) for name in others]
+
+        class FalsePositiveAdapter:
+            name = "repro"
+
+            def describe(self):
+                return {}
+
+            def run_session(self, session):
+                edits = [Edit(500, 505, "[PASSWORD_1]")]
+                return {0: ItemOutput(0, apply_edits(text, edits), edits)}
+
+        whole, _ = payload_for(sessions, FalsePositiveAdapter(), dataset, per_bucket=1)
+        one = collect.merge([whole], per_bucket=1)
+        example = next(row for row in one["examples"] if row["session"] == target)
+        self.assertEqual(example["tags"], ["PASSWORD:missed"])
+        for parts in ([sessions[:1], sessions[1:]], [[session] for session in reversed(sessions)]):
+            with self.subTest(shards=len(parts)):
+                shards = [payload_for(part, FalsePositiveAdapter(), dataset, per_bucket=1)[0] for part in parts]
+                self.assertEqual(collect.merge(shards, per_bucket=1), one)
+
     def test_examples_show_the_spans_they_were_picked_for(self):
         sessions = load_sessions(FIXTURES / "sessions.jsonl", FIXTURES / "gold.jsonl")
         payload, _ = payload_for(sessions, ScriptedAdapter())

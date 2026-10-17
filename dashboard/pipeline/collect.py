@@ -147,28 +147,14 @@ class Collector:
         return True
 
     def payload(self) -> dict[str, Any]:
-        """JSON-ready counts, picks and example windows (only for items some bucket still keeps)."""
-        focuses: dict[tuple[str, int], list[tuple[int, int]]] = defaultdict(list)
-        for kept in self.picks.values():
-            for _rank, key, focus in kept:
-                if focus not in focuses[key]:
-                    focuses[key].append(focus)
-        examples: dict[str, dict[str, Any]] = {}
-        located: dict[tuple[tuple[str, int], tuple[int, int]], str] = {}
-        for key, spans in focuses.items():
-            source = self.sources[key]
-            ranges, owner = windows(source["text"], spans)
-            ids = [example_id(key, start) for start, _end in ranges]
-            for (start, end), identifier in zip(ranges, ids):
-                examples[identifier] = _example(key, source, start, end)
-            for span, index in zip(spans, owner):
-                located[(key, span)] = ids[index]
+        """JSON-ready counts, candidate focuses and their source items. Cut windows after the global selection."""
+        keys = {key for kept in self.picks.values() for _rank, key, _focus in kept}
         return {
             "cells": [[*cell, *counts] for cell, counts in sorted(self.cells.items())],
             "items": [[*cell, *counts] for cell, counts in sorted(self.items.items())],
-            "picks": [[list(bucket), rank, located[(key, focus)]]
+            "picks": [[list(bucket), rank, list(key), list(focus)]
                       for bucket, kept in sorted(self.picks.items()) for rank, key, focus in kept],
-            "examples": examples,
+            "sources": [[*key, self.sources[key]] for key in sorted(keys)],
         }
 
 
@@ -204,8 +190,8 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
     items: dict[tuple[str, ...], list[int]] = defaultdict(lambda: [0, 0, 0])
     counts = dict.fromkeys(COUNT_KEYS, 0)
     lines_total = 0
-    picks: dict[tuple[str, ...], list[tuple[str, str]]] = defaultdict(list)
-    examples: dict[str, dict[str, Any]] = {}
+    picks: dict[Bucket, list[tuple[str, tuple[str, int], tuple[int, int]]]] = defaultdict(list)
+    sources: dict[tuple[str, int], Mapping[str, Any]] = {}
     for payload in payloads:
         for row in payload["cells"]:
             target = cells[tuple(row[:3])]
@@ -218,9 +204,10 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
         for key in COUNT_KEYS:
             counts[key] += payload["counts"][key]
         lines_total += payload["lines_total"]
-        for bucket, rank, example_id in payload["picks"]:
-            picks[tuple(bucket)].append((rank, example_id))
-        examples.update(payload["examples"])
+        for bucket, rank, key, focus in payload["picks"]:
+            picks[tuple(bucket)].append((rank, tuple(key), tuple(focus)))
+        for session, item, source in payload["sources"]:
+            sources[(session, item)] = source
 
     summed = [sum(values[index] for values in cells.values()) for index in range(len(COUNT_KEYS))]
     if summed != [counts[key] for key in COUNT_KEYS] or sum(row[2] for row in items.values()) != lines_total:
@@ -228,12 +215,28 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
 
     best = {bucket: sorted(kept)[:per_bucket] for bucket, kept in picks.items()}
     groups = _fold_groups(items)
-    kept_ids = {example_id for kept in best.values() for _rank, example_id in kept}
+    focuses: dict[tuple[str, int], set[tuple[int, int]]] = defaultdict(set)
+    for kept in best.values():
+        for _rank, key, focus in kept:
+            focuses[key].add(focus)
+    examples: dict[str, dict[str, Any]] = {}
+    located: dict[tuple[tuple[str, int], tuple[int, int]], str] = {}
+    for key, selected in focuses.items():
+        spans = sorted(selected)
+        source = sources[key]
+        ranges, owner = windows(source["text"], spans)
+        for start, end in ranges:
+            examples[example_id(key, start)] = _example(key, source, start, end)
+        for focus, index in zip(spans, owner):
+            located[(key, focus)] = example_id(key, ranges[index][0])
     overview: dict[tuple[str, ...], tuple[str, str]] = {}
     for bucket, kept in best.items():
         coarse = (bucket[0], *bucket[2:])  # without the sub-group
-        overview[coarse] = min(overview.get(coarse, kept[0]), kept[0])
-    folded = [{**examples[example_id], "group": groups[examples[example_id]["group"]]} for example_id in sorted(kept_ids)]
+        rank, key, focus = kept[0]
+        candidate = (rank, located[(key, focus)])
+        overview[coarse] = min(overview.get(coarse, candidate), candidate)
+    folded = [{**examples[identifier], "group": groups[examples[identifier]["group"]]}
+              for identifier in sorted(examples)]
     return {
         "cells": _fold_rows(cells, groups),
         "items": _fold_rows(items, groups),

@@ -8,6 +8,8 @@
 - 4번, 요청이 한 번만 실패해도 실시간 갱신이 꺼지고 화면이 빔: `pollStatus()`는 4xx(API가 없는 정적 사본)일 때만 폴링을 끄고 네트워크 오류와 5xx는 다음 주기에 다시 묻는다. `refreshIndex()`는 받기에 실패하면 이전 index를 그대로 두고, index가 한 번도 없으면 다음 폴링 때 다시 받는다.
 - 5번, 같은 데이터 폴더에서 평가가 둘 돌면 서로의 작업 폴더를 지움: Linux/macOS에서 `Service`가 `.lock`을 잡아 평가 프로세스를 하나로 제한한다. 잠금을 못 잡은 `--once`는 종료 코드 3으로 끝나고, 서버는 화면을 제공하며 기다린다. 평가 루프가 끝나면 잠금을 푼다(`tests/test_service.py`, `tests/test_serve.py`).
 
+- 6번, 예시 창과 태그가 샤드 나눔에 따라 달라짐: 샤드가 후보의 초점과 원문을 넘기고, `merge()`가 전체 상위 후보를 고른 뒤 창을 자른다. 한 item이 일부 버킷에서만 밀리는 경우에도 샤드 수·순서와 무관하게 예시 전체가 같다(`tests/test_collect.py`).
+
 줄 번호는 작성 시점 기준이니 함수 이름으로 찾는다. 하나를 고치면 이 문서에서 그 항목을 지운다.
 
 ## 고치기 전에
@@ -24,68 +26,9 @@
 
 | # | 심각도 | 어디 | 증상 |
 |---|---|---|---|
-| 6 | 낮음 | `collect.py` `Collector.payload()`, `merge()` | 예시 창과 태그가 샤드 나눔(`--jobs`)에 따라 달라진다 |
 | 7 | 낮음 | `latency.py` `evaluate()`, `headline()` | timeout을 "시스템 값"이라고 보여 주지만 5000ms 고정이고, 헤드라인 `over_timeout`의 기준이 패널과 다르다 |
 | 8 | 낮음 | `runner.py` `code_fingerprint()` | 저장소 경로에 `tests` 폴더가 끼면 채점 코드 지문이 고정된다 |
 | 9 | 낮음 | `app.js` `duration()` | 119.6초를 "1분 60초"로 보여 준다 |
-
-## 6. 예시 창과 태그가 샤드 나눔에 따라 달라진다
-
-- **어디**: [collect.py](pipeline/collect.py) `Collector.payload()`(149행)가 샤드 안에서 창을 자른다(160행 `windows(source["text"], spans)`). 이때 그 item에서, 그 샤드 안에서 아직 버킷에 남아 있는 모든 후보의 초점(focus)을 함께 묶는다. `merge()`(200행)는 샤드 결과 가운데 전체 상위 후보만 남기지만, 창은 샤드 단계에서 이미 정해졌다.
-- **증상**: 어떤 예시를 고를지는 샤드와 무관하다(순위가 item id의 해시). 하지만 창 범위와 태그는 같은 샤드에 어떤 item이 함께 있었는지에 따라 달라진다. `--jobs`나 데이터셋 크기가 바뀌면 같은 예시의 창이 달라진다. 다른 버킷 후보의 초점까지 창에 들어가면 태그가 늘어, 고르지도 않은 탭(예: '과잉 마스킹')에 나온다. 모듈 문서 문자열과 README는 샤드와 무관하다고 적고 있다. 숫자(셀)는 영향이 없다.
-- **재현** (저장소 루트에서 `python3 windows_repro.py`): 같은 세션들을 샤드 1개와 2개로 나눠 돌린다(`per_bucket=1`). 대상 세션에는 놓친 정답(100–110)과 과잉 마스킹(500–505)이 함께 있고, 과잉 마스킹 버킷에서는 다른 세션에 밀린다.
-  ```python
-  import sys
-  sys.path.insert(0, "dashboard")
-  from pipeline import collect
-  from evaluation.adapters.base import ItemOutput
-  from evaluation.dataset.schema import GoldSpan, Item, Session
-  from evaluation.run import evaluate_sessions
-  from evaluation.scorer.edits import Edit, apply_edits
-
-  DATASET = "repro"
-  text = ("x" * 79 + "\n") * 10  # 800자, 짧은 줄
-  names = [f"s{i}" for i in range(200)]
-  target = max(names, key=lambda name: collect.rank_of(DATASET, name, 0))  # 순위가 가장 나빠 fp 버킷에서 밀린다
-  others = [name for name in names if name != target][:3]
-  sessions = [Session(target, [Item(0, "t", "tool_output", text)], [GoldSpan(0, 0, 100, 110, "PASSWORD")])]
-  sessions += [Session(name, [Item(0, "t", "tool_output", text)], []) for name in others]
-
-
-  class Adapter:  # 모든 세션의 500-505를 가린다: 정답과 겹치지 않으니 과잉 마스킹(PASSWORD로 셈)
-      name = "repro"
-
-      def describe(self):
-          return {}
-
-      def run_session(self, session):
-          edits = [Edit(500, 505, "[PASSWORD_1]")]
-          return {0: ItemOutput(0, apply_edits(text, edits), edits)}
-
-
-  def shard_payload(part):
-      result = evaluate_sessions(part, Adapter())
-      collector = collect.Collector(DATASET, lambda meta: "-", per_bucket=1)
-      for session, score in zip(part, result.scores):
-          collector.add(session, session.items[0], score, result.outputs[(session.session_id, 0)])
-      payload = collector.payload()
-      payload.update(counts=result.metrics["counts"], lines_total=result.metrics["lines_total"])
-      return payload
-
-
-  for label, parts in (("one shard", [sessions]), ("two shards", [sessions[:1], sessions[1:]])):
-      merged = collect.merge([shard_payload(part) for part in parts], per_bucket=1)
-      example = next(example for example in merged["examples"] if example["session"] == target)
-      print(f"{label:10s}: window {example['offset']}-{example['offset'] + len(example['text'])}, tags {example['tags']}")
-  ```
-  작성 시점 출력:
-  ```text
-  one shard : window 0-319, tags ['PASSWORD:missed']
-  two shards: window 0-719, tags ['PASSWORD:fp', 'PASSWORD:missed']
-  ```
-- **고칠 방향**: 창을 `merge()`에서 최종 선택 기준으로 자른다. 샤드는 후보마다 초점과, 버킷에 남은 item의 원문을 넘긴다. merge는 전체 상위 후보만으로 item별 초점을 모아 `windows()`를 부른다. 원문을 넘기기 부담스러우면, 후보마다 창을 따로 자르고 같은 item의 창끼리 묶지 않는 방법도 된다.
-- **주의**: `collect.py`가 바뀌니 결과 키가 바뀌어 모든 커밋을 다시 평가한다.
-- **끝 기준**: 위 스크립트의 두 줄이 같다. `tests/test_collect.py`의 샤드 불변성 테스트에 이 경우(한 item이 여러 버킷의 후보이고 일부 버킷에서만 밀리는 경우)를 넣고, 예시의 `id`, `offset`, `text`, `tags`까지 비교한다.
 
 ## 7. 지연의 timeout 기준과 설명이 따로 논다
 
