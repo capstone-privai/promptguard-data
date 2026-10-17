@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import secrets
@@ -495,6 +496,77 @@ def cmd_play(args):
     print_result(r, run_dir)
 
 
+def checkout_provenance(root: Path) -> dict:
+    """Git HEAD plus the actual dirty tree (including untracked source contents), without storing a diff."""
+    unknown = {"version": 1, "commit": None, "dirty": None, "fingerprint": None}
+    head = mt.git(root, "rev-parse", "HEAD", check=False)
+    status = mt.git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False)
+    diff = mt.git(root, "diff", "HEAD", "--binary", "--no-ext-diff", check=False)
+    untracked = mt.git(root, "ls-files", "--others", "--exclude-standard", "-z", check=False)
+    if any(result.returncode for result in (head, status, diff, untracked)):
+        return unknown
+    commit = head.stdout.strip()
+    digest = hashlib.sha256((commit + "\0" + status.stdout + "\0" + diff.stdout).encode())
+    try:
+        for name in sorted(filter(None, untracked.stdout.split("\0"))):
+            path = root / name
+            content = os.readlink(path).encode() if path.is_symlink() else path.read_bytes()
+            digest.update(name.encode() + b"\0" + hashlib.sha256(content).digest())
+    except OSError:
+        return unknown  # a changing/unreadable tree cannot be attributed safely
+    return {"version": 1, "commit": commit, "dirty": bool(status.stdout), "fingerprint": digest.hexdigest()}
+
+
+def claude_version() -> str:
+    return subprocess.run(["claude", "--version"], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def batch_metadata(args, pg_root: Path, tasks) -> dict:
+    system = checkout_provenance(pg_root)
+    data = checkout_provenance(REPO_ROOT)
+    return {
+        "provenance_version": 1,
+        "started_at": datetime.now().isoformat(timespec="seconds"), "model": args.model, "reps": args.reps,
+        "conditions": args.conditions.split(","), "tasks": [task.id for task in tasks],
+        "system_root": str(pg_root), "system_commit": system["commit"], "system_provenance": system,
+        "data_commit": data["commit"], "data_provenance": data,
+        "claude_version": claude_version(), "budget": args.budget, "timeout": args.timeout,
+        "capture": not args.no_capture, "detector_capture": args.detector_capture,
+        "secrets_module": str(mt.SECRETS_MODULE),
+        "secrets_module_sha256": hashlib.sha256(mt.SECRETS_MODULE.read_bytes()).hexdigest(),
+    }
+
+
+RESUME_FIELDS = ("provenance_version", "system_commit", "system_provenance", "data_commit", "data_provenance",
+                 "model", "reps", "conditions", "tasks", "claude_version", "budget", "timeout", "capture",
+                 "detector_capture", "secrets_module", "secrets_module_sha256")
+
+
+def prepare_batch(batch: Path, metadata: dict, *, resume: bool) -> dict:
+    """Validate before skipping or deleting any runs. A resume never overwrites the original batch.json."""
+    if batch.exists() and any(batch.iterdir()):
+        if not resume:
+            raise SystemExit("batch already exists; use --resume with the same inputs or a new --name")
+        try:
+            original = json.loads((batch / "batch.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raise SystemExit("cannot resume a batch without valid provenance; use a new --name") from None
+        if not isinstance(original, dict) or original.get("provenance_version") != 1:
+            raise SystemExit("cannot resume a legacy batch with unknown provenance; use a new --name")
+        for name in ("system_provenance", "data_provenance"):
+            if not isinstance(original.get(name), dict) or not original[name].get("fingerprint"):
+                raise SystemExit("cannot resume a batch with unknown provenance; use a new --name")
+        changed = [field for field in RESUME_FIELDS if original.get(field) != metadata.get(field)]
+        if changed:
+            raise SystemExit(f"cannot resume with changed {', '.join(changed)}; use a new --name")
+        return original
+    batch.mkdir(parents=True, exist_ok=True)
+    temporary = batch / "batch.json.tmp"
+    temporary.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    os.replace(temporary, batch / "batch.json")
+    return metadata
+
+
 def cmd_run(args):
     pg_root = system_root(args.system_root)
     tasks = mt.load_tasks(args.tasks)
@@ -503,19 +575,10 @@ def cmd_run(args):
     if unknown:
         raise SystemExit(f"unknown condition(s) {sorted(unknown)}; choose from {CONDITIONS}")
     batch = RUNS_DIR / (args.name or f"batch_{datetime.now():%Y%m%d-%H%M%S}")
-    batch.mkdir(parents=True, exist_ok=True)
+    prepare_batch(batch, batch_metadata(args, pg_root, tasks), resume=args.resume)
     jobs = [(t, c, rep) for rep in range(1, args.reps + 1) for t in tasks for c in conditions]
     if args.resume:
         jobs = [(t, c, rep) for t, c, rep in jobs if not finished(batch / t.id / f"{c}-r{rep}")]
-    (batch / "batch.json").write_text(json.dumps({
-        "started_at": datetime.now().isoformat(timespec="seconds"), "model": args.model, "reps": args.reps,
-        "conditions": conditions, "tasks": [t.id for t in tasks], "system_root": str(pg_root),
-        "system_commit": mt.git(pg_root, "rev-parse", "HEAD", check=False).stdout.strip(),
-        "data_commit": mt.git(REPO_ROOT, "rev-parse", "HEAD", check=False).stdout.strip(),
-        "claude_version": subprocess.run(["claude", "--version"], capture_output=True, text=True).stdout.strip(),
-        "capture": not args.no_capture, "detector_capture": args.detector_capture,
-        "secrets_module": str(mt.SECRETS_MODULE),
-    }, indent=2), encoding="utf-8")
     say(f"{len(jobs)} run(s) -> {batch}")
 
     def job(spec):

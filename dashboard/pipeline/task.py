@@ -1,8 +1,8 @@
 """metric-task results for the dashboard.
 
 metric-task runs Claude Code and costs API money, so the dashboard never starts it. It reads the batches people ran
-(metric-task/scripts/m2.py run) and shows each beside the PromptGuard commit it ran against: batch.json records the
-checkout's HEAD as system_commit.
+(metric-task/scripts/m2.py run). Only batches whose recorded provenance confirms a clean checkout are attributed to
+system_commit; dirty checkouts and legacy batches with unknown history remain separately labeled.
 
 From a batch folder only batch.json and runs.csv are read. runs.csv holds one row per run without secret values;
 the run folders next to it hold transcripts and API captures with secrets and are never opened.
@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from collections import defaultdict
 from collections.abc import Sequence
 from pathlib import Path
@@ -25,7 +26,7 @@ CATEGORIES = {  # metric-task/README.md#과제, in its order
     "diagnose": "진단 (비밀과 무관)", "edit": "비밀이 든 파일 수정", "identity": "같은 비밀인지 비교",
     "overmask": "비밀 아닌 값 필요", "property": "비밀 값의 속성", "use": "비밀을 명령에 사용", "transport": "비밀 옮기기",
 }
-TASK_VERSION = 2  # leak rates use only rows with a measured server_leaked count
+TASK_VERSION = 3  # provenance-aware summaries; version 2 separated unmeasured server leak counts
 
 
 def _truthy(value: str | None) -> bool:
@@ -53,6 +54,20 @@ def _server_leaked(row: dict[str, str]) -> int | None:
     except (TypeError, ValueError):
         return None
     return value if value >= 0 else None
+
+
+def provenance(meta: dict[str, Any]) -> str:
+    """Legacy HEAD-only metadata cannot establish whether the code matched that commit."""
+    source = meta.get("system_provenance")
+    if not isinstance(source, dict) or source.get("version") != 1:
+        return "unknown"
+    if (source.get("commit") != meta.get("system_commit")
+            or not re.fullmatch(r"[0-9a-f]{40}", str(source.get("commit") or ""))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(source.get("fingerprint") or ""))):
+        return "unknown"
+    if source.get("dirty") is True:
+        return "dirty"
+    return "clean" if source.get("dirty") is False else "unknown"
 
 
 def discover(roots: Sequence[str | Path]) -> list[Path]:
@@ -138,6 +153,7 @@ def summarize(folder: Path) -> dict[str, Any]:
         "reps": meta.get("reps"),
         "claude_version": meta.get("claude_version"),
         "system_commit": meta.get("system_commit"),
+        "provenance": provenance(meta),
         "data_commit": meta.get("data_commit"),
         "captured": captured,
         "conditions": conditions,
@@ -167,6 +183,7 @@ def collect(roots: Sequence[str | Path], results: Path) -> list[dict[str, Any]]:
             continue  # a batch still being written or not a metric-task batch
         entries.append({"key": key, "name": summary["name"], "started_at": summary["started_at"],
                         "model": summary["model"], "system_commit": summary["system_commit"],
+                        "provenance": summary["provenance"],
                         "runs": summary["runs"], "valid": summary["valid"], "tasks": summary["tasks"],
                         "captured": summary["captured"],
                         "headline": {condition: {name: values.get(name) for name in ("success_rate", "seen_rate", "leaked_rate")}

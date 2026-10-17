@@ -1176,15 +1176,19 @@ function pickTask() {
     if (chosen) return { batch: chosen, chosen: true };
   }
   const commit = selectedCommit();
-  const own = commit && commit.task ? batches.filter((batch) => commit.task.includes(batch.key)) : [];
+  const own = commit && commit.task ? batches.filter((batch) => batch.provenance === "clean" && commit.task.includes(batch.key)) : [];
   if (own.length) return { batch: own[own.length - 1], own: true };
   return { batch: batches[batches.length - 1], own: false };
+}
+
+function provenanceLabel(batch) {
+  return batch.provenance === "clean" ? "커밋과 일치" : batch.provenance === "dirty" ? "미커밋 변경 있음" : "이력 미확인";
 }
 
 function batchLabel(batch) {
   const commit = batch.commit;
   const short = commit ? commit.short : (batch.system_commit || "").slice(0, 7) || "커밋 모름";
-  return `${batch.name} · ${short} · ${dateLabel(batch.started_at)}`;
+  return `${batch.name} · ${short} · ${provenanceLabel(batch)} · ${dateLabel(batch.started_at)}`;
 }
 
 function rateText(value) {
@@ -1217,6 +1221,10 @@ function renderTask() {
   const data = state.task;
   const batch = pickInfo.batch;
   const commit = selectedCommit();
+  if (batch.provenance !== "clean") {
+    body.append(h("div", { class: "note", style: "margin:0 0 12px" },
+      `${provenanceLabel(batch)}: 이 배치는 해당 커밋의 대표 결과에 포함하지 않아요.`));
+  }
   if (!pickInfo.own && !pickInfo.chosen) {
     body.append(h("div", { class: "note", style: "margin:0 0 12px" },
       `이 커밋${commit ? `(${commit.short})` : ""}으로 돌린 실행이 없어서 가장 최근 실행(${batchLabel(batch)})을 보여 주고 있어요. `,
@@ -1259,6 +1267,7 @@ function renderTask() {
     body.append(h("div", { class: "more" }, open.detail, h("dl", null,
       h("dt", null, "배치"), h("dd", null, `${data.name} · ${dateTimeLabel(data.started_at)}`),
       h("dt", null, "PromptGuard 커밋"), h("dd", null, own ? `${own.short} · ${own.title}` : (data.system_commit || "기록 없음")),
+      h("dt", null, "실행 출처"), h("dd", null, provenanceLabel(batch)),
       h("dt", null, "모델"), h("dd", null, `${data.model || "—"} · ${data.claude_version || ""}`),
       h("dt", null, "데이터 커밋"), h("dd", null, (data.data_commit || "—").slice(0, 7)),
       data.invalid.length ? [h("dt", null, "무효 실행"), h("dd", null, data.invalid.map((item) => `${item.task} ${item.condition} r${item.rep}`).join(", "))] : null)));
@@ -1304,7 +1313,7 @@ function taskHowTo() {
   return h("div", { class: "more" },
     "metric-task는 Claude API 비용이 들어서 대시보드가 직접 돌리지 않아요. 누군가 ",
     h("code", null, "python3 metric-task/scripts/m2.py run --tasks all --conditions none,gold,promptguard ..."),
-    "으로 돌린 배치 폴더를 서버의 metric-task 폴더(기본 runs/metric-task/)에 두면 다음 확인 때 읽어요. 필요한 것은 배치 폴더의 batch.json과 runs.csv뿐이에요(비밀값이 없는 파일). batch.json에 적힌 PromptGuard 커밋에 맞춰 보여 줍니다.");
+    "으로 돌린 배치 폴더를 서버의 metric-task 폴더(기본 runs/metric-task/)에 두면 다음 확인 때 읽어요. 필요한 것은 배치 폴더의 batch.json과 runs.csv뿐이에요(비밀값이 없는 파일). 출처가 기록되고 미커밋 변경이 없는 배치만 해당 커밋의 대표 결과로 연결합니다.");
 }
 
 /** The batch to show and its task.json (the loaded one when it is the same batch). */

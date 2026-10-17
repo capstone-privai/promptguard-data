@@ -352,7 +352,8 @@ class Service:
                 entry[track] = record
             if plan.get("task_batches") is not None:
                 entry["task"] = [batch["key"] for batch in plan["task_batches"]
-                                 if (batch.get("system_commit") or "") == commit.sha]
+                                 if batch.get("provenance") == "clean"
+                                 and (batch.get("system_commit") or "") == commit.sha]
             entries.append(entry)
         index = {
             "version": 1,

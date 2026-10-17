@@ -83,6 +83,22 @@ class TaskTest(unittest.TestCase):
         self.assertEqual(t15["rates"], {"none": 1.0, "gold": 1.0, "promptguard": 0.5})
         self.assertEqual(summary["invalid"], [{"task": "t15", "condition": "promptguard", "rep": 3, "error": "API Error: 429"}])
 
+    def test_batches_distinguish_clean_dirty_and_unknown_history(self):
+        folder = self.root / "runs/new_batch"
+        path = folder / "batch.json"
+        original = json.loads(path.read_text())
+        self.assertEqual(task.summarize(folder)["provenance"], "unknown")
+        for dirty, expected in ((False, "clean"), (True, "dirty"), (None, "unknown")):
+            with self.subTest(dirty=dirty):
+                path.write_text(json.dumps({**original, "system_provenance": {
+                    "version": 1, "commit": original["system_commit"], "dirty": dirty, "fingerprint": "d" * 64}}))
+                self.assertEqual(task.summarize(folder)["provenance"], expected)
+                entries = task.collect([folder], self.root / "provenance-results")
+                self.assertEqual(entries[0]["provenance"], expected)
+        path.write_text(json.dumps({**original, "system_provenance": {
+            "version": 1, "commit": "f" * 40, "dirty": False, "fingerprint": "d" * 64}}))
+        self.assertEqual(task.summarize(folder)["provenance"], "unknown")
+
     def test_old_layout_has_no_server_numbers(self):
         summary = task.summarize(self.root / "runs" / "old_batch")
         self.assertFalse(summary["captured"])

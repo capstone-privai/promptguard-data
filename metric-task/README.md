@@ -227,6 +227,7 @@ python3 metric-task/scripts/m2.py run ... --name main --resume            # 끝�
 ```
 
 - `--tasks`는 과제 id, 짧은 id(`t01`), suite(`core`, `gen`), 또는 `필드:값` 선택자를 받는다: `category:use`, `family:<이름>`, `channel:prompt`, `format:yaml`, `kind:<비밀 종류>`. `list --tasks ...`로 무엇이 골리는지 먼저 볼 수 있다.
+- `batch.json`은 시스템·평가 저장소의 HEAD, 미커밋 변경 여부와 내용 지문, 평가 설정을 기록한다. `--resume`은 같은 출처·설정에서만 성공한 실행을 건너뛰며 원래 메타데이터를 보존한다. 커밋·미커밋 수정 내용·모델·과제·반복·예산·timeout·기록 옵션·CLI·비밀 생성기가 다르면 새 `--name`을 사용한다. 출처가 없는 과거 배치의 resume과 `--resume` 없이 기존 배치 이름을 덮어쓰는 실행은 거부한다.
 - `run`은 `claude -p`(headless)로 돌린다. 작업 폴더에서 `--permission-mode acceptEdits`, 허용 도구는 `Bash, Read, Edit, Write, Glob, Grep`와 Mod의 탐지기 도구(`mcp__pgdetector__scan_batch`), 과제가 더하는 도구(`allowed_tools`, fixture MCP)다. `--setting-sources project --strict-mcp-config`로 개인 설정과 다른 MCP 서버를 끈다.
 - 기록 프록시는 기본으로 켜져 있다. 끄려면 `--no-capture`(`run`, `play` 모두).
 - `--detector-capture`(`run`, `play`)를 주면 Mod가 탐지기에 보낸 호출을 모두 `detector_calls.jsonl.xz`에 남긴다. bridge와 탐지기 사이에 기록 프록시([scripts/detector_capture.py](scripts/detector_capture.py))를 끼우므로 호출마다 로컬 HTTP 한 번이 더 든다. [metric-latency](../metric-latency/README.md)가 이 파일로 탐지기를 같은 입력에 다시 잰다. 기본은 꺼져 있다.

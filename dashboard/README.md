@@ -103,11 +103,11 @@ python3 metric-task/scripts/m2.py run --tasks all --conditions none,gold,promptg
 scp -r runs/metric-task/main_928c84c/{batch.json,runs.csv} server:promptguard-data/runs/metric-task/main_928c84c/
 ```
 
-`batch.json`의 `system_commit`(배치를 돌릴 때 체크아웃의 HEAD)으로 커밋에 붙인다. 선택한 커밋으로 돌린 배치가 없으면 가장 최근 배치를 그렇다는 표시와 함께 보여 주고, 패널 오른쪽 위에서 다른 배치를 고를 수 있다.
-
-## 보안
+`batch.json`의 `system_provenance`로 미커밋 변경이 없음을 확인한 배치만 `system_commit`의 대표 결과로 연결한다. 수정된 체크아웃은 ‘미커밋 변경 있음’, 출처 정보가 없는 과거 배치는 ‘이력 미확인’으로 표시한다. 선택한 커밋의 대표 배치가 없으면 가장 최근 배치를 그렇다는 표시와 함께 보여 주고, 패널 오른쪽 위에서 다른 배치를 고를 수 있다. `TASK_VERSION=3`으로 과거 요약 캐시를 다시 생성한다.
 
 서버 누출률은 `runs.csv` 각 행의 `server_leaked`가 유효한 비음수 정수로 기록된 실행만 분모에 포함한다. 빈 값·누락·잘못된 값은 미측정이며, 화면에서 측정/미측정 실행 수를 따로 보여 준다. 과제 성공률은 전체 유효 실행을 기준으로 계산한다.
+
+## 보안
 
 예시 창에는 데이터셋 원문이 그대로 들어간다. 합성 데이터의 가짜 값뿐 아니라 CredData(원본 저장소의 라이선스를 따르는 파일 조각), openhands-feedback(실제 사용자 세션) 같은 외부 데이터의 값도 있다. 팀 밖에 열지 않는다.
 

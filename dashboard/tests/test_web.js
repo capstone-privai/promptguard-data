@@ -59,3 +59,33 @@ for (const [label, stats, expected] of [
     if (stats.leaked_rate == null) assert.ok(!tile.includes("0%"), tile);
   });
 }
+
+test("only clean batches can be selected as a commit's own result", () => {
+  const { context } = app();
+  context.fixture = {
+    index: {
+      commits: [{ sha: "a", task: ["clean", "dirty", "legacy"] }],
+      task_batches: [
+        { key: "clean", provenance: "clean" },
+        { key: "dirty", provenance: "dirty" },
+        { key: "legacy" },
+      ],
+    },
+  };
+  vm.runInContext("Object.assign(state, fixture);", context);
+  assert.equal(vm.runInContext("pickTask().batch.key", context), "clean");
+  vm.runInContext('state.taskKey = "dirty";', context);
+  assert.equal(vm.runInContext("pickTask().chosen", context), true);
+  assert.ok(!vm.runInContext("pickTask().own", context));
+});
+
+for (const [status, expected] of [["dirty", "미커밋 변경 있음"], ["unknown", "이력 미확인"]]) {
+  test(`task provenance is visible: ${status}`, () => {
+    const { context, elements } = app();
+    context.fixture = taskFixture({ leaked_rate: null, leak_measured: 0, leak_unmeasured: 2 });
+    context.fixture.taskPick.batch.provenance = status;
+    vm.runInContext("Object.assign(state, fixture); renderTask();", context);
+    assert.ok(elements.get("#task-body").textContent.includes(expected));
+    assert.ok(vm.runInContext("batchLabel(state.taskPick.batch)", context).includes(expected));
+  });
+}

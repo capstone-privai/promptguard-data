@@ -29,7 +29,7 @@
 ## 범위 밖 (여기서 고치지 않는다)
 
 - **Precision이 수정 조각 수로 세진다**: 공식 채점기는 시스템이 가린 곳(수정)을 하나하나 센다. 928c84c에서 개인 키는 정답이 1,590개인데 '정답 안쪽 수정'은 9,721개다. PEM 키를 줄마다 따로 가리면 조각마다 맞은 수정으로 세지기 때문이다. 그래서 개인 키는 Precision 92.7%, Recall 10%이고, 전체 Precision에도 이 효과가 섞여 있다. 대시보드는 공식 정의를 따라야 하므로 여기서 바꾸지 않는다. 바꾸려면 metric-detection 채점기에서 정한다.
-- **metric-task 배치가 체크아웃의 수정 여부를 남기지 않는다**: `metric-task/scripts/m2.py`는 `batch.json`의 `system_commit`에 `git rev-parse HEAD`만 적는다. 그래서 커밋하지 않은 수정이 있는 상태로 돌린 배치도 그 커밋의 결과로 붙는다. 고치려면 m2.py가 수정 여부를 기록하고, 대시보드가 그 표시를 보여 준다.
+- **metric-task 배치 출처 문제는 후속 수정 완료**: [REQUIRED_FIXES.md](REQUIRED_FIXES.md)의 F2-a에서 m2의 출처 기록·resume 검증과 대시보드의 clean/dirty/이력 미확인 구분을 추가했다.
 
 ## 선택: 리뷰 중 본 작은 것
 

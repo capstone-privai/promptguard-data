@@ -47,6 +47,15 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(jobs, [("detection", "d"), ("latency", "d"), ("detection", "c"), ("latency", "c"),
                                 ("detection", "a"), ("latency", "a")])  # b shares c's detector
 
+    def test_only_clean_batches_are_attributed_to_a_commit(self):
+        self.plan["task_batches"] = [
+            {"key": label, "system_commit": self.commits[-1].sha, "provenance": label}
+            for label in ("clean", "dirty", "unknown")]
+        self.service.write_index(self.plan, [], running=None)
+        index = json.loads((self.data / "index.json").read_text())
+        self.assertEqual(index["commits"][-1]["task"], ["clean"])
+        self.assertEqual(len(index["task_batches"]), 3)
+
     def test_done_failed_and_stale_results_leave_the_queue(self):
         self.fake_result("detection", "3", "bench2", {"precision": 0.5, "recall": 0.4, "f1": 0.44})
         self.fake_result("detection", "2", "bench1", {"precision": 0.3, "recall": 0.2, "f1": 0.24})  # older benchmark
