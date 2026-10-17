@@ -313,8 +313,10 @@ function lineChart(container, options) {
     svg.append(s("text", { x: margin.left - 8, y: y(tick) + 4, "text-anchor": "end" }, yFormat(tick)));
   }
   if (selected != null && count > 1) {
-    const step = plotWidth / Math.max(1, count - 1);
-    svg.append(s("rect", { class: "selected", x: x(selected) - step / 2, y: margin.top, width: step, height: plotHeight, rx: 6 }));
+    const column = Math.min(plotWidth / (count - 1), 48); // one step, but narrow when there are few points
+    const left = Math.max(margin.left - 6, x(selected) - column / 2); // clear of the y-axis labels
+    const right = Math.min(width - 4, x(selected) + column / 2);
+    svg.append(s("rect", { class: "selected", x: left, y: margin.top, width: right - left, height: plotHeight, rx: 6 }));
   }
   const every = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(plotWidth / 64))));
   labels.forEach((label, index) => {

@@ -58,14 +58,14 @@ class RepoTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_lists_evaluable_commits_oldest_first(self):
+    def test_lists_the_states_main_went_through_oldest_first(self):
         commits = repo.commits(self.bare, "main")
+        # "Faster worker" was only ever on the feature branch; main got it as the merge
         self.assertEqual([commit.subject for commit in commits],
-                         ["Add the detector", "Edit docs only", "Faster worker", "Merge pull request #5 from team/feature"])
-        add, docs, feature, merge = commits
+                         ["Add the detector", "Edit docs only", "Merge pull request #5 from team/feature"])
+        add, docs, merge = commits
         self.assertEqual(add.fingerprint, docs.fingerprint)  # docs do not touch the detector
-        self.assertNotEqual(docs.fingerprint, feature.fingerprint)
-        self.assertEqual(feature.fingerprint, merge.fingerprint)
+        self.assertNotEqual(docs.fingerprint, merge.fingerprint)
         self.assertEqual(merge.title, "Faster worker")  # a PR merge is titled by the PR
         self.assertEqual(add.title, "Add the detector")
 

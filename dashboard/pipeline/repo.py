@@ -1,6 +1,10 @@
 """The PromptGuard repository (promptguard-claude-demoV0): fetch its branch, list the commits worth evaluating, and
 export the files the evaluators need from one commit.
 
+The commits are the branch's first-parent history: the states the branch itself went through, a merged pull request
+being one merge commit. Commits inside a merged branch are left out; that branch started from an older state of
+the branch, so between the branch's own commits they would show changes it never had.
+
 A commit can be evaluated once it has the detector package (src/detector/pgdetector), the code both the
 metric-detection scorer and the metric-latency worker load. Commits whose src/detector tree and requirements.txt are
 the same share a system fingerprint, and so share results.
@@ -65,8 +69,8 @@ def sync(url: str, path: Path, branch: str) -> None:
 
 
 def commits(path: Path, branch: str) -> list[Commit]:
-    """Evaluable commits reachable from the branch, oldest first (topological order)."""
-    log = git("log", "--topo-order", "--reverse", "--format=%H%x1f%aI%x1f%an%x1f%s%x1f%b%x1e",
+    """Evaluable commits of the branch's first-parent history, oldest first."""
+    log = git("log", "--first-parent", "--reverse", "--format=%H%x1f%aI%x1f%an%x1f%s%x1f%b%x1e",
               f"refs/heads/{branch}", cwd=path)
     entries = [entry.strip("\n").split("\x1f") for entry in log.split("\x1e") if entry.strip()]
     found = []
