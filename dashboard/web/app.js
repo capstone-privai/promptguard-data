@@ -1203,7 +1203,7 @@ function renderTask() {
     return;
   }
   const pickInfo = state.taskPick;
-  const select = h("select", { "aria-label": "metric-task 배치", onchange: (event) => { state.taskKey = event.target.value || null; state.taskOpen = null; loadTask().then(renderTask); } },
+  const select = h("select", { "aria-label": "metric-task 배치", onchange: (event) => { state.taskKey = event.target.value || null; state.taskOpen = null; showSelected(); } },
     h("option", { value: "" }, "이 커밋 기준 (자동)"),
     batches.slice().reverse().map((batch) => h("option", { value: batch.key }, batchLabel(batch))));
   select.value = state.taskKey || "";
@@ -1304,49 +1304,49 @@ function taskHowTo() {
     "으로 돌린 배치 폴더를 서버의 metric-task 폴더(기본 runs/metric-task/)에 두면 다음 확인 때 읽어요. 필요한 것은 배치 폴더의 batch.json과 runs.csv뿐이에요(비밀값이 없는 파일). batch.json에 적힌 PromptGuard 커밋에 맞춰 보여 줍니다.");
 }
 
-async function loadTask() {
-  state.taskPick = pickTask();
-  const key = state.taskPick && state.taskPick.batch.key;
-  if (!key) {
-    state.task = null;
-    state.taskLoaded = null;
-    return;
-  }
-  if (state.taskLoaded === key) return;
-  try {
-    state.task = await getJSON(`data/results/task/${key}/task.json`);
-    state.taskLoaded = key;
-  } catch {
-    state.task = null;
-    state.taskLoaded = null;
-  }
+/** The batch to show and its task.json (the loaded one when it is the same batch). */
+async function fetchTask() {
+  const taskPick = pickTask();
+  const key = taskPick && taskPick.batch.key;
+  if (!key) return { taskPick, task: null, taskLoaded: null };
+  if (state.taskLoaded === key) return { taskPick, task: state.task, taskLoaded: key };
+  const task = await getJSON(`data/results/task/${key}/task.json`).catch(() => null);
+  return { taskPick, task, taskLoaded: task ? key : null };
 }
 
 // ------------------------------------------------------------------ loading
 
+let latestLoad = 0; // the newest loadResults() call; the responses of an older one are dropped
+
+/** Fetch what the selected commit shows and apply it all at once, unless a newer call started meanwhile (the reader
+ * clicked another commit, or the status poll reloaded). Returns whether it applied. */
 async function loadResults() {
-  state.detection = pick("detection");
-  state.latencyPick = tracks().includes("latency") ? pick("latency") : null;
-  const jobs = [];
-  if (state.detection.key && (!state.summary || state.summaryKey !== state.detection.key)) {
-    jobs.push(getJSON(`data/results/detection/${state.detection.key}/summary.json`)
-      .then((summary) => { state.summary = summary; state.summaryKey = state.detection.key; })
-      .catch(() => { state.summary = null; state.summaryKey = null; }));
-  } else if (!state.detection.key) {
-    state.summary = null;
-    state.summaryKey = null;
-  }
-  const latencyKey = state.latencyPick && state.latencyPick.key;
-  if (latencyKey && state.latencyKey !== latencyKey) {
-    jobs.push(getJSON(`data/results/latency/${latencyKey}/latency.json`)
-      .then((data) => { state.latency = data; state.latencyKey = latencyKey; })
-      .catch(() => { state.latency = null; state.latencyKey = null; }));
-  } else if (!latencyKey) {
-    state.latency = null;
-    state.latencyKey = null;
-  }
-  jobs.push(loadTask());
-  await Promise.all(jobs);
+  const call = ++latestLoad;
+  const detection = pick("detection");
+  const latencyPick = tracks().includes("latency") ? pick("latency") : null;
+  const latencyKey = latencyPick && latencyPick.key;
+  const [summary, latency, taskState] = await Promise.all([
+    !detection.key ? null
+      : detection.key === state.summaryKey ? state.summary
+        : getJSON(`data/results/detection/${detection.key}/summary.json`).catch(() => null),
+    !latencyKey ? null
+      : latencyKey === state.latencyKey ? state.latency
+        : getJSON(`data/results/latency/${latencyKey}/latency.json`).catch(() => null),
+    fetchTask(),
+  ]);
+  if (call !== latestLoad) return false;
+  Object.assign(state, taskState, {
+    detection, summary, summaryKey: summary ? detection.key : null,
+    latencyPick, latency, latencyKey: latency ? latencyKey : null,
+  });
+  return true;
+}
+
+/** Load and render the selected commit; a call overtaken by a newer one leaves the rendering to that one. */
+async function showSelected() {
+  if (!(await loadResults())) return;
+  document.body.style.opacity = "";
+  renderAll();
 }
 
 /** Names and descriptions come from index.json when it has them, so a renamed dataset needs no new evaluation. */
@@ -1375,9 +1375,7 @@ async function selectCommit(sha) {
   state.openExamples.clear();
   writeHash();
   document.body.style.opacity = "0.6";
-  await loadResults();
-  document.body.style.opacity = "";
-  renderAll();
+  await showSelected();
 }
 
 async function refreshIndex() {
@@ -1386,8 +1384,7 @@ async function refreshIndex() {
   } catch {
     state.index = null;
   }
-  await loadResults();
-  renderAll();
+  await showSelected();
 }
 
 async function pollStatus() {

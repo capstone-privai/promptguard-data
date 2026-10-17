@@ -95,7 +95,8 @@ def benchmark(datasets: Sequence[Dataset]) -> dict[str, Any]:
     """What the numbers depend on besides the system: datasets, scoring code and the gitleaks binary on PATH."""
     gitleaks = tool_version(["gitleaks", "version"])
     parts = {
-        "datasets": [[dataset.stem, dataset.sessions_sha256, dataset.gold_sha256] for dataset in datasets],
+        # sorted: the order the UI lists datasets in comes from catalog.py, which is display only
+        "datasets": sorted([dataset.stem, dataset.sessions_sha256, dataset.gold_sha256] for dataset in datasets),
         "code": code_fingerprint(),
         "gitleaks": gitleaks,
         "summary_version": SUMMARY_VERSION,
