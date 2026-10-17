@@ -1007,7 +1007,7 @@ function exampleCard(example, outcome) {
     card.replaceWith(exampleCard(example, outcome));
   };
   const before = example.offset > 0 ? h("span", { class: "cut" }, "…") : null;
-  const after = example.offset + example.text.length < example.length ? h("span", { class: "cut" }, "…") : null;
+  const after = example.offset + [...example.text].length < example.length ? h("span", { class: "cut" }, "…") : null;
   const card = h("article", { class: `ex${open ? "" : " collapsed"}` },
     h("button", { class: "ex-head", type: "button", "aria-expanded": String(open), onclick: toggle },
       h("span", { class: "badge" }, h("i", { class: OUTCOMES[outcome].cls }), OUTCOMES[outcome].label),
@@ -1019,17 +1019,19 @@ function exampleCard(example, outcome) {
 }
 
 function highlighted(text, gold, edits) {
-  const cuts = new Set([0, text.length]);
+  // Example offsets, lengths and spans use Unicode code points (Python str), including cached results.
+  const characters = [...text];
+  const cuts = new Set([0, characters.length]);
   for (const span of gold) { cuts.add(span[0]); cuts.add(span[1]); }
   for (const edit of edits) { cuts.add(edit[0]); cuts.add(edit[1]); }
-  const points = [...cuts].filter((point) => point >= 0 && point <= text.length).sort((a, b) => a - b);
+  const points = [...cuts].filter((point) => point >= 0 && point <= characters.length).sort((a, b) => a - b);
   const fragment = document.createDocumentFragment();
   for (let index = 0; index < points.length - 1; index++) {
     const start = points[index];
     const end = points[index + 1];
     const inGold = gold.some((span) => span[0] <= start && end <= span[1]);
     const inEdit = edits.some((edit) => edit[0] <= start && end <= edit[1]);
-    const piece = text.slice(start, end);
+    const piece = characters.slice(start, end).join("");
     if (!inGold && !inEdit) fragment.append(piece);
     else fragment.append(h("span", { class: [inGold ? "g" : "", inEdit ? "m" : ""].join(" ").trim() }, piece));
   }
@@ -1037,17 +1039,18 @@ function highlighted(text, gold, edits) {
 }
 
 function maskedText(text, gold, edits) {
+  const characters = [...text];
   const fragment = document.createDocumentFragment();
   const shifted = (start, end) => gold
     .filter((span) => span[1] > start && span[0] < end)
     .map((span) => [Math.max(span[0], start) - start, Math.min(span[1], end) - start]);
   let cursor = 0;
   for (const edit of [...edits].sort((a, b) => a[0] - b[0])) {
-    if (edit[0] > cursor) fragment.append(highlighted(text.slice(cursor, edit[0]), shifted(cursor, edit[0]), []));
+    if (edit[0] > cursor) fragment.append(highlighted(characters.slice(cursor, edit[0]).join(""), shifted(cursor, edit[0]), []));
     fragment.append(h("span", { class: "ph" }, edit[4] || "[가림]"));
     cursor = Math.max(cursor, edit[1]);
   }
-  fragment.append(highlighted(text.slice(cursor), shifted(cursor, text.length), []));
+  fragment.append(highlighted(characters.slice(cursor).join(""), shifted(cursor, characters.length), []));
   return fragment;
 }
 
@@ -1068,7 +1071,7 @@ function exampleDetail(example, before, after) {
       ? h("pre", null, before ? before.cloneNode(true) : null, maskedText(example.text, example.gold, example.edits), after ? after.cloneNode(true) : null)
       : h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, "이 부분은 가린 곳이 없어 위 원문 그대로 모델에 갔어요."),
     notes.length ? h("ul", { class: "ex-notes" }, notes) : null,
-    h("div", { class: "ex-id" }, `${example.session} · item ${example.item} · ${example.offset.toLocaleString()}–${(example.offset + example.text.length).toLocaleString()}자 / ${example.length.toLocaleString()}자`));
+    h("div", { class: "ex-id" }, `${example.session} · item ${example.item} · ${example.offset.toLocaleString()}–${(example.offset + [...example.text].length).toLocaleString()}자 / ${example.length.toLocaleString()}자`));
 }
 
 function renderDetails() {

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const { execFileSync } = require("node:child_process");
 
 class Element {
   constructor(text = "", tag = "") {
@@ -278,3 +279,66 @@ for (const [status, expected] of [["dirty", "미커밋 변경 있음"], ["unknow
     assert.ok(vm.runInContext("batchLabel(state.taskPick.batch)", context).includes(expected));
   });
 }
+
+for (const [label, text, ranges, edits, masked, goldText] of [
+  ["before the span", "🔑 secret=ABC", [[9, 12]], [[9, 12]], "🔑 secret=[SECRET_1]", "ABC"],
+  ["inside the span", "AB🔑C", [[0, 4]], [[0, 4]], "[SECRET_1]", "AB🔑C"],
+  ["after the span", "ABC 🔑", [[0, 3]], [[0, 3]], "[SECRET_1] 🔑", "ABC"],
+  ["multiple spans", "🔑 AB 🔒 CD 🧪", [[2, 4], [7, 9]], [[2, 4], [7, 9]], "🔑 [SECRET_1] 🔒 [SECRET_2] 🧪", "ABCD"],
+  ["partial masking", "🔑 A🔐B 🔒 C", [[2, 5], [8, 9]], [[3, 4]], "🔑 A[SECRET_1]B 🔒 C", "A🔐BC"],
+  ["first character", "😀x", [[0, 1]], [[0, 1]], "[SECRET_1]x", "😀"],
+  ["ASCII", "secret=ABC", [[7, 10]], [[7, 10]], "secret=[SECRET_1]", "ABC"],
+]) {
+  test(`example Unicode offsets: ${label}`, () => {
+    const { context } = app();
+    context.fixture = {
+      text, gold: ranges.map(([start, end]) => [start, end, "SECRET", "exact"]),
+      edits: edits.map(([start, end], index) => [start, end, "tp", "SECRET", `[SECRET_${index + 1}]`]),
+    };
+    const original = vm.runInContext("highlighted(fixture.text, fixture.gold, fixture.edits)", context);
+    assert.equal(original.textContent, text);
+    const marked = descendants(original).filter((node) => (node.className || "").split(" ").includes("g"));
+    assert.equal(marked.map((node) => node.textContent).join(""), goldText);
+    const covered = descendants(original).filter((node) => (node.className || "").split(" ").includes("m"));
+    assert.equal(covered.map((node) => node.textContent).join(""), label === "partial masking" ? "🔐" : goldText);
+    const result = vm.runInContext("maskedText(fixture.text, fixture.gold, fixture.edits)", context);
+    assert.equal(result.textContent, masked);
+    // Remaining gold characters must still be underlined after replacing an emoji or an earlier span.
+    const remaining = descendants(result).filter((node) => (node.className || "").split(" ").includes("g"));
+    assert.equal(remaining.map((node) => node.textContent).join(""), label === "partial masking" ? "ABC" : "");
+  });
+}
+
+test("Python example windows retain their coordinates, highlights and clipping markers in the UI", () => {
+  const text = "앞".repeat(20) + "🧪🔑 secret=A🔐BC 🔒" + "뒤".repeat(20);
+  const source = { text, channel: "prompt", group: "-",
+    gold: [[20, 22, "SECRET", "exact"], [30, 34, "SECRET", "exact"]],
+    edits: [[20, 22, "tp", "SECRET", "[SECRET_1]"], [30, 34, "tp", "SECRET", "[SECRET_2]"]] };
+  const script = `import json, sys
+sys.path.insert(0, 'dashboard')
+from pipeline.collect import _example
+source = json.loads(sys.argv[1])
+print(json.dumps([_example(('unicode', 0), source, start, end)
+                  for start, end in [(21, 36), (21, len(source['text']) - 1),
+                                     (21, len(source['text'])), (31, 34)]]))`;
+  const examples = JSON.parse(execFileSync("python3", ["-c", script, JSON.stringify(source)],
+    { cwd: path.resolve(__dirname, "../.."), encoding: "utf8" }));
+  const { context } = app();
+  context.fixture = examplesFixture();
+  vm.runInContext("Object.assign(state, fixture);", context);
+  for (const [index, example] of examples.entries()) {
+    context.example = { ...example, dataset: "sessions" };
+    const card = vm.runInContext('state.openExamples.add(example.id); exampleCard(example, "exact")', context);
+    const detail = descendants(card).find((node) => node.className === "ex-id");
+    const end = example.offset + [...example.text].length;
+    assert.ok(detail.textContent.includes(`${example.offset}–${end}자 / ${example.length}자`), detail.textContent);
+    const original = card.children.find((node) => node.tag === "pre");
+    const marked = descendants(original).filter((node) => (node.className || "").split(" ").includes("g"));
+    assert.equal(marked.map((node) => node.textContent).join(""), index === 3 ? "🔐BC" : "🔑A🔐BC");
+    const cuts = descendants(original).filter((node) => node.className === "cut");
+    assert.equal(cuts.length, index === 2 ? 1 : 2);
+    const masked = descendants(card).find((node) => node.className === "ex-detail").children.find((node) => node.tag === "pre");
+    if (index === 0) assert.equal(masked.textContent, "…[SECRET_1] secret=[SECRET_2] 🔒…");
+    if (index === 3) assert.equal(masked.textContent, "…[SECRET_2]…");
+  }
+});
