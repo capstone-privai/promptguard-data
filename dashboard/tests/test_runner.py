@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -40,6 +41,32 @@ class BenchmarkTest(unittest.TestCase):
         before = self.fingerprint()
         (self.data_test / "sessions_2.jsonl").write_text('{"session_id": "a longer session id"}\n', encoding="utf-8")
         self.assertNotEqual(self.fingerprint(), before)
+
+    def test_parent_tests_directory_does_not_hide_scoring_code(self):
+        fingerprints = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for location in ("normal", "tests/nested"):
+                with self.subTest(location=location):
+                    root = Path(tmp) / location / "promptguard-data"
+                    metric = root / "metric-detection"
+                    scorer = metric / "evaluation/scorer.py"
+                    test = metric / "evaluation/tests/test_scorer.py"
+                    collector = root / "dashboard/pipeline/collect.py"
+                    for path in (scorer, test, collector):
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text("# original\n")
+                    with patch.object(runner, "METRIC_DETECTION", metric), \
+                            patch.object(runner, "SCORING_CODE", [scorer, test, collector]):
+                        before = runner.code_fingerprint()
+                        fingerprints.append(before)
+                        test.write_text("# only a test changed\n")
+                        self.assertEqual(runner.code_fingerprint(), before)
+                        scorer.write_text("# scorer changed\n")
+                        changed = runner.code_fingerprint()
+                        self.assertNotEqual(changed, before)
+                        collector.write_text("# counting changed\n")
+                        self.assertNotEqual(runner.code_fingerprint(), changed)
+        self.assertEqual(fingerprints[0], fingerprints[1])
 
 
 if __name__ == "__main__":

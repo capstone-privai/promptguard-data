@@ -78,8 +78,9 @@ def discover(data_test: Path) -> list[Dataset]:
 def code_fingerprint() -> str:
     digest = hashlib.sha256()
     for path in SCORING_CODE:
-        if "tests" not in path.parts:
-            digest.update(path.relative_to(METRIC_DETECTION.parent).as_posix().encode() + b"\0" + path.read_bytes())
+        relative = path.relative_to(METRIC_DETECTION.parent)
+        if "tests" not in relative.parts:
+            digest.update(relative.as_posix().encode() + b"\0" + path.read_bytes())
     return digest.hexdigest()
 
 

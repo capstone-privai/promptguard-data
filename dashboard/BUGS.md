@@ -12,6 +12,8 @@
 
 - 7번, 지연 timeout 기준과 표시가 다름: 커밋의 `detectorTimeoutMs`를 측정 옵션과 지연 결과 키에 넣는다. timeout만 바꾸면 탐지 키는 그대로다. 헤드라인은 앙상블의 초과 횟수만 세고 화면은 측정값의 기준을 표시한다. `LATENCY_VERSION`은 2다(`tests/test_repo.py`, `tests/test_service.py`, `tests/test_latency.py`).
 
+- 8번, 상위 경로에 `tests`가 있으면 채점 코드 지문이 고정됨: 테스트 파일 제외 여부를 저장소 내부 상대 경로로 판정한다. 채점기와 대시보드 집계 코드는 모두 지문에 들어가며, 일반 경로의 지문은 그대로다(`tests/test_runner.py`).
+
 줄 번호는 작성 시점 기준이니 함수 이름으로 찾는다. 하나를 고치면 이 문서에서 그 항목을 지운다.
 
 ## 고치기 전에
@@ -28,15 +30,7 @@
 
 | # | 심각도 | 어디 | 증상 |
 |---|---|---|---|
-| 8 | 낮음 | `runner.py` `code_fingerprint()` | 저장소 경로에 `tests` 폴더가 끼면 채점 코드 지문이 고정된다 |
 | 9 | 낮음 | `app.js` `duration()` | 119.6초를 "1분 60초"로 보여 준다 |
-
-## 8. 저장소 경로에 tests 폴더가 끼면 채점 코드 지문이 고정된다
-
-- **어디**: [runner.py](pipeline/runner.py) `code_fingerprint()`(81행)가 `"tests" not in path.parts`로 테스트 파일을 거른다. 그런데 `path`가 절대 경로다.
-- **증상**: 저장소를 `/home/x/tests/promptguard-data`처럼 `tests`라는 폴더 아래에 두면 채점 코드 파일이 모두 걸러져 지문이 상수가 된다. 그러면 채점기를 고쳐도 결과를 다시 만들지 않는다.
-- **고칠 방향**: `path.relative_to(METRIC_DETECTION).parts`로 판정한다. 보통 경로에서는 걸러지는 파일이 같아서 지문 값이 바뀌지 않는다(재평가 없음).
-- **끝 기준**: `SCORING_CODE`와 `METRIC_DETECTION`을 `.../tests/...` 아래 임시 복사본으로 바꿔 끼운 테스트에서, 채점 코드 파일을 고치면 지문이 바뀐다.
 
 ## 9. duration()이 "1분 60초"를 만든다
 
