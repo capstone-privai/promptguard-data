@@ -294,6 +294,12 @@ class Service:
                                  repeat=self.config.latency_repeat, warmup=self.config.latency_warmup,
                                  commit=commit.as_json(), system_fingerprint=commit.fingerprint, env=plan["env"],
                                  cancelled=self.stopping.is_set)
+        except runner.InputsChanged as exc:
+            # A stale plan is not a detector failure. The next cycle discovers the current inputs and can retry.
+            log(f"{name}: discarded: {exc}")
+            if code_hash() != self.code:
+                self.code_changed = True
+                self.stop()
         except Exception as exc:  # noqa: BLE001 - any failure is recorded, so the job is not retried every cycle
             if self.stopping.is_set():
                 log(f"{name}: stopped")

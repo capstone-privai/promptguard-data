@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -35,14 +36,18 @@ from evaluation.dataset.io import file_sha256, gold_path_for
 SHARD_SCRIPT = DASHBOARD_ROOT / "pipeline" / "shard.py"
 # Code whose change changes the numbers: the scorer, and the parts of this pipeline that count and pick examples.
 # Display names (catalog.py) are not here: index.json carries the current ones.
-SCORING_CODE = [*sorted((METRIC_DETECTION / "evaluation").glob("[!_]*/*.py")),
-                *sorted((METRIC_DETECTION / "evaluation").glob("*.py")),
-                *(DASHBOARD_ROOT / "pipeline" / name for name in ("taxonomy.py", "collect.py", "shard.py"))]
-SUMMARY_VERSION = 1
+SCORING_CODE = [*sorted((METRIC_DETECTION / "evaluation").rglob("*.py")),
+                *(DASHBOARD_ROOT / "pipeline" / name
+                  for name in ("__init__.py", "paths.py", "runner.py", "taxonomy.py", "collect.py", "shard.py"))]
+SUMMARY_VERSION = 2  # earlier results did not pin the evaluated inputs to their key
 
 
 class EvaluationError(Exception):
     pass
+
+
+class InputsChanged(EvaluationError):
+    """The planned inputs changed before they could be pinned; re-plan without caching a job failure."""
 
 
 @dataclass(frozen=True)
@@ -54,12 +59,12 @@ class Dataset:
     gold_sha256: str
 
 
-_sha_cache: dict[tuple[str, int, int], str] = {}
+_sha_cache: dict[tuple, str] = {}
 
 
 def cached_sha256(path: Path) -> str:
     stat = path.stat()
-    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    key = (str(path), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino)
     if key not in _sha_cache:
         _sha_cache[key] = file_sha256(path)
     return _sha_cache[key]
@@ -75,13 +80,45 @@ def discover(data_test: Path) -> list[Dataset]:
     return [found[stem] for stem in dataset_order(list(found))]
 
 
-def code_fingerprint() -> str:
+def code_fingerprint(root: Path | None = None) -> str:
     digest = hashlib.sha256()
     for path in SCORING_CODE:
         relative = path.relative_to(METRIC_DETECTION.parent)
         if "tests" not in relative.parts:
-            digest.update(relative.as_posix().encode() + b"\0" + path.read_bytes())
+            source = root / relative if root else path
+            digest.update(relative.as_posix().encode() + b"\0" + source.read_bytes())
     return digest.hexdigest()
+
+
+# The merger already imported by this process must match the code copied for its child processes.
+LOADED_SCORING_CODE = code_fingerprint()
+
+
+def snapshot_inputs(datasets: Sequence[Dataset], root: Path, bench: dict[str, Any]) -> tuple[list[Dataset], Path]:
+    """Copy and verify the planned bytes. All validation and shards read this private copy."""
+    if bench.get("code") != LOADED_SCORING_CODE:
+        raise InputsChanged("scoring code changed; restart the service before evaluating")
+    pinned = []
+    try:
+        for source, relative in ((DASHBOARD_ROOT / "pipeline", "dashboard/pipeline"),
+                                 (METRIC_DETECTION / "evaluation", "metric-detection/evaluation")):
+            shutil.copytree(source, root / relative, ignore=shutil.ignore_patterns("__pycache__", "tests"))
+        if code_fingerprint(root) != bench["code"]:
+            raise InputsChanged("scoring code changed while taking the evaluation snapshot")
+        for dataset in datasets:
+            copies = []
+            for source, expected, directory in ((dataset.sessions, dataset.sessions_sha256, "data_test"),
+                                                (dataset.gold, dataset.gold_sha256, "data_answer")):
+                target = root / directory / source.name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                if file_sha256(target) != expected:
+                    raise InputsChanged(f"{source.name} changed before evaluation; re-planning")
+                copies.append(target)
+            pinned.append(Dataset(dataset.stem, *copies, dataset.sessions_sha256, dataset.gold_sha256))
+    except FileNotFoundError as exc:
+        raise InputsChanged("evaluation inputs were removed while taking the snapshot") from exc
+    return pinned, root / "dashboard/pipeline/shard.py"
 
 
 def tool_version(command: Sequence[str]) -> str | None:
@@ -103,7 +140,7 @@ def benchmark(datasets: Sequence[Dataset]) -> dict[str, Any]:
         "summary_version": SUMMARY_VERSION,
     }
     fingerprint = hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()
-    return {"fingerprint": fingerprint, "gitleaks": gitleaks,
+    return {"fingerprint": fingerprint, "code": parts["code"], "gitleaks": gitleaks,
             "datasets": [{"stem": dataset.stem, "label": dataset_info(dataset.stem).label,
                           "sessions_sha256": dataset.sessions_sha256, "gold_sha256": dataset.gold_sha256}
                          for dataset in datasets]}
@@ -123,17 +160,18 @@ def write_json(path: Path, payload: Any, *, pretty: bool = False) -> None:
     os.replace(temporary, path)
 
 
-def validate(datasets: Sequence[Dataset], cache_dir: Path, python: str, log_dir: Path) -> dict[str, list[int]]:
+def validate(datasets: Sequence[Dataset], cache_dir: Path, python: str, log_dir: Path, *,
+             shard_script: Path = SHARD_SCRIPT) -> dict[str, list[int]]:
     """Each dataset's per-session scored item counts, validating each sessions/gold version once."""
     weights = {}
     for dataset in datasets:
-        cached = cache_dir / f"{dataset.sessions_sha256[:16]}-{dataset.gold_sha256[:16]}.json"
+        cached = cache_dir / LOADED_SCORING_CODE[:16] / f"{dataset.sessions_sha256[:16]}-{dataset.gold_sha256[:16]}.json"
         if not cached.is_file():
             log = log_dir / f"validate_{dataset.stem}.log"
-            out = cache_dir / (cached.name + ".new")
-            cache_dir.mkdir(parents=True, exist_ok=True)
+            out = cached.with_name(cached.name + ".new")
+            cached.parent.mkdir(parents=True, exist_ok=True)
             with log.open("w", encoding="utf-8") as handle:
-                code = subprocess.run([python, str(SHARD_SCRIPT), "validate", "--sessions", str(dataset.sessions),
+                code = subprocess.run([python, str(shard_script), "validate", "--sessions", str(dataset.sessions),
                                        "--gold", str(dataset.gold), "--out", str(out)],
                                       stdout=handle, stderr=subprocess.STDOUT, env=child_env()).returncode
             if not out.is_file():
@@ -177,7 +215,8 @@ def plan(datasets: Sequence[Dataset], weights: dict[str, list[int]], jobs: int) 
 
 
 def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, python: str, jobs: int,
-               progress: Callable[[int, int], None], cancelled: Callable[[], bool]) -> None:
+               progress: Callable[[int, int], None], cancelled: Callable[[], bool], *,
+               shard_script: Path = SHARD_SCRIPT) -> None:
     total = sum(shard.weight for shard in shards)
     done = 0
     pending = list(shards)
@@ -189,7 +228,7 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
                 shard = pending.pop(0)
                 log = (work_dir / "logs" / f"{shard.name}.log").open("w", encoding="utf-8")
                 process = subprocess.Popen(
-                    [python, str(SHARD_SCRIPT), "run", "--dataset", shard.dataset.stem,
+                    [python, str(shard_script), "run", "--dataset", shard.dataset.stem,
                      "--sessions", str(shard.dataset.sessions), "--gold", str(shard.dataset.gold),
                      "--lines", f"{shard.low}:{shard.high}", "--system-root", str(system_root),
                      "--out", str(work_dir / "shards" / f"{shard.name}.json")],
@@ -236,37 +275,38 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
              cancelled: Callable[[], bool] = lambda: False) -> dict[str, Any]:
     """Evaluate, merge and write out_dir; return the headline numbers (overall and per dataset)."""
     started = time.perf_counter()
-    work_dir = out_dir.with_name(out_dir.name + ".work")
-    shutil.rmtree(work_dir, ignore_errors=True)
-    (work_dir / "logs").mkdir(parents=True)
-    (work_dir / "shards").mkdir()
-    weights = validate(datasets, cache_dir, python, work_dir / "logs")
-    shards = plan(datasets, weights, jobs)
-    run_shards(shards, system_root, work_dir, python, jobs, progress, cancelled)
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=out_dir.name + ".work-", dir=out_dir.parent) as temporary:
+        work_dir = Path(temporary)
+        (work_dir / "logs").mkdir(parents=True)
+        (work_dir / "shards").mkdir()
+        datasets, shard_script = snapshot_inputs(datasets, work_dir / "inputs", bench)
+        weights = validate(datasets, cache_dir, python, work_dir / "logs", shard_script=shard_script)
+        shards = plan(datasets, weights, jobs)
+        run_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, shard_script=shard_script)
 
-    merged, system = {}, None
-    for dataset in datasets:
-        payloads = [json.loads((work_dir / "shards" / f"{shard.name}.json").read_text(encoding="utf-8"))
-                    for shard in sorted(shards, key=lambda shard: shard.low) if shard.dataset is dataset]
-        merged[dataset.stem] = merge(payloads)
-        merged[dataset.stem]["facts"] = {
-            "sessions": sum(payload["sessions"] for payload in payloads),
-            "items": sum(payload["item_count"] for payload in payloads),
-            "failed_open": sum(payload["system"].get("failed_open_items", 0) for payload in payloads),
-            "seconds": round(sum(payload["seconds"] for payload in payloads), 1),
-        }
-        if system is None and payloads:
-            system = {key: value for key, value in payloads[0]["system"].items() if key != "failed_open_items"}
+        merged, system = {}, None
+        for dataset in datasets:
+            payloads = [json.loads((work_dir / "shards" / f"{shard.name}.json").read_text(encoding="utf-8"))
+                        for shard in sorted(shards, key=lambda shard: shard.low) if shard.dataset is dataset]
+            merged[dataset.stem] = merge(payloads)
+            merged[dataset.stem]["facts"] = {
+                "sessions": sum(payload["sessions"] for payload in payloads),
+                "items": sum(payload["item_count"] for payload in payloads),
+                "failed_open": sum(payload["system"].get("failed_open_items", 0) for payload in payloads),
+                "seconds": round(sum(payload["seconds"] for payload in payloads), 1),
+            }
+            if system is None and payloads:
+                system = {key: value for key, value in payloads[0]["system"].items() if key != "failed_open_items"}
 
-    tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    headline = write_result(tmp_dir, datasets, merged, system or {}, commit=commit,
-                            system_fingerprint=system_fingerprint, bench=bench,
-                            wall_seconds=time.perf_counter() - started)
-    shutil.rmtree(out_dir, ignore_errors=True)
-    os.replace(tmp_dir, out_dir)
-    shutil.rmtree(work_dir, ignore_errors=True)
-    return headline
+        tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        headline = write_result(tmp_dir, datasets, merged, system or {}, commit=commit,
+                                system_fingerprint=system_fingerprint, bench=bench,
+                                wall_seconds=time.perf_counter() - started)
+        shutil.rmtree(out_dir, ignore_errors=True)
+        os.replace(tmp_dir, out_dir)
+        return headline
 
 
 def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, dict[str, Any]],
@@ -311,7 +351,7 @@ def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, d
         "wall_seconds": round(wall_seconds, 1),
         "commit": commit,
         "system": {"fingerprint": system_fingerprint, **system},
-        "benchmark": {"fingerprint": bench["fingerprint"], "gitleaks": bench["gitleaks"]},
+        "benchmark": {"fingerprint": bench["fingerprint"], "code": bench["code"], "gitleaks": bench["gitleaks"]},
         "datasets": facts,
         "channels": [{"key": channel, "label": CHANNEL_LABELS[channel]} for channel in CHANNELS],
         "types": [{"key": type_, "label": TYPE_LABELS[type_]} for type_ in TYPES],

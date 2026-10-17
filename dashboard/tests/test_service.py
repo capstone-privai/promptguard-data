@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -79,6 +80,17 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(self.service.code_changed)
         self.assertTrue(self.service.stopping.is_set())
         self.assertIn("changed on disk", out.getvalue())
+
+    def test_changed_inputs_are_not_saved_as_permanent_job_failures(self):
+        self.plan["datasets"] = []
+        job = self.service.jobs(self.plan)[0]
+        with patch("pipeline.service.repo.export"), patch("pipeline.service.repo.python_for", return_value="python"), \
+                patch("pipeline.service.runner.evaluate", side_effect=runner.InputsChanged("data changed")), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.service.run_job(self.plan, *job, [job])
+        self.assertEqual(self.service.failures, {})
+        self.assertIn(job, self.service.jobs(self.plan))
+        self.assertFalse(self.service.stopping.is_set())
 
     def test_timeout_changes_only_the_latency_key_and_queue(self):
         self.plan["commits"] = [commit("a", "1"), replace(commit("b", "1"), timeout_ms=3000),
