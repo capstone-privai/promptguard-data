@@ -86,8 +86,33 @@ class TaskTest(unittest.TestCase):
     def test_old_layout_has_no_server_numbers(self):
         summary = task.summarize(self.root / "runs" / "old_batch")
         self.assertFalse(summary["captured"])
-        self.assertNotIn("leaked_rate", summary["by_condition"]["promptguard"])
+        self.assertIsNone(summary["by_condition"]["promptguard"]["leaked_rate"])
+        self.assertEqual(summary["by_condition"]["promptguard"]["leak_unmeasured"], 4)
         self.assertEqual(summary["by_condition"]["promptguard"]["success"], 3)
+
+    def test_mixed_capture_uses_only_measured_runs_for_server_leak_rate(self):
+        rows = [row("t01", "diagnose", "promptguard", 1, True, leaked=1),
+                {**row("t01", "diagnose", "promptguard", 2, False), "server_leaked": ""}]
+        # The current batch-level flag must not override the evidence on each row.
+        folder = self.root / "mixed"
+        write_batch(folder, rows, NEW_FIELDS, capture=False)
+        summary = task.summarize(folder)
+        stats = summary["by_condition"]["promptguard"]
+        self.assertEqual(stats["leaked_rate"], 1.0)
+        self.assertEqual((stats["leak_measured"], stats["leak_unmeasured"]), (1, 1))
+        self.assertEqual(stats["success_rate"], 0.5)
+        self.assertEqual(summary["by_category"][0]["conditions"]["promptguard"], stats)
+        self.assertEqual(summary["by_task"][0]["marks"]["promptguard"], ["O*", "X?"])
+
+    def test_missing_or_invalid_leak_counts_are_unmeasured(self):
+        for value in ("", "n/a", "-1", "0.5", "nan"):
+            with self.subTest(value=value):
+                folder = self.root / f"unmeasured-{value or 'empty'}".replace("/", "-")
+                write_batch(folder, [{**row("t01", "diagnose", "promptguard", 1, True),
+                                      "server_leaked": value}], NEW_FIELDS)
+                stats = task.summarize(folder)["by_condition"]["promptguard"]
+                self.assertIsNone(stats["leaked_rate"])
+                self.assertEqual((stats["leak_measured"], stats["leak_unmeasured"]), (0, 1))
 
     def test_collect_writes_once_and_skips_incomplete_folders(self):
         results = self.root / "results"

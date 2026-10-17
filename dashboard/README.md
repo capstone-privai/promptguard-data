@@ -107,6 +107,8 @@ scp -r runs/metric-task/main_928c84c/{batch.json,runs.csv} server:promptguard-da
 
 ## 보안
 
+서버 누출률은 `runs.csv` 각 행의 `server_leaked`가 유효한 비음수 정수로 기록된 실행만 분모에 포함한다. 빈 값·누락·잘못된 값은 미측정이며, 화면에서 측정/미측정 실행 수를 따로 보여 준다. 과제 성공률은 전체 유효 실행을 기준으로 계산한다.
+
 예시 창에는 데이터셋 원문이 그대로 들어간다. 합성 데이터의 가짜 값뿐 아니라 CredData(원본 저장소의 라이선스를 따르는 파일 조각), openhands-feedback(실제 사용자 세션) 같은 외부 데이터의 값도 있다. 팀 밖에 열지 않는다.
 
 - 루프백이 아닌 주소로 띄울 때는 `--auth`를 건다(없으면 경고를 낸다). HTTPS가 필요하면 앞에 리버스 프록시를 둔다.
@@ -117,6 +119,8 @@ scp -r runs/metric-task/main_928c84c/{batch.json,runs.csv} server:promptguard-da
 
 ```bash
 python3 -m unittest discover -s dashboard/tests -t dashboard
+node --test dashboard/tests/test_web.js
+node --check dashboard/web/app.js
 ```
 
 채점기 fixture로 정확·넓게·일부·놓침·과잉 마스킹이 모두 나오는 가짜 시스템을 돌려 대시보드 개수가 채점기와 같은지, 샤드로 나눠도 개수와 예시가 같은지 본다. 그 밖에 커밋 목록과 지문(임시 git 저장소), 작업 순서와 `index.json`의 상태, HTTP 경로 제한과 인증, m4.py의 null 탐지기로 지연 요약을 확인한다. PromptGuard 체크아웃은 쓰지 않는다.

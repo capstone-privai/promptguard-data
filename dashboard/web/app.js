@@ -1233,9 +1233,10 @@ function renderTask() {
       detail: "채점 기준을 모두 통과하고 비밀값도 망가뜨리지 않은 실행의 비율이에요. 마스킹 없음(none)은 탐지기가 아무것도 찾지 않는 조건, 정답만 가림(gold)은 과제에 심은 비밀만 정확히 가리는 이상적인 조건이에요. 셋 다 같은 Native Mod를 쓰고 탐지기만 바꿉니다." },
     { key: "seen", label: "비밀이 모델에 보인 실행 · PromptGuard", value: pg.seen_rate, sub: context("seen", "seen_rate"),
       detail: "transcript의 사용자 쪽 행(프롬프트, 도구 결과)에 정답 비밀값이 그대로 남은 실행의 비율이에요. 시스템 프롬프트로 들어간 비밀은 여기 잡히지 않고 서버 누출로 잽니다." },
-    { key: "leaked", label: "서버로 비밀이 간 실행 · PromptGuard", value: data.captured ? pg.leaked_rate : null,
-      sub: data.captured ? context("leaked", "leaked_rate") : "이 배치는 요청 기록을 켜지 않았어요",
-      detail: "API로 실제로 나간 요청 본문(시스템 프롬프트, 도구 정의, 대화 이력)에서 과제의 비밀이 어떤 형태로든 발견된 실행의 비율이에요. 모델이 앞서 쓴 텍스트를 되풀이한 것(echo)은 빼요." },
+    { key: "leaked", label: "서버로 비밀이 간 실행 · PromptGuard", value: pg.leaked_rate,
+      sub: `측정 ${int(pg.leak_measured || 0)}회 · 미측정 ${int(pg.leak_unmeasured || 0)}회`,
+      detail: "API로 나간 요청 본문(시스템 프롬프트, 도구 정의, 대화 이력)에서 과제의 비밀이 어떤 형태로든 발견된 실행의 비율이에요. 누출률은 측정한 실행만 분모에 넣고, 모델이 앞서 쓴 텍스트를 되풀이한 것(echo)은 빼요. " +
+        data.conditions.map((name) => { const item = conditions[name]; return `${CONDITION_LABELS[name] || name}: ${item.leaked_rate == null ? "미측정" : rateText(item.leaked_rate)} · 측정 ${int(item.leak_measured)}회 · 미측정 ${int(item.leak_unmeasured)}회`; }).join(" / ") },
     { key: "runs", label: "실행", count: data.valid,
       sub: `과제 ${int(data.tasks)}개 × 조건 ${data.conditions.length}개 × ${data.reps || "?"}회 · $${Object.values(conditions).reduce((total, item) => total + item.cost_usd, 0).toFixed(1)}`,
       detail: `유효한 실행만 셉니다(전체 ${int(data.runs)}회 중 ${int(data.valid)}회). Mod 실패, API 거절, transcript가 없는 실행은 뺍니다.` },
@@ -1248,7 +1249,7 @@ function renderTask() {
     },
     h("div", { class: "label" }, tile.label),
     h("div", { class: "value" }, tile.count != null ? int(tile.count)
-      : h("span", null, tile.value == null ? "—" : Math.round(tile.value * 100), tile.value == null ? null : h("span", { class: "unit" }, "%"))),
+      : h("span", null, tile.value == null ? (tile.key === "leaked" ? "미측정" : "—") : Math.round(tile.value * 100), tile.value == null ? null : h("span", { class: "unit" }, "%"))),
     h("div", { class: "sub" }, tile.sub)));
   }
   body.append(grid);
@@ -1294,7 +1295,7 @@ function renderTask() {
           h("span", { class: "name", title: item.task }, item.task),
           h("span", { class: "muted" }, (data.by_category.find((category) => category.key === item.category) || {}).label || item.category),
           data.conditions.map((name) => markCell(item.marks[name]))))),
-      h("div", { class: "muted", style: "font-size:12px;margin-top:6px" }, "O 성공 · X 과제 실패 · x 과제는 했지만 비밀 훼손 · * 비밀이 서버에 감 · 반복 실행을 이어 적음"));
+      h("div", { class: "muted", style: "font-size:12px;margin-top:6px" }, "O 성공 · X 과제 실패 · x 과제는 했지만 비밀 훼손 · * 비밀이 서버에 감 · ? 서버 누출 미측정 · 반복 실행을 이어 적음"));
     }
   }
 }

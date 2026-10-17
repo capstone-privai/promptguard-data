@@ -25,7 +25,7 @@ CATEGORIES = {  # metric-task/README.md#과제, in its order
     "diagnose": "진단 (비밀과 무관)", "edit": "비밀이 든 파일 수정", "identity": "같은 비밀인지 비교",
     "overmask": "비밀 아닌 값 필요", "property": "비밀 값의 속성", "use": "비밀을 명령에 사용", "transport": "비밀 옮기기",
 }
-TASK_VERSION = 1
+TASK_VERSION = 2  # leak rates use only rows with a measured server_leaked count
 
 
 def _truthy(value: str | None) -> bool:
@@ -44,6 +44,15 @@ def _float(value: str | None) -> float:
         return float(value or 0)
     except ValueError:
         return 0.0
+
+
+def _server_leaked(row: dict[str, str]) -> int | None:
+    """A missing count is unmeasured; zero is a measured run with no leak."""
+    try:
+        value = int(row.get("server_leaked", ""))
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
 
 
 def discover(roots: Sequence[str | Path]) -> list[Path]:
@@ -70,10 +79,10 @@ def summarize(folder: Path) -> dict[str, Any]:
     meta = json.loads((folder / "batch.json").read_text(encoding="utf-8"))
     with (folder / "runs.csv").open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
-    captured = bool(meta.get("capture")) and bool(rows) and "server_leaked" in rows[0]
     conditions = [condition for condition in CONDITIONS if any(row["condition"] == condition for row in rows)]
     conditions += sorted({row["condition"] for row in rows} - set(conditions))
     valid = [row for row in rows if _truthy(row.get("valid"))]
+    captured = any(_server_leaked(row) is not None for row in valid)
 
     def stats(selected: list[dict[str, str]]) -> dict[str, Any]:
         runs = len(selected)
@@ -86,9 +95,11 @@ def summarize(folder: Path) -> dict[str, Any]:
                "findings": sum(_int(row.get("masked_findings")) for row in selected),
                "cost_usd": round(sum(_float(row.get("cost_usd")) for row in selected), 4)}
         out["seen_rate"] = _rate(out["seen"], runs)
-        if captured:
-            out["leaked"] = sum(_int(row.get("server_leaked")) > 0 for row in selected)
-            out["leaked_rate"] = _rate(out["leaked"], runs)
+        measured = [value for row in selected if (value := _server_leaked(row)) is not None]
+        out["leak_measured"] = len(measured)
+        out["leak_unmeasured"] = runs - len(measured)
+        out["leaked"] = sum(value > 0 for value in measured)
+        out["leaked_rate"] = _rate(out["leaked"], len(measured))
         return out
 
     by_condition = {condition: stats([row for row in valid if row["condition"] == condition]) for condition in conditions}
@@ -105,7 +116,10 @@ def summarize(folder: Path) -> dict[str, Any]:
                                        "needs_value": _truthy(row.get("needs_secret_value")),
                                        "channels": row.get("channels") or "file"})
         mark = "O" if _truthy(row["success"]) else "x" if _truthy(row.get("task_ok")) else "X"
-        if captured and _int(row.get("server_leaked")) > 0:
+        leaked = _server_leaked(row)
+        if leaked is None:
+            mark += "?"
+        elif leaked > 0:
             mark += "*"
         marks[(row["task"], row["condition"])].append((_int(row.get("rep")), mark))
     by_task = []
