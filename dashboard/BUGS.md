@@ -10,6 +10,8 @@
 
 - 6번, 예시 창과 태그가 샤드 나눔에 따라 달라짐: 샤드가 후보의 초점과 원문을 넘기고, `merge()`가 전체 상위 후보를 고른 뒤 창을 자른다. 한 item이 일부 버킷에서만 밀리는 경우에도 샤드 수·순서와 무관하게 예시 전체가 같다(`tests/test_collect.py`).
 
+- 7번, 지연 timeout 기준과 표시가 다름: 커밋의 `detectorTimeoutMs`를 측정 옵션과 지연 결과 키에 넣는다. timeout만 바꾸면 탐지 키는 그대로다. 헤드라인은 앙상블의 초과 횟수만 세고 화면은 측정값의 기준을 표시한다. `LATENCY_VERSION`은 2다(`tests/test_repo.py`, `tests/test_service.py`, `tests/test_latency.py`).
+
 줄 번호는 작성 시점 기준이니 함수 이름으로 찾는다. 하나를 고치면 이 문서에서 그 항목을 지운다.
 
 ## 고치기 전에
@@ -26,25 +28,8 @@
 
 | # | 심각도 | 어디 | 증상 |
 |---|---|---|---|
-| 7 | 낮음 | `latency.py` `evaluate()`, `headline()` | timeout을 "시스템 값"이라고 보여 주지만 5000ms 고정이고, 헤드라인 `over_timeout`의 기준이 패널과 다르다 |
 | 8 | 낮음 | `runner.py` `code_fingerprint()` | 저장소 경로에 `tests` 폴더가 끼면 채점 코드 지문이 고정된다 |
 | 9 | 낮음 | `app.js` `duration()` | 119.6초를 "1분 60초"로 보여 준다 |
-
-## 7. 지연의 timeout 기준과 설명이 따로 논다
-
-- **어디**:
-  - [latency.py](pipeline/latency.py) `evaluate()`(139행)는 m4.py에 `--timeout-ms`를 넘기지 않는다. 그래서 m4의 기본값 5000ms(`metric-latency/scripts/m4.py`의 `DEFAULT_TIMEOUT_MS`)를 쓰고, m4는 `promptguard.config.json`을 읽지 않는다.
-  - 그런데 [repo.py](pipeline/repo.py) `EXPORT_PATHS`(28–29행)는 이 파일을 "metric-latency의 timeout용"이라며 꺼내기만 한다.
-  - 화면([app.js](web/app.js) 1090행)은 라벨을 "5초 넘은 호출"로 고정하고, 설명에서는 "시스템의 탐지기 timeout"이라고 쓴다.
-  - `headline()`(128행)의 `over_timeout`은 앙상블과 어댑터 단독 측정을 모두 더한 값이라, 앙상블만 보여 주는 패널과 기준이 다르다. 작성 시점에는 화면에 쓰이지 않고 `index.json`과 `meta.json`에만 남는다.
-- **증상**: 커밋에서 `detectorTimeoutMs`를 바꾸면 "5초 넘은 호출" 수가 실제 시스템 기준과 어긋난다. `index.json`을 읽는 쪽은 `over_timeout`을 앙상블의 수로 오해한다.
-- **고칠 방향**:
-  1. `latency.evaluate()`가 꺼낸 체크아웃의 `promptguard.config.json`에서 `detectorTimeoutMs`를 읽어 `--timeout-ms`로 넘긴다. 파일이나 값이 없으면 5000을 쓴다.
-  2. 그러면 지연 결과가 이 값에도 기대므로 지연 키에 넣는다. 탐지 결과까지 다시 돌지 않도록 `Commit.fingerprint`는 그대로 둔다. 예를 들어 `repo.commits()`가 `git show <sha>:promptguard.config.json`에서 값을 읽어 `Commit`에 두고, `service.jobs()`와 `write_index()`가 지연 키를 만들 때만 섞는다.
-  3. `headline()`의 `over_timeout`은 앙상블 값만 쓴다.
-  4. 화면 라벨을 `data.timeout_ms`로 만든다.
-  5. `condense()`/`headline()`이 바뀌니 `LATENCY_VERSION`을 올린다.
-- **끝 기준**: timeout을 3000으로 바꾼 커밋은 3000ms 기준으로 세고, 라벨도 그 값을 보여 준다. `tests/test_latency.py`의 m4 null 탐지기 실행에 timeout을 넘겨 확인하고, 지연 키가 timeout에 따라 달라지는지 `tests/test_service.py`에서 확인한다.
 
 ## 8. 저장소 경로에 tests 폴더가 끼면 채점 코드 지문이 고정된다
 

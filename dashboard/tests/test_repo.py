@@ -75,6 +75,26 @@ class RepoTest(unittest.TestCase):
         repo.sync(str(self.src), self.bare, "main")
         self.assertEqual(repo.commits(self.bare, "main")[-1].subject, "Even faster")
 
+    def test_timeout_changes_without_changing_the_detector_fingerprint(self):
+        before = repo.commits(self.bare, "main")[-1]
+        write(self.src, "promptguard.config.json", '{"detectorTimeoutMs":3000}')
+        run("git", "add", "promptguard.config.json", cwd=self.src)
+        run("git", "commit", "-q", "-m", "Change timeout only", cwd=self.src)
+        repo.sync(str(self.src), self.bare, "main")
+        after = repo.commits(self.bare, "main")[-1]
+        self.assertEqual(before.timeout_ms, 5000)
+        self.assertEqual(after.timeout_ms, 3000)
+        self.assertEqual(before.fingerprint, after.fingerprint)
+        out = repo.export(self.bare, after.sha, self.root / "checkout")
+        self.assertEqual((out / "promptguard.config.json").read_text(), '{"detectorTimeoutMs":3000}')
+
+    def test_missing_or_invalid_timeout_uses_the_default(self):
+        for config in ('{}', 'null', '[]', 'bad json', '{"detectorTimeoutMs":null}',
+                       '{"detectorTimeoutMs":true}', '{"detectorTimeoutMs":0}',
+                       '{"detectorTimeoutMs":-1}', '{"detectorTimeoutMs":"3000"}'):
+            with self.subTest(config=config):
+                self.assertEqual(repo.detector_timeout(config), 5000)
+
     def test_export_holds_only_what_the_evaluators_read(self):
         merge = repo.commits(self.bare, "main")[-1]
         out = repo.export(self.bare, merge.sha, self.root / "checkout")

@@ -67,8 +67,12 @@ def log(message: str) -> None:
     print(f"{now()} {message}", flush=True)
 
 
-def result_key(track: str, system_fingerprint: str, context_fingerprint: str) -> str:
-    return hashlib.sha256(f"{track}|{system_fingerprint}|{context_fingerprint}".encode()).hexdigest()[:16]
+def result_key(track: str, system_fingerprint: str, context_fingerprint: str, *,
+               timeout_ms: int = repo.DEFAULT_TIMEOUT_MS) -> str:
+    identity = f"{track}|{system_fingerprint}|{context_fingerprint}"
+    if track == "latency":
+        identity += f"|timeout_ms={timeout_ms}"
+    return hashlib.sha256(identity.encode()).hexdigest()[:16]
 
 
 def code_hash() -> str:
@@ -233,7 +237,7 @@ class Service:
         seen, out = set(), []
         for commit in reversed(plan["commits"]):
             for track, context in plan["contexts"].items():
-                key = result_key(track, commit.fingerprint, context)
+                key = result_key(track, commit.fingerprint, context, timeout_ms=commit.timeout_ms)
                 if (track, key) in seen:
                     continue
                 seen.add((track, key))
@@ -320,7 +324,7 @@ class Service:
             entry = commit.as_json()
             entry["fingerprint"] = commit.fingerprint[:12]
             for track, context in plan["contexts"].items():
-                key = result_key(track, commit.fingerprint, context)
+                key = result_key(track, commit.fingerprint, context, timeout_ms=commit.timeout_ms)
                 meta = self.meta(track, key)
                 if meta:
                     state = "done"

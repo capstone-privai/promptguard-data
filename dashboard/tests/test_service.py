@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -78,6 +79,23 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(self.service.code_changed)
         self.assertTrue(self.service.stopping.is_set())
         self.assertIn("changed on disk", out.getvalue())
+
+    def test_timeout_changes_only_the_latency_key_and_queue(self):
+        self.plan["commits"] = [commit("a", "1"), replace(commit("b", "1"), timeout_ms=3000),
+                                replace(commit("c", "1"), timeout_ms=3000)]
+        self.fake_result("latency", "1", "env1", {"over_timeout": 0})
+        jobs = self.service.jobs(self.plan)
+        self.assertEqual([(track, item.sha[0]) for track, item, _key in jobs],
+                         [("detection", "c"), ("latency", "c")])
+        self.service.write_index(self.plan, jobs, running=None)
+        entries = json.loads((self.data / "index.json").read_text())["commits"]
+        before, after, same = entries
+        self.assertEqual(before["detection"]["key"], after["detection"]["key"])
+        self.assertNotEqual(before["latency"]["key"], after["latency"]["key"])
+        self.assertEqual(after["latency"]["key"], same["latency"]["key"])
+        self.assertEqual(before["latency"]["state"], "done")
+        self.assertEqual(after["latency"]["state"], "queued")
+        self.assertEqual(after["latency"]["key"], jobs[-1][2])
 
     def holder(self) -> Service:
         """Another evaluator holding the data directory (here: the same process, another open lock file)."""

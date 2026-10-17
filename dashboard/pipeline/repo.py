@@ -7,13 +7,14 @@ the branch, so between the branch's own commits they would show changes it never
 
 A commit can be evaluated once it has the detector package (src/detector/pgdetector), the code both the
 metric-detection scorer and the metric-latency worker load. Commits whose src/detector tree and requirements.txt are
-the same share a system fingerprint, and so share results.
+the same share a system fingerprint and detection results. Latency results also depend on each commit's timeout.
 """
 
 from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -28,6 +29,7 @@ DETECTOR_PACKAGE = "src/detector/pgdetector/__init__.py"
 # requirements, and promptguard.config.json for metric-latency's timeout.
 EXPORT_PATHS = ("src/detector", "src/native-mod/hooks/register.mjs", "requirements.txt", "promptguard.config.json")
 PR_MERGE = re.compile(r"Merge pull request #\d+ ")  # GitHub's merge commit: the PR title is the first body line
+DEFAULT_TIMEOUT_MS = 5000  # same fallback as metric-latency/scripts/m4.py
 
 
 class RepoError(Exception):
@@ -49,6 +51,7 @@ class Commit:
     subject: str
     title: str  # the PR title for a merge commit (first body line), else the subject
     fingerprint: str  # src/detector tree + requirements.txt blob
+    timeout_ms: int = DEFAULT_TIMEOUT_MS  # only latency results depend on promptguard.config.json
 
     @property
     def short(self) -> str:
@@ -68,6 +71,16 @@ def sync(url: str, path: Path, branch: str) -> None:
     git("fetch", "--prune", "origin", f"+refs/heads/{branch}:refs/heads/{branch}", cwd=path)
 
 
+def detector_timeout(config: str) -> int:
+    """The configured detector timeout, or the measurement default if no positive integer was provided."""
+    try:
+        value = json.loads(config)
+    except json.JSONDecodeError:
+        return DEFAULT_TIMEOUT_MS
+    timeout = value.get("detectorTimeoutMs") if isinstance(value, dict) else None
+    return timeout if type(timeout) is int and timeout > 0 else DEFAULT_TIMEOUT_MS
+
+
 def commits(path: Path, branch: str) -> list[Commit]:
     """Evaluable commits of the branch's first-parent history, oldest first."""
     log = git("log", "--first-parent", "--reverse", "--format=%H%x1f%aI%x1f%an%x1f%s%x1f%b%x1e",
@@ -81,7 +94,11 @@ def commits(path: Path, branch: str) -> list[Commit]:
         fingerprint = hashlib.sha256(" ".join(trees).encode()).hexdigest()
         first_line = next((line.strip() for line in body.splitlines() if line.strip()), "")
         title = first_line if PR_MERGE.match(subject) and first_line else subject
-        found.append(Commit(sha, date, author, subject, title, fingerprint))
+        try:
+            config = git("show", f"{sha}:promptguard.config.json", cwd=path)
+        except RepoError:  # older commits may not have a config file
+            config = "{}"
+        found.append(Commit(sha, date, author, subject, title, fingerprint, detector_timeout(config)))
     return found
 
 

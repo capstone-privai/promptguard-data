@@ -1088,7 +1088,7 @@ function renderLatency() {
     { key: "per_string", label: "문자열 1개 늘 때마다", value: fit ? fit.ms_per_string : null, plus: true,
       sub: largestBatch ? `${int(largestBatch.batch)}개면 ${ms(largestBatch.p50)}ms` : "",
       detail: `1,024자 텍스트를 1·4·16·64·256개 묶어 보낸 호출에 직선을 맞춘 기울기예요${fit ? `(${ms(fit.fixed_ms)}ms + ${ms(fit.ms_per_string)}ms × 문자열 수)` : ""}. Final Guard처럼 한 번에 여러 문자열을 보낼 때 늘어나는 시간입니다.` },
-    { key: "timeouts", label: "5초 넘은 호출", count: ensemble.over_timeout, sub: `표본 ${int(ensemble.all.n)}개 중`,
+    { key: "timeouts", label: `${int(data.timeout_ms)}ms 넘은 호출`, count: ensemble.over_timeout, sub: `표본 ${int(ensemble.all.n)}개 중`,
       detail: `HTTP 왕복이 시스템의 탐지기 timeout(${int(data.timeout_ms)}ms)을 넘은 표본 수예요. 시스템은 fail-closed라 실제라면 그 호출의 텍스트가 막힙니다.` },
   ];
   if (ensemble.guard) {

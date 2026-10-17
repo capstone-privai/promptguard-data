@@ -21,12 +21,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from pipeline.repo import detector_timeout
 from pipeline.paths import METRIC_LATENCY, REPO_ROOT
 from pipeline.runner import EvaluationError, child_env, tool_version, write_json
 
 SCRIPTS = METRIC_LATENCY / "scripts"
 M4 = SCRIPTS / "m4.py"
-LATENCY_VERSION = 1  # bump when condense() or latency.json changes, so every commit is measured again
+LATENCY_VERSION = 2  # bump when condense() or latency.json changes, so every commit is measured again
 
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -125,7 +126,7 @@ def headline(data: dict[str, Any]) -> dict[str, Any]:
     return {"single_1k_p50": ensemble["single_1k"]["p50"], "single_64k_p50": ensemble["single_64k"]["p50"],
             "ms_per_string": (ensemble["fit_items"] or {}).get("ms_per_string"),
             "guard_p95": (ensemble["guard"] or {}).get("p95"),
-            "over_timeout": sum(detector["over_timeout"] for detector in data["detectors"]),
+            "over_timeout": ensemble["over_timeout"],
             "startup_ms": ensemble["startup_ms"]}
 
 
@@ -136,9 +137,15 @@ def evaluate(system_root: Path, out_dir: Path, *, python: str, adapters: str, gu
     tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
     shutil.rmtree(tmp_dir, ignore_errors=True)
     tmp_dir.mkdir(parents=True)
+    try:
+        config = (system_root / "promptguard.config.json").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        config = "{}"
+    timeout_ms = detector_timeout(config)
     command = [sys.executable, str(M4), "run", "--out", str(tmp_dir / "m4"), "--detector", "promptguard",
                "--system-root", str(system_root), "--python", python, "--synth", "--adapters", adapters,
-               "--repeat", str(repeat), "--warmup", str(warmup), *(["--guard", *guard] if guard else [])]
+               "--repeat", str(repeat), "--warmup", str(warmup), "--timeout-ms", str(timeout_ms),
+               *(["--guard", *guard] if guard else [])]
     with (tmp_dir / "m4.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, env=child_env(), cwd=REPO_ROOT)
         while True:
