@@ -75,6 +75,17 @@ class RepoTest(unittest.TestCase):
         repo.sync(str(self.src), self.bare, "main")
         self.assertEqual(repo.commits(self.bare, "main")[-1].subject, "Even faster")
 
+    def test_existing_clone_rejects_a_different_repository(self):
+        other = self.root / "other_repo"
+        run("git", "clone", "-q", str(self.src), str(other), cwd=self.root)
+        write(other, "src/detector/worker.py", "# a different project\n")
+        run("git", "commit", "-q", "-am", "Other project", cwd=other)
+        before = repo.commits(self.bare, "main")
+        with self.assertRaisesRegex(repo.RepoError, "different repository"):
+            repo.sync(str(other), self.bare, "main")
+        self.assertEqual(repo.commits(self.bare, "main"), before)
+        self.assertEqual(repo.git("remote", "get-url", "origin", cwd=self.bare).strip(), str(self.src))
+
     def test_timeout_changes_without_changing_the_detector_fingerprint(self):
         before = repo.commits(self.bare, "main")[-1]
         write(self.src, "promptguard.config.json", '{"detectorTimeoutMs":3000}')

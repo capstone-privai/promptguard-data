@@ -63,11 +63,15 @@ class Commit:
 
 
 def sync(url: str, path: Path, branch: str) -> None:
-    """Clone (bare) on first use, then fetch the branch."""
+    """Clone (bare) on first use, then fetch only if origin still matches the requested repository."""
     if not (path / "HEAD").is_file():
         shutil.rmtree(path, ignore_errors=True)
         path.parent.mkdir(parents=True, exist_ok=True)
         git("clone", "--bare", "--single-branch", "--branch", branch, url, str(path), cwd=path.parent)
+    if git("remote", "get-url", "origin", cwd=path).strip() != url:
+        # Do not publish the old project's commits under a new configured URL. Keep the old clone/results intact.
+        # Avoid including either URL here: authenticated remotes may contain credentials.
+        raise RepoError("the data directory belongs to a different repository; use a separate --data-dir")
     git("fetch", "--prune", "origin", f"+refs/heads/{branch}:refs/heads/{branch}", cwd=path)
 
 
