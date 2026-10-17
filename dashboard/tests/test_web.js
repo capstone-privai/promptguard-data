@@ -342,3 +342,37 @@ print(json.dumps([_example(('unicode', 0), source, start, end)
     if (index === 3) assert.equal(masked.textContent, "…[SECRET_2]…");
   }
 });
+
+for (const [name, guard, value] of [
+  ["failed", { requests: 1, n: 0, failed: 1, unmeasured: 0, cache_only: 0, p50: null, p95: null }, "미측정"],
+  ["unmeasured", { requests: 1, n: 0, failed: 0, unmeasured: 1, cache_only: 0, p50: null, p95: null }, "미측정"],
+  ["cache hit", { requests: 1, n: 1, failed: 0, unmeasured: 0, cache_only: 1, p50: 0, p95: 0 }, "0.00ms"],
+  ["mixed", { requests: 4, n: 2, failed: 1, unmeasured: 1, cache_only: 1, p50: 0, p95: 20 }, "20ms"],
+  ["legacy", { requests: 1, n: 1, p50: 0, p95: 0 }, "0.00ms"],
+]) {
+  test(`Guard latency distinguishes ${name} requests`, () => {
+    const { context, elements } = app({ requestAnimationFrame: () => {} });
+    context.fixture = {
+      index: { tracks: ["latency"], commits: [] }, tileOpen: "guard",
+      latencyPick: { key: "latency", commit: { sha: "a", short: "a" }, stale: name === "legacy" },
+      latency: {
+        timeout_ms: 5000, repeat: 1, batch_item_chars: 1024,
+        machine: { platform: "fixture", cpu_count: 1 }, detectors: [{
+          label: "ensemble", single_1k: { p50: null, p95: null }, single_64k: { p50: null, p95: null },
+          batch_sweep: [], size_sweep: [], fit_items: null, all: { n: 0 }, over_timeout: 0,
+          guard: { sessions: 1, ...guard },
+        }],
+      },
+    };
+    vm.runInContext("Object.assign(state, fixture); sparkline = () => null; renderLatency();", context);
+    const grid = elements.get("#latency-body").children.find((node) => node.className === "tiles");
+    const tile = grid.children.find((node) => node.textContent.includes("Guard 요청"));
+    assert.equal(tile.children.find((node) => node.className === "value").textContent, value);
+    if (name === "legacy") {
+      assert.ok(tile.textContent.includes("이전 집계"));
+    } else {
+      assert.ok(tile.textContent.includes(`측정 ${guard.n}개 · 실패 ${guard.failed}개 · 미측정 ${guard.unmeasured}개`));
+      assert.ok(elements.get("#latency-body").textContent.includes(`캐시 통과 ${guard.cache_only}개`));
+    }
+  });
+}

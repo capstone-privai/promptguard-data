@@ -1137,8 +1137,15 @@ function renderLatency() {
       detail: `HTTP 왕복이 시스템의 탐지기 timeout(${int(data.timeout_ms)}ms)을 넘은 표본 수예요. 시스템은 fail-closed라 실제라면 그 호출의 텍스트가 막힙니다.` },
   ];
   if (ensemble.guard) {
-    tiles.push({ key: "guard", label: "Guard 요청 1개 (p95)", value: ensemble.guard.p95, sub: `p50 ${ms(ensemble.guard.p50)}ms · 요청 ${int(ensemble.guard.requests)}개`,
-      detail: "metric-task 요청 기록을 Final Guard가 보냈을 호출로 재생했을 때, 요청 하나에서 기다리는 탐지 시간이에요." });
+    const guard = ensemble.guard;
+    const legacy = guard.failed == null || guard.unmeasured == null;
+    tiles.push({ key: "guard", label: "Guard 요청 1개 (p95)", value: guard.p95,
+      sub: legacy ? `요청 ${int(guard.requests)}개 · 이전 집계`
+        : `측정 ${int(guard.n)}개 · 실패 ${int(guard.failed)}개 · 미측정 ${int(guard.unmeasured)}개`,
+      detail: "metric-task 요청 기록을 Final Guard가 보냈을 호출로 재생했을 때, 요청 하나에서 기다리는 탐지 시간이에요. " +
+        (legacy ? "이전 집계에는 실패·미측정 요청의 구분이 없어요."
+          : `세션 ${int(guard.sessions)}개 · 총 요청 ${int(guard.requests)}개 · 캐시 통과 ${int(guard.cache_only)}개. ` +
+            "실패하거나 모든 호출의 시간을 알 수 없는 요청은 시간 통계에서 제외해요. 캐시 통과로 검사 호출이 없는 정상 요청은 0ms로 셉니다.") });
   }
   const grid = h("div", { class: "tiles", style: tiles.length > 4 ? "grid-template-columns:repeat(auto-fit,minmax(150px,1fr))" : null });
   for (const tile of tiles) {
@@ -1147,7 +1154,9 @@ function renderLatency() {
       onclick: () => { state.tileOpen = state.tileOpen === tile.key ? null : tile.key; renderLatency(); },
     },
     h("div", { class: "label" }, tile.label),
-    h("div", { class: "value" }, tile.count != null ? int(tile.count) : [tile.plus && tile.value != null ? "+" : "", msValue(tile.value)]),
+    h("div", { class: "value" }, tile.count != null ? int(tile.count)
+      : tile.key === "guard" && tile.value == null ? "미측정"
+        : [tile.plus && tile.value != null ? "+" : "", msValue(tile.value)]),
     h("div", { class: "sub" }, tile.sub),
     tile.spark ? sparkline(tile.spark, currentIndex - Math.max(0, history.length - 12), "var(--lat)") : null));
   }

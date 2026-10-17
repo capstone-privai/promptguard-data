@@ -350,6 +350,40 @@ def quantile(values: list[float], p: float) -> float | None:
     return ordered[max(0, math.ceil(p * len(ordered)) - 1)]
 
 
+def guard_summary(calls: list[dict], requests: list[dict]) -> dict:
+    """Request latency requires a successful timing for every batch; failed replays are excluded.
+
+    Recorder.call uses its first repeat to decide whether the Guard blocks a request. Later successful repeats
+    must not turn that failed request into a successful measurement. A normal request with zero calls is 0ms.
+    """
+    per_call = defaultdict(list)
+    for row in calls:
+        timing = row.get("detector_ms")
+        if (row.get("source") == "guard" and row.get("ok") and type(timing) in (int, float)
+                and math.isfinite(timing) and timing >= 0):
+            per_call[(row["detector"], row["session"], row["request"], row["batch"])].append(timing)
+    totals, failed, unmeasured, cache_only = [], 0, 0, 0
+    for request in requests:
+        if request.get("failed"):
+            failed += 1
+            continue
+        count = request.get("calls")
+        if type(count) is not int or count < 0 or (count == 0 and request.get("unique", 0) > 0):
+            unmeasured += 1
+            continue
+        medians = [quantile(per_call[(request["detector"], request["session"], request["request"], batch)], .5)
+                   for batch in range(count)]
+        if any(value is None for value in medians):
+            unmeasured += 1
+            continue
+        totals.append(sum(medians))
+        cache_only += int(count == 0 and request.get("leaves", 0) > 0)
+    return {"sessions": len({request["session"] for request in requests}), "requests": len(requests),
+            "n": len(totals), "failed": failed, "unmeasured": unmeasured, "cache_only": cache_only,
+            "p50": quantile(totals, .5), "p95": quantile(totals, .95), "max": max(totals) if totals else None,
+            "blocked": sum(bool(request.get("findings") or request.get("failed")) for request in requests)}
+
+
 def fit(points: list[tuple[float, float]]) -> tuple[float, float] | None:
     """Least squares ms = a + b * KB. Returns (a, b), or None with fewer than two distinct sizes."""
     if len({x for x, _ in points}) < 2:
@@ -469,23 +503,21 @@ def cmd_report(args):
 
     if requests:
         md += ["## Final Guard 재생: 요청 1개당", "",
-               "요청마다 본문의 문자열 중 캐시에 없는 것만 256개씩 보낸다. 요청 시간은 그 요청의 호출들의 detector_ms(반복 중앙값) 합이다.", "",
-               "| 탐지기 | 세션 | 요청 | 문자열 (중앙값) | 보낸 문자열 비율 | 보낸 문자열 p50 | p95 | 요청당 호출 p95 | 요청 시간 p50 | p95 | max | 막힌 요청 |",
-               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
-        per_call = defaultdict(list)
-        for r in ok_rows:
-            if r["source"] == "guard" and r.get("detector_ms") is not None:
-                per_call[(r["detector"], r["session"], r["request"], r["batch"])].append(r["detector_ms"])
+               "요청마다 본문의 문자열 중 캐시에 없는 것만 256개씩 보낸다. 요청 시간은 모든 호출의 성공한 detector_ms(반복 중앙값) 합이다. "
+               "실패·미측정 요청은 시간 통계에서 제외하고, 정상 요청의 호출이 0개면 0ms로 센다. 캐시 통과는 문자열이 있지만 전부 캐시에 있어 호출하지 않은 요청이다.", "",
+               "| 탐지기 | 세션 | 요청 | 측정 | 실패 | 미측정 | 캐시 통과 | 문자열 (중앙값) | 보낸 문자열 비율 | 보낸 문자열 p50 | p95 | 요청당 호출 p95 | 요청 시간 p50 | p95 | max | 막힌 요청 |",
+               "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for name in names:
             mine = [q for q in requests if q["detector"] == name]
             if not mine:
                 continue
-            totals = [sum(quantile(per_call[(name, q["session"], q["request"], b)], .5) or 0 for b in range(q["calls"])) for q in mine]
+            stats = guard_summary(rows, mine)
             sent = sum(q["unique"] for q in mine) / max(1, sum(q["leaves"] for q in mine))
-            md.append(f"| {name} | {len({q['session'] for q in mine})} | {len(mine)} | {fmt(quantile([q['leaves'] for q in mine], .5), 0)} "
+            md.append(f"| {name} | {stats['sessions']} | {stats['requests']} | {stats['n']} | {stats['failed']} | {stats['unmeasured']} | {stats['cache_only']} "
+                      f"| {fmt(quantile([q['leaves'] for q in mine], .5), 0)} "
                       f"| {sent:.1%} | {fmt(quantile([q['unique'] for q in mine], .5), 0)} | {fmt(quantile([q['unique'] for q in mine], .95), 0)} "
-                      f"| {fmt(quantile([q['calls'] for q in mine], .95), 0)} | {fmt(quantile(totals, .5))} | {fmt(quantile(totals, .95))} "
-                      f"| {fmt(max(totals))} | {sum(1 for q in mine if q['findings'] or q['failed'])} |")
+                      f"| {fmt(quantile([q['calls'] for q in mine], .95), 0)} | {fmt(stats['p50'])} | {fmt(stats['p95'])} "
+                      f"| {fmt(stats['max'])} | {stats['blocked']} |")
         md.append("")
 
     if "recorded" in sources:

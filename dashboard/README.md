@@ -99,6 +99,8 @@ cron으로 돌리고 정적 서버에 올리는 방법도 된다: `python3 dashb
 
 ## metric-task 결과 넣기
 
+Guard 재생 지연은 측정·실패·미측정 요청 수와 캐시 통과 수를 구분한다. 실패하거나 일부 호출의 시간이 없는 요청은 지연 백분위수에서 제외하고, 정상적인 캐시 통과는 0ms로 센다. 지연 결과 버전은 `LATENCY_VERSION=3`이며, 이전 결과는 다음 서비스 실행에서 재측정 대상이 된다.
+
 대시보드는 metric-task를 돌리지 않는다. 누군가 `main`을 체크아웃한 PromptGuard로 배치를 돌리면([metric-task/README.md](../metric-task/README.md#한꺼번에-돌리기)), 그 배치 폴더를 서버의 `runs/metric-task/` 아래(또는 `--task-runs`로 지정한 곳)에 둔다. 읽는 파일은 배치 폴더의 `batch.json`과 `runs.csv`뿐이다. 둘 다 비밀값이 없으므로 실행별 폴더(transcript, API 기록)는 서버에 올리지 않아도 된다.
 
 ```bash

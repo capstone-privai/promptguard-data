@@ -15,7 +15,6 @@ import shutil
 import signal
 import subprocess
 import sys
-from collections import defaultdict
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,7 +26,7 @@ from pipeline.runner import EvaluationError, child_env, tool_version, write_json
 
 SCRIPTS = METRIC_LATENCY / "scripts"
 M4 = SCRIPTS / "m4.py"
-LATENCY_VERSION = 2  # bump when condense() or latency.json changes, so every commit is measured again
+LATENCY_VERSION = 3  # separate failed/unmeasured Guard requests; invalidate earlier 0ms aggregates
 
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -84,14 +83,7 @@ def condense(run_dir: Path) -> dict[str, Any]:
         guard = None
         mine = [request for request in requests if request["detector"] == label]
         if mine:
-            per_call: dict[tuple, list[float]] = defaultdict(list)
-            for row in ok:
-                if row["source"] == "guard":
-                    per_call[(row["session"], row["request"], row["batch"])].append(row["detector_ms"])
-            totals = [sum(m4.quantile(per_call[(request["session"], request["request"], index)], 0.5) or 0
-                          for index in range(request["calls"])) for request in mine]
-            guard = {"sessions": len({request["session"] for request in mine}), "requests": len(mine),
-                     **_stats(totals), "blocked": sum(1 for request in mine if request["findings"] or request["failed"])}
+            guard = m4.guard_summary(rows, mine)
         describe = detector.get("describe") or {}
         detectors.append({
             "label": label,
@@ -123,9 +115,12 @@ def headline(data: dict[str, Any]) -> dict[str, Any]:
                     data["detectors"][0] if data["detectors"] else None)
     if ensemble is None:
         return {}
+    guard = ensemble["guard"] or {}
     return {"single_1k_p50": ensemble["single_1k"]["p50"], "single_64k_p50": ensemble["single_64k"]["p50"],
             "ms_per_string": (ensemble["fit_items"] or {}).get("ms_per_string"),
-            "guard_p95": (ensemble["guard"] or {}).get("p95"),
+            "guard_p95": guard.get("p95"), "guard_measured": guard.get("n"),
+            "guard_failed": guard.get("failed"), "guard_unmeasured": guard.get("unmeasured"),
+            "guard_cache_only": guard.get("cache_only"),
             "over_timeout": ensemble["over_timeout"],
             "startup_ms": ensemble["startup_ms"]}
 

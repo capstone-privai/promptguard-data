@@ -104,6 +104,25 @@ class RecordedTests(unittest.TestCase):
 
 
 class StatisticsTests(unittest.TestCase):
+    def test_guard_rejects_invalid_timings_but_accepts_zero(self) -> None:
+        request = {"detector": "ensemble", "session": "one", "request": 0, "calls": 1,
+                   "failed": False, "unique": 1, "leaves": 1}
+        row = {"detector": "ensemble", "source": "guard", "session": "one", "request": 0,
+               "batch": 0, "ok": True}
+        for value in (None, -1, float("nan"), float("inf"), True, "10"):
+            with self.subTest(value=value):
+                stats = m4.guard_summary([{**row, "detector_ms": value}], [request])
+                self.assertIsNone(stats["p95"])
+                self.assertEqual((stats["n"], stats["unmeasured"]), (0, 1))
+        stats = m4.guard_summary([{**row, "detector_ms": 0}], [request])
+        self.assertEqual((stats["p95"], stats["n"], stats["unmeasured"]), (0, 1, 0))
+
+    def test_guard_keeps_detector_samples_separate(self) -> None:
+        calls = [{"detector": label, "source": "guard", "session": "one", "request": 0,
+                  "batch": 0, "ok": True, "detector_ms": ms} for label, ms in (("first", 10), ("second", 100))]
+        request = {"detector": "second", "session": "one", "request": 0, "calls": 1, "failed": False}
+        self.assertEqual(m4.guard_summary(calls, [request])["p95"], 100)
+
     def test_quantile_is_nearest_rank(self) -> None:
         values = list(range(1, 101))
         self.assertEqual((m4.quantile(values, .5), m4.quantile(values, .95), m4.quantile(values, 1)), (50, 95, 100))

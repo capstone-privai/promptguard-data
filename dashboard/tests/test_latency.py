@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import json
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,100 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pipeline import latency  # noqa: E402
+
+
+def guard_call(request=0, batch=0, ms=10, ok=True, rep=0, session="t01/none-r1"):
+    return {"detector": "ensemble", "source": "guard", "workload": "guard", "session": session,
+            "request": request, "batch": batch, "rep": rep, "ok": ok, "detector_ms": ms,
+            "call_ms": ms, "over_timeout": False}
+
+
+def guard_request(request=0, calls=1, failed=False, session="t01/none-r1", leaves=1, unique=1, findings=0):
+    return {"detector": "ensemble", "session": session, "request": request, "calls": calls,
+            "failed": failed, "leaves": leaves, "unique": unique, "findings": findings}
+
+
+def write_guard_run(root, calls, requests):
+    meta = {"name": "guard-fixture", "detectors": [{"label": "ensemble"}], "repeat": 3, "warmup": 1,
+            "timeout_ms": 5000, "started_at": "2026-10-17", "machine": {
+                "platform": "test", "machine": "test", "cpu_count": 1, "python": "test"}}
+    (root / "run.json").write_text(json.dumps(meta))
+    for filename, rows in (("calls.jsonl", calls), ("requests.jsonl", requests)):
+        (root / filename).write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+
+class GuardCondenseTest(unittest.TestCase):
+    def condense(self, calls, requests):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_guard_run(root, calls, requests)
+            return latency.condense(root)
+
+    def test_failed_request_is_not_a_zero_ms_measurement(self):
+        data = self.condense([guard_call(ms=None, ok=False)], [guard_request(failed=True)])
+        guard = data["detectors"][0]["guard"]
+        self.assertEqual((guard["p50"], guard["p95"], guard["max"]), (None, None, None))
+        self.assertEqual((guard["n"], guard["failed"], guard["unmeasured"], guard["cache_only"]), (0, 1, 0, 0))
+        headline = latency.headline(data)
+        self.assertIsNone(headline["guard_p95"])
+        self.assertEqual((headline["guard_measured"], headline["guard_failed"], headline["guard_unmeasured"]), (0, 1, 0))
+
+    def test_missing_batch_time_does_not_produce_a_partial_request_time(self):
+        data = self.condense([guard_call(batch=0, ms=10), guard_call(batch=1, ms=None)],
+                             [guard_request(calls=2)])
+        guard = data["detectors"][0]["guard"]
+        self.assertIsNone(guard["p95"])
+        self.assertEqual((guard["n"], guard["failed"], guard["unmeasured"]), (0, 0, 1))
+
+    def test_failed_replay_is_excluded_even_if_later_repeats_succeed(self):
+        data = self.condense([guard_call(rep=0, ms=None, ok=False), guard_call(rep=1, ms=10)],
+                             [guard_request(failed=True)])
+        guard = data["detectors"][0]["guard"]
+        self.assertIsNone(guard["p50"])
+        self.assertEqual((guard["n"], guard["failed"]), (0, 1))
+
+    def test_mixed_requests_keep_cache_hits_and_unknown_times_separate(self):
+        data = self.condense([guard_call(0, ms=None, ok=False), guard_call(1, ms=50), guard_call(2, ms=None)],
+                             [guard_request(0, failed=True), guard_request(1), guard_request(2),
+                              guard_request(3, calls=0, unique=0),
+                              guard_request(4, calls=0, unique=0, leaves=0)])
+        guard = data["detectors"][0]["guard"]
+        self.assertEqual((guard["requests"], guard["n"], guard["failed"], guard["unmeasured"]), (5, 3, 1, 1))
+        self.assertEqual(guard["cache_only"], 1)
+        self.assertEqual((guard["p50"], guard["p95"], guard["max"]), (0, 50, 50))
+
+    def test_measured_blocked_requests_and_batch_medians_are_preserved(self):
+        calls = [guard_call(batch=batch, rep=rep, ms=value)
+                 for batch, values in ((0, [10, 20, 30]), (1, [50, 60, 70]))
+                 for rep, value in enumerate(values)]
+        data = self.condense(calls, [guard_request(calls=2, findings=1)])
+        guard = data["detectors"][0]["guard"]
+        self.assertEqual((guard["p50"], guard["p95"], guard["max"], guard["n"]), (80, 80, 80, 1))
+        self.assertEqual((guard["blocked"], guard["failed"]), (1, 0))
+
+    def test_report_marks_missing_times_and_shows_request_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_guard_run(root, [guard_call(ms=None, ok=False)], [guard_request(failed=True)])
+            latency.m4.main(["report", str(root), "--out", str(root / "report")])
+            report = (root / "report/summary.md").read_text()
+        section = report.split("## Final Guard 재생:")[1]
+        lines = [line for line in section.splitlines() if line.startswith("|")]
+        headers = [cell.strip() for cell in lines[0].strip("|").split("|")]
+        values = [cell.strip() for cell in lines[2].strip("|").split("|")]
+        row = dict(zip(headers, values))
+        self.assertEqual((row["측정"], row["실패"], row["미측정"]), ("0", "1", "0"))
+        self.assertEqual(row["요청 시간 p50"], "-")
+        self.assertEqual(row["max"], "-")
+
+    def test_changed_latency_version_invalidates_cached_results(self):
+        from pipeline.service import result_key
+        with patch.object(latency, "tool_version", return_value=None):
+            current = latency.environment("each", [], 5, 3)["fingerprint"]
+            with patch.object(latency, "LATENCY_VERSION", 2):
+                old = latency.environment("each", [], 5, 3)["fingerprint"]
+        self.assertGreaterEqual(latency.LATENCY_VERSION, 3)
+        self.assertNotEqual(result_key("latency", "system", old), result_key("latency", "system", current))
 
 
 class CondenseTest(unittest.TestCase):
