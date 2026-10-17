@@ -123,7 +123,7 @@ python3 -m unittest discover -s dashboard/tests -t dashboard
 
 ```text
 dashboard/
-  BUGS.md               알려진 버그 (아직 고치지 않은 것)
+  BUGS.md               버그 수정 이력과 별도 검토 항목
   serve.py              진입점: HTTP 서버 + 평가 루프, --once, --serve-only, --export
   pipeline/
     service.py          커밋 목록, 작업 순서, 결과 키, index.json

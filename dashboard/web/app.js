@@ -79,8 +79,9 @@ function dateTimeLabel(iso) {
 
 function duration(seconds) {
   if (seconds == null) return "";
-  const minutes = Math.floor(seconds / 60);
-  return minutes ? `${minutes}분 ${Math.round(seconds % 60)}초` : `${Math.round(seconds)}초`;
+  const rounded = Math.round(seconds);
+  const minutes = Math.floor(rounded / 60);
+  return minutes ? `${minutes}분 ${rounded % 60}초` : `${rounded}초`;
 }
 
 function sizeLabel(chars) {
