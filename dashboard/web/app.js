@@ -104,6 +104,14 @@ async function getJSON(url) {
   return response.json();
 }
 
+function requestFailure(message, retry) {
+  const button = h("button", { class: "link", type: "button", onclick: async () => {
+    button.disabled = true;
+    try { await retry(); } finally { button.disabled = false; }
+  } }, "다시 시도");
+  return h("div", { class: "empty", role: "alert" }, message, " ", button);
+}
+
 // ------------------------------------------------------------------ vocabulary
 
 const METRICS = [
@@ -141,9 +149,14 @@ const state = {
   sha: null, // commit chosen by the reader; null follows the newest commit
   detection: null, // { commit, key, stale, fallbackFrom }
   summary: null,
+  summaryKey: null,
+  summaryError: null,
   latencyPick: null,
   latency: null,
+  latencyKey: null,
+  latencyError: null,
   examples: new Map(), // `${key}/${stem}` → Promise<examples>
+  exampleErrors: new Set(), // failed requests only; successful empty examples stay cached
   filters: { d: null, t: null, c: null, g: null },
   outcome: null,
   by: "dataset",
@@ -158,6 +171,7 @@ const state = {
   taskPick: null,
   task: null,
   taskLoaded: null,
+  taskError: null,
   taskOpen: null,
   taskFailuresOpen: false,
 };
@@ -581,7 +595,11 @@ function renderKpis() {
   const more = clear($("#kpi-more"));
   const summary = state.summary;
   if (!summary) {
-    box.append(h("div", { class: "empty", style: "grid-column: 1 / -1" }, emptyDetectionText()));
+    const empty = state.summaryError
+      ? requestFailure("탐지 성능 결과를 불러오지 못했어요.", showSelected)
+      : h("div", { class: "empty" }, emptyDetectionText());
+    empty.style.gridColumn = "1 / -1";
+    box.append(empty);
     return;
   }
   const totals = summary.totals;
@@ -877,7 +895,10 @@ function outcomeCounts() {
   return { exact: counts[0], over: counts[1], partial: counts[2], missed: counts[3], fp: counts[6], clean: f.t == null ? items[1] : 0 };
 }
 
+let latestExamplesRender = 0;
+
 async function renderOutcomes() {
+  const call = ++latestExamplesRender;
   const box = clear($("#outcomes"));
   const counts = outcomeCounts();
   const goldTotal = GOLD_OUTCOMES.reduce((total, key) => total + counts[key], 0);
@@ -901,8 +922,18 @@ async function renderOutcomes() {
     return;
   }
   const outcome = state.outcome;
-  const examples = await loadExamples();
-  if (outcome !== state.outcome || !list.isConnected) return; // a newer render replaced this one
+  const key = state.detection.key;
+  const stem = state.filters.d || "_all";
+  const current = () => call === latestExamplesRender && key === state.detection?.key
+    && stem === (state.filters.d || "_all") && outcome === state.outcome && list.isConnected;
+  let examples;
+  try {
+    examples = await loadExamples();
+  } catch {
+    if (current()) list.append(requestFailure("예시를 불러오지 못했어요.", renderOutcomes));
+    return;
+  }
+  if (!current()) return;
   const matched = examples.filter((example) => matches(example, outcome));
   if (!matched.length) {
     list.append(h("div", { class: "empty" }, "이 조건의 예시는 표본에 없어요."));
@@ -919,8 +950,9 @@ async function loadExamples() {
   const stem = state.filters.d || "_all";
   const cacheKey = `${state.detection.key}/${stem}`;
   if (!state.examples.has(cacheKey)) {
-    state.examples.set(cacheKey, getJSON(`data/results/detection/${state.detection.key}/examples/${stem}.json`)
+    const request = getJSON(`data/results/detection/${state.detection.key}/examples/${stem}.json`)
       .then((data) => {
+        state.exampleErrors.delete(cacheKey);
         const list = data.examples.map((example) => ({ ...example, dataset: example.dataset || stem }));
         if (stem !== "_all") return list.sort((a, b) => hash32(a.id) - hash32(b.id));
         const byDataset = new Map();
@@ -930,7 +962,12 @@ async function loadExamples() {
         while (queues.some((queue) => queue.length)) for (const queue of queues) if (queue.length) mixed.push(queue.shift());
         return mixed;
       })
-      .catch(() => []));
+      .catch((error) => {
+        if (state.examples.get(cacheKey) === request) state.examples.delete(cacheKey);
+        state.exampleErrors.add(cacheKey);
+        throw error;
+      });
+    state.examples.set(cacheKey, request);
   }
   return state.examples.get(cacheKey);
 }
@@ -1061,6 +1098,10 @@ function renderLatency() {
   }
   section.hidden = false;
   const pickInfo = state.latencyPick;
+  if (state.latencyError) {
+    body.append(requestFailure("탐지 지연 결과를 불러오지 못했어요.", showSelected));
+    return;
+  }
   if (!pickInfo || !pickInfo.key || !state.latency) {
     const record = pickInfo && pickInfo.record;
     const text = record && record.state === "failed" ? `이 커밋의 지연 측정이 실패했어요: ${record.error}`
@@ -1214,6 +1255,10 @@ function renderTask() {
     batches.slice().reverse().map((batch) => h("option", { value: batch.key }, batchLabel(batch))));
   select.value = state.taskKey || "";
   tools.append(h("div", { class: "select" }, select));
+  if (state.taskError) {
+    body.append(requestFailure("배치를 불러오지 못했어요.", showSelected));
+    return;
+  }
   if (!pickInfo || !state.task) {
     body.append(h("div", { class: "empty" }, "배치를 불러오지 못했어요."));
     return;
@@ -1320,15 +1365,23 @@ function taskHowTo() {
 async function fetchTask() {
   const taskPick = pickTask();
   const key = taskPick && taskPick.batch.key;
-  if (!key) return { taskPick, task: null, taskLoaded: null };
-  if (state.taskLoaded === key) return { taskPick, task: state.task, taskLoaded: key };
-  const task = await getJSON(`data/results/task/${key}/task.json`).catch(() => null);
-  return { taskPick, task, taskLoaded: task ? key : null };
+  const result = await fetchResult(key && `data/results/task/${key}/task.json`, key, state.taskLoaded, state.task);
+  return { taskPick, task: result.data, taskLoaded: result.data ? key : null, taskError: result.error };
 }
 
 // ------------------------------------------------------------------ loading
 
 let latestLoad = 0; // the newest loadResults() call; the responses of an older one are dropped
+
+async function fetchResult(url, key, loadedKey, loaded) {
+  if (!key) return { data: null, error: null };
+  if (key === loadedKey && loaded) return { data: loaded, error: null };
+  try {
+    return { data: await getJSON(url), error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
+}
 
 /** Fetch what the selected commit shows and apply it all at once, unless a newer call started meanwhile (the reader
  * clicked another commit, or the status poll reloaded). Returns whether it applied. */
@@ -1338,18 +1391,14 @@ async function loadResults() {
   const latencyPick = tracks().includes("latency") ? pick("latency") : null;
   const latencyKey = latencyPick && latencyPick.key;
   const [summary, latency, taskState] = await Promise.all([
-    !detection.key ? null
-      : detection.key === state.summaryKey ? state.summary
-        : getJSON(`data/results/detection/${detection.key}/summary.json`).catch(() => null),
-    !latencyKey ? null
-      : latencyKey === state.latencyKey ? state.latency
-        : getJSON(`data/results/latency/${latencyKey}/latency.json`).catch(() => null),
+    fetchResult(`data/results/detection/${detection.key}/summary.json`, detection.key, state.summaryKey, state.summary),
+    fetchResult(`data/results/latency/${latencyKey}/latency.json`, latencyKey, state.latencyKey, state.latency),
     fetchTask(),
   ]);
   if (call !== latestLoad) return false;
   Object.assign(state, taskState, {
-    detection, summary, summaryKey: summary ? detection.key : null,
-    latencyPick, latency, latencyKey: latency ? latencyKey : null,
+    detection, summary: summary.data, summaryKey: summary.data ? detection.key : null, summaryError: summary.error,
+    latencyPick, latency: latency.data, latencyKey: latency.data ? latencyKey : null, latencyError: latency.error,
   });
   return true;
 }
@@ -1413,7 +1462,12 @@ async function pollStatus() {
   const changed = state.status && status.index_at && status.index_at !== state.status.index_at;
   state.status = status;
   if (!state.index || changed || (status.index_at && status.index_at > state.index.generated_at)) await refreshIndex();
-  else renderChip();
+  else if (state.summaryError || state.latencyError || state.taskError) await showSelected();
+  else {
+    renderChip();
+    const examplesKey = `${state.detection?.key}/${state.filters.d || "_all"}`;
+    if (state.summary && state.exampleErrors.has(examplesKey)) await renderOutcomes();
+  }
 }
 
 let resizeTimer = null;

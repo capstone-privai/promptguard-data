@@ -7,29 +7,218 @@ const test = require("node:test");
 const vm = require("node:vm");
 
 class Element {
-  constructor(text = "") { this.text = text; this.children = []; this.style = {}; }
-  append(...children) { this.children.push(...children); }
-  replaceChildren(...children) { this.children = children; }
-  setAttribute() {}
-  addEventListener() {}
+  constructor(text = "", tag = "") {
+    this.text = text; this.tag = tag; this.children = []; this.style = {};
+    this.attributes = {}; this.listeners = new Map(); this.parentNode = null;
+  }
+  append(...children) {
+    for (let child of children) {
+      if (!(child instanceof Element)) child = new Element(String(child));
+      if (child.fragment) { this.append(...child.children); child.children = []; continue; }
+      child.parentNode = this;
+      this.children.push(child);
+    }
+  }
+  replaceChildren(...children) {
+    for (const child of this.children) child.parentNode = null;
+    this.children = []; this.append(...children);
+  }
+  setAttribute(key, value) { this.attributes[key] = value; }
+  addEventListener(name, handler) { this.listeners.set(name, handler); }
+  get isConnected() { return this.connected || Boolean(this.parentNode?.isConnected); }
+  cloneNode(deep) {
+    const copy = new Element(this.text, this.tag);
+    copy.className = this.className;
+    if (deep) copy.append(...this.children.map((child) => child.cloneNode(true)));
+    return copy;
+  }
   get textContent() { return this.text + this.children.map((child) => child.textContent).join(""); }
 }
 
-function app() {
+function app(globals = {}) {
   const elements = new Map();
   const document = {
     querySelector(selector) {
-      if (!elements.has(selector)) elements.set(selector, new Element());
+      if (!elements.has(selector)) elements.set(selector, Object.assign(new Element(), { connected: true }));
       return elements.get(selector);
     },
-    createElement: () => new Element(),
+    body: new Element(),
+    createElement: (tag) => new Element("", tag),
+    createDocumentFragment: () => Object.assign(new Element(), { fragment: true }),
     createTextNode: (text) => new Element(text),
   };
-  const context = vm.createContext({ document, Node: Element });
+  const context = vm.createContext({ document, Node: Element, ...globals });
   const source = fs.readFileSync(path.join(__dirname, "../web/app.js"), "utf8");
   vm.runInContext(source.replace(/\nmain\(\);\s*$/, "\n"), context);
   return { context, elements };
 }
+
+const response = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
+const descendants = (node) => [node, ...node.children.flatMap(descendants)];
+const retryButton = (node) => descendants(node).find((child) => child.tag === "button" && child.textContent === "다시 시도");
+
+function resultsFixture() {
+  return {
+    index: {
+      generated_at: "same", tracks: ["detection", "latency"], latest: "a",
+      commits: [{ sha: "a", short: "a", task: ["ta"],
+        detection: { key: "da", state: "done" }, latency: { key: "la", state: "done" } }],
+      task_batches: [{ key: "ta", name: "fixture", provenance: "clean" }],
+    },
+    status: { index_at: "same" },
+  };
+}
+
+function examplesFixture() {
+  return {
+    ...resultsFixture(), detection: { key: "da" }, outcome: "missed",
+    summary: {
+      datasets: [{ key: "sessions", label: "fixture", groups: ["-"] }],
+      channels: [{ key: "prompt", label: "prompt" }], types: [{ key: "SECRET", label: "secret" }],
+      cells: [[0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]], items: [[0, 0, 0, 1, 0, 1]],
+    },
+  };
+}
+
+test("failed example requests can be retried; successful empty results stay cached", async () => {
+  let requests = 0;
+  const { context } = app({ fetch: async () => response({ examples: [] }, ++requests === 1 ? 503 : 200) });
+  context.fixture = examplesFixture();
+  vm.runInContext("Object.assign(state, fixture);", context);
+  await assert.rejects(vm.runInContext("loadExamples()", context), /HTTP 503/);
+  assert.equal(vm.runInContext("state.examples.size", context), 0);
+  assert.equal((await vm.runInContext("loadExamples()", context)).length, 0);
+  await vm.runInContext("loadExamples()", context);
+  assert.equal(requests, 2);
+});
+
+test("example errors have a manual retry and recover during unchanged-index polling", async () => {
+  let requests = 0;
+  const { context, elements } = app({ fetch: async (url) => url === "api/status"
+    ? response({ index_at: "same" }) : response({ examples: [] }, ++requests === 1 ? 503 : 200) });
+  context.fixture = examplesFixture();
+  vm.runInContext("Object.assign(state, fixture); renderChip = () => {};", context);
+  await vm.runInContext("renderOutcomes()", context);
+  assert.ok(elements.get("#outcomes").textContent.includes("불러오지 못했어요"));
+  assert.ok(retryButton(elements.get("#outcomes")));
+  assert.ok(!elements.get("#outcomes").textContent.includes("표본에 없어요"));
+  await vm.runInContext("pollStatus()", context);
+  assert.equal(requests, 2);
+  assert.ok(elements.get("#outcomes").textContent.includes("표본에 없어요"));
+});
+
+test("failed summary, latency and task requests recover without an index change", async () => {
+  const requests = new Map();
+  const { context, elements } = app({ fetch: async (url) => {
+    if (url === "api/status") return response({ index_at: "same" });
+    const count = (requests.get(url) || 0) + 1;
+    requests.set(url, count);
+    return response({ marker: url }, count === 1 ? 503 : 200);
+  } });
+  context.fixture = resultsFixture();
+  vm.runInContext("Object.assign(state, fixture); renderAll = () => {}; renderChip = () => {};", context);
+  await vm.runInContext("loadResults()", context);
+  vm.runInContext("renderKpis(); renderLatency(); renderTask();", context);
+  for (const selector of ["#kpis", "#latency-body", "#task-body"]) {
+    assert.ok(elements.get(selector).textContent.includes("불러오지 못했어요"), selector);
+    assert.ok(retryButton(elements.get(selector)), selector);
+  }
+  await vm.runInContext("pollStatus()", context);
+  for (const field of ["summary", "latency", "task"]) {
+    assert.ok(vm.runInContext(`state.${field}.marker`, context));
+  }
+  assert.deepEqual([...requests.values()], [2, 2, 2]);
+});
+
+for (const [field, panel] of [["summary", "#kpis"], ["latency", "#latency-body"], ["task", "#task-body"]]) {
+  test(`static exports can manually retry a failed ${field} request`, async () => {
+    const requests = new Map();
+    const { context, elements } = app({ fetch: async (url) => {
+      if (url === "api/status") return response(null, 404);
+      const count = (requests.get(url) || 0) + 1;
+      requests.set(url, count);
+      return response({ marker: url }, count === 1 ? 503 : 200);
+    } });
+    context.fixture = resultsFixture();
+    vm.runInContext("Object.assign(state, fixture); renderAll = () => {};", context);
+    await vm.runInContext("loadResults()", context);
+    await vm.runInContext("pollStatus()", context);
+    assert.equal(vm.runInContext("state.statusPolling", context), false);
+    vm.runInContext("renderKpis(); renderLatency(); renderTask();", context);
+    const button = retryButton(elements.get(panel));
+    assert.ok(button);
+    await button.listeners.get("click")();
+    assert.ok(vm.runInContext(`state.${field}.marker`, context));
+  });
+}
+
+test("static exports can manually retry failed examples", async () => {
+  let requests = 0;
+  const { context, elements } = app({ fetch: async () => response({ examples: [] }, ++requests === 1 ? 503 : 200) });
+  context.fixture = { ...examplesFixture(), statusPolling: false };
+  vm.runInContext("Object.assign(state, fixture);", context);
+  await vm.runInContext("renderOutcomes()", context);
+  const button = retryButton(elements.get("#outcomes"));
+  assert.ok(button);
+  await button.listeners.get("click")();
+  assert.equal(requests, 2);
+  assert.ok(elements.get("#outcomes").textContent.includes("표본에 없어요"));
+});
+
+for (const change of ["commit", "key"]) {
+  test(`an old result retry cannot overwrite a newer ${change}`, async () => {
+    let settle;
+    const { context } = app({ fetch: (url) => url.includes("/da/")
+      ? new Promise((resolve) => { settle = () => resolve(response({ marker: "old" })); })
+      : Promise.resolve(response({ marker: "new" })) });
+    context.fixture = resultsFixture();
+    context.fixture.index.tracks = ["detection"];
+    context.fixture.index.task_batches = [];
+    vm.runInContext("Object.assign(state, fixture);", context);
+    const old = vm.runInContext("loadResults()", context);
+    if (change === "commit") {
+      vm.runInContext('state.index.commits.push({sha: "b", detection: {key: "db", state: "done"}}); state.sha = "b";', context);
+    } else vm.runInContext('state.index.commits[0].detection.key = "db";', context);
+    assert.equal(await vm.runInContext("loadResults()", context), true);
+    settle();
+    assert.equal(await old, false);
+    assert.equal(vm.runInContext("state.summary.marker", context), "new");
+    assert.equal(vm.runInContext("state.summaryKey", context), "db");
+  });
+}
+
+for (const status of [200, 503]) {
+test(`an old example response (${status}) cannot replace the newly selected result's examples`, async () => {
+  let settle;
+  const { context, elements } = app({ fetch: (url) => url.includes("/da/")
+    ? new Promise((resolve) => { settle = () => resolve(response({ examples: [{ id: "old", tags: ["SECRET:missed"] }] }, status)); })
+    : Promise.resolve(response({ examples: [] })) });
+  context.fixture = examplesFixture();
+  vm.runInContext("Object.assign(state, fixture);", context);
+  const old = vm.runInContext("renderOutcomes()", context);
+  vm.runInContext('state.detection = {key: "db"};', context);
+  await vm.runInContext("renderOutcomes()", context);
+  settle();
+  await old;
+  assert.ok(elements.get("#outcomes").textContent.includes("표본에 없어요"));
+  assert.ok(!elements.get("#outcomes").textContent.includes("불러오지 못했어요"));
+});
+}
+
+test("a result that has not been evaluated has no request-failure retry", async () => {
+  const { context, elements } = app({ fetch: async () => { throw new Error("unexpected fetch"); } });
+  context.fixture = resultsFixture();
+  context.fixture.index.commits[0].detection.state = "queued";
+  context.fixture.index.commits[0].latency.state = "queued";
+  context.fixture.index.task_batches = [];
+  vm.runInContext("Object.assign(state, fixture);", context);
+  await vm.runInContext("loadResults()", context);
+  vm.runInContext("renderKpis(); renderLatency(); renderTask();", context);
+  assert.ok(elements.get("#kpis").textContent.includes("아직 평가된 결과가 없어요"));
+  assert.ok(elements.get("#latency-body").textContent.includes("아직 잰 결과가 없어요"));
+  assert.ok(!retryButton(elements.get("#kpis")));
+  assert.ok(!retryButton(elements.get("#latency-body")));
+});
 
 function taskFixture(stats) {
   return {
