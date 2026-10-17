@@ -99,7 +99,7 @@ function hash32(text) {
 
 async function getJSON(url) {
   const response = await fetch(url, { cache: "no-cache" });
-  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`${url}: HTTP ${response.status}`), { status: response.status });
   return response.json();
 }
 
@@ -1382,22 +1382,26 @@ async function refreshIndex() {
   try {
     state.index = await getJSON("data/index.json");
   } catch {
-    state.index = null;
+    if (state.index) return; // keep showing what was loaded; the next status poll tries again
   }
   await showSelected();
 }
 
 async function pollStatus() {
   if (!state.statusPolling) return;
+  let status;
   try {
-    const status = await getJSON("api/status");
-    const changed = state.status && status.index_at && status.index_at !== state.status.index_at;
-    state.status = status;
-    if (changed || (state.index && status.index_at && status.index_at > state.index.generated_at)) await refreshIndex();
-    else renderChip();
-  } catch {
-    state.statusPolling = false; // a static copy has no API; index.json carries the last status
+    status = await getJSON("api/status");
+  } catch (error) {
+    // A static copy (--export) answers 4xx: it has no API, and index.json carries the last status. A restarting
+    // server or a dropped network answers 5xx or nothing: ask again at the next tick.
+    if (error.status >= 400 && error.status < 500) state.statusPolling = false;
+    return;
   }
+  const changed = state.status && status.index_at && status.index_at !== state.status.index_at;
+  state.status = status;
+  if (!state.index || changed || (status.index_at && status.index_at > state.index.generated_at)) await refreshIndex();
+  else renderChip();
 }
 
 let resizeTimer = null;
