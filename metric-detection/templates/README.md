@@ -70,3 +70,37 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 빈칸이 없는 `{{Abc…}}`처럼 placeholder와 비슷하지만 해석되지 않는 문자열은 오타로 보고 빌드를 멈춘다. Helm의 `{{ .Values.x }}`, GitHub Actions의 `${{ secrets.X }}`처럼 공백이 있는 형태는 그대로 둔다.
 
 값은 `VERSION:템플릿파일명:session_id:kind:name`에서 결정적으로 만든다. 따라서 템플릿이 같으면 매번 같은 결과가 나오고, verify의 재생성 검사로 확인할 수 있다. 공개된 규칙으로 만든 값이라 실제 인증에 쓰면 안 된다.
+
+
+## ML 학습용 템플릿 (`ml_train_build.py`)
+
+학습용 합성 데이터([계획](../docs/README_ml-train-plan.md))는 평가용 생성기와 따로 [ml_train_build.py](../scripts/ml_train_build.py)로 만들고 검증한다. 위 문법과 kind를 모두 쓸 수 있고, 아래가 더해진다. 모든 세션은 `authored`다.
+
+```bash
+python metric-detection/scripts/ml_train_build.py build metric-detection/templates/ml_train/T.jsonl        # 만들기
+python metric-detection/scripts/ml_train_build.py verify metric-detection/data_test/sessions_ml_T.jsonl     # 검증 (따로 실행)
+python metric-detection/scripts/ml_train_build.py report metric-detection/data_test/sessions_ml_T.jsonl     # 값 모양 통계 (scikit-learn 필요)
+# -> data_test/sessions_ml_T.jsonl, data_answer/gold_ml_T.jsonl, labels_ml_T.jsonl (어려운 음성의 위치와 kind, 값은 없음)
+```
+
+| 더해진 것 | 뜻 |
+|---|---|
+| kind | [value_gen.py](../scripts/value_gen.py)의 `SECRET_KINDS`: `password_mix`, `password_random`, `password_human`, `password_weak`, `passphrase`, `generic_secret`, `generic_token`, `jwt_any`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `gcp_api_key`, `azure_storage_key`, `digitalocean_token`, `cloudflare_token`, `github_classic`, `github_oauth`, `github_app`, `github_fine_grained`, `gitlab_pat`, `npm_token`, `pypi_token`, `dockerhub_pat`, `huggingface_token`, `slack_bot`, `slack_user`, `slack_webhook`, `discord_webhook`, `sendgrid_key`, `twilio_auth_token`, `twilio_api_key`, `stripe_secret`, `stripe_publishable`, `openai_key`, `anthropic_key`, `datadog_api_key`, `shopify_token`, `postman_key`, `mapbox_public`, `private_key_any`, `rsa_private_key`, `ec_private_key`, `openssh_private_key` |
+| `{{neg:KIND}}` | 정답이 아닌 값. 나올 때마다 새 값이고 labels 파일에 위치와 KIND를 남긴다. KIND: `redaction`, `template`, `reference`, `code`, `doc_example`, `descriptor`, `empty`, `hash`, `identifier`, `non_credential`, `setting`, `public_key`, `pem_header` |
+| `\|wrap=N` | N자마다 줄바꿈을 넣는다(터미널 폭). 줄바꿈을 포함한 span 하나가 정답이다 |
+| `\|truncate=N` | 개인키 블록을 BEGIN 줄과 본문 N줄만 남기고 자른다(N ≥ 1) |
+| `meta.split` (필수) | `train`, `val`, `test`, `test_ood`. 값 시드에 들어가므로 split마다 값이 다르다. 같은 `group_id`는 한 split에만 둔다 |
+| `meta.variants` | 세션을 N번 만든다. `session_id~0` … `~N-1`, 값만 다르다 |
+| `meta.value_profile` | `mltrain`이면 기본 kind(`password`, `token`, `api_key`, `secret`, `hex_secret`, `db_uri` 등)를 여러 모양의 계열에서 뽑는다(`value_gen.PROFILE`). 비밀번호는 무작위 35%, 사람이 지은 값 30%, 약한·흔한 값 20%, 패스프레이즈 10%, hex·base64 5% |
+
+- 값은 `VERSION:split:템플릿파일명:session_id[~k]:kind:name`에서 만든다.
+- 넣은 값이 그 자리에서 정답이 될 수 없으면 그 값만 다시 뽑는다(최대 8번). 다시 뽑는 경우는 셋이다.
+  - 흔한 값이 자격증명 자리 밖에 놓였다. 흔한 값이 나오지 않는 계열에서 다시 뽑는다.
+  - label_rules가 값을 제외 kind로 읽는다.
+  - 따옴표 없는 자리에서 값이 `.`으로 끝나는 것처럼, 경계 규칙에 맞지 않는다.
+- `verify`가 보는 것은 다섯 가지다.
+  - `dataset_verify.py`의 스키마와 LABELING.md 검사
+  - 정답 자리 검사: 식별자 자리의 정답, 자격증명 자리 밖의 흔한 정답이 없어야 한다. 걸리면 템플릿을 고친다.
+  - `neg:` 값이 label_rules에서도 정답이 아닌 kind로 읽히는지
+  - split 누수: group이 한 split에만 있고, 고유한 정답 값이 두 split에 함께 나오지 않는지
+  - sessions, gold, labels 세 파일의 재생성 바이트 일치
