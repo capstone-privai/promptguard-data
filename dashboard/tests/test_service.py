@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -100,6 +101,48 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(self.service.failures, {})
         self.assertIn(job, self.service.jobs(self.plan))
         self.assertFalse(self.service.stopping.is_set())
+
+    def test_commits_merged_during_a_job_are_queued(self):
+        self.plan["datasets"] = []
+        job = self.service.jobs(self.plan)[0]
+        merged = commit("e", "4")
+        self.service.poll_seconds = 0.01
+
+        def evaluate(*_args, **_kwargs):  # the job runs until the watcher has indexed the new commit
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if merged.sha in json.dumps(self.service._read("index.json")):
+                    return
+                time.sleep(0.01)
+            raise AssertionError("the merged commit never reached index.json")
+
+        with patch("pipeline.service.repo.export"), patch("pipeline.service.repo.python_for", return_value="python"), \
+                patch("pipeline.service.repo.sync"), \
+                patch("pipeline.service.repo.commits", return_value=[*self.commits, merged]), \
+                patch("pipeline.service.runner.evaluate", side_effect=evaluate), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.service.run_job(self.plan, *job, [job])
+        self.assertEqual(self.service.failures, {})
+        index = json.loads((self.data / "index.json").read_text())
+        by_sha = {entry["sha"][0]: entry for entry in index["commits"]}
+        self.assertEqual(by_sha["d"]["detection"]["state"], "running")
+        self.assertEqual(by_sha["e"]["detection"]["state"], "queued")
+        self.assertIn("last_sync", index["status"])
+        self.assertIn("eeeeeee queued", out.getvalue())
+        self.assertEqual(self.service.jobs(self.plan)[0][1], merged)  # the next cycle starts the newest commit
+
+    def test_a_failed_fetch_during_a_job_does_not_fail_the_job(self):
+        self.plan["datasets"] = []
+        job = self.service.jobs(self.plan)[0]
+        self.service.poll_seconds = 0.01
+        with patch("pipeline.service.repo.export"), patch("pipeline.service.repo.python_for", return_value="python"), \
+                patch("pipeline.service.repo.sync", side_effect=RuntimeError("network down")), \
+                patch("pipeline.service.runner.evaluate", side_effect=lambda *_a, **_k: time.sleep(0.1)), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.service.run_job(self.plan, *job, [job])
+        self.assertEqual(self.service.failures, {})
+        self.assertIn("fetch during the running job failed: network down", out.getvalue())
+        self.assertIn("done in", out.getvalue())
 
     def test_timeout_changes_only_the_latency_key_and_queue(self):
         self.plan["commits"] = [commit("a", "1"), replace(commit("b", "1"), timeout_ms=3000),

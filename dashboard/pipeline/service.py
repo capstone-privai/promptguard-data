@@ -5,6 +5,8 @@ Each cycle fetches the branch, lists the evaluable commits, writes index.json, t
 system fingerprint and what else the numbers depend on (the benchmark for detection, the measuring environment for
 latency), so commits that did not touch the detector share results, and a new dataset or scorer version makes every
 commit due again. Jobs run one at a time: latency is never measured while the detection shards load the machine.
+A detection job can take hours, so while one runs the server keeps fetching the branch at the poll interval and
+writes the commits merged meanwhile into index.json as queued; the next cycle starts the newest of them.
 
 Keys are computed from the code files on disk, but a running process keeps the code it started with. When a pull
 changes that code, the service stops before its next cycle instead of keying results by code it does not run; the
@@ -124,6 +126,7 @@ class Service:
         self._meta_cache: dict[Path, dict[str, Any]] = {}
         self.code = code_hash()
         self.code_changed = False
+        self.poll_seconds: float | None = None  # set by run_forever; also how often a running job fetches
         self._lock_file = None  # open while this process holds the data directory
 
     # ------------------------------------------------------------------ data directory lock
@@ -280,6 +283,11 @@ class Service:
         name = f"{track} {commit.short} ({key})"
         log(f"{name}: started, {len(pending) - 1} more queued")
         began = time.monotonic()
+        finished = threading.Event()
+        watcher = None
+        if self.poll_seconds:
+            watcher = threading.Thread(target=self.watch, args=(plan, (track, key), finished), daemon=True)
+            watcher.start()
         try:
             repo.export(self.data / "repo.git", commit.sha, checkout)
             python = repo.python_for(checkout, self.config.python, self.data / "venvs", self.config.auto_venv)
@@ -313,8 +321,29 @@ class Service:
         else:
             log(f"{name}: done in {time.monotonic() - began:.0f} s")
         finally:
+            finished.set()
+            if watcher:
+                watcher.join()  # the caller writes index.json next; the watcher must not write over it
             shutil.rmtree(checkout, ignore_errors=True)
             self.set_status(state="idle", message="")
+
+    def watch(self, plan: dict[str, Any], running: tuple[str, str], finished: threading.Event) -> None:
+        """While a job runs, fetch the branch every poll interval and index the commits merged meanwhile as queued.
+        Updates plan["commits"], so the index written after the job keeps them."""
+        while not finished.wait(self.poll_seconds):
+            try:
+                repo.sync(self.config.repo_url, self.data / "repo.git", self.config.branch)
+                commits = repo.commits(self.data / "repo.git", self.config.branch)
+                known = {item.sha for item in plan["commits"]}
+                merged = [item.short for item in commits if item.sha not in known]
+                plan["commits"] = commits
+                with self.lock:
+                    self.status["last_sync"] = now()
+                if merged:
+                    log(f"fetched during the running job: {', '.join(merged)} queued")
+                self.write_index(plan, self.jobs(plan), running=running)
+            except Exception as exc:  # noqa: BLE001 - the running job goes on; the next cycle fetches again
+                log(f"fetch during the running job failed: {str(exc)[:200]}")
 
     def _save_failures(self) -> None:
         runner.write_json(self.data / "failures.json", self.failures, pretty=True)
@@ -376,6 +405,7 @@ class Service:
     # ------------------------------------------------------------------ loop
 
     def run_forever(self, poll_seconds: float) -> None:
+        self.poll_seconds = poll_seconds
         waiting = False
         try:
             while not self.stopping.is_set():
