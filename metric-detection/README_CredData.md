@@ -34,13 +34,15 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 | 판정 | 행 | 기준 |
 |---|---|---|
-| 정답: 개인키 | 1,224 | BEGIN 줄 뒤 본문이 16자 이상인 개인키 블록. 형식만으로 정답 |
-| 정답: 자격증명 자리 | 8,375 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). CredData F 1,102행, X 2,276행이 여기서 정답이 됐다 |
-| 정답: 형식 | 6,883 | 자격증명 자리 규칙에는 안 걸리지만 CredData가 T로 둔 값(토큰, 키 형식) |
-| 음성: 제외 규칙 | 37,289 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`), 코드(`code`, 버전 번호와 enum 상수 포함), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자(비밀 자리가 아닌 UUID, `ChangeToken`, `PublicKeyToken`), 문서 예시, 변수 참조 |
-| 음성: 자격증명 자리 아님 | 14,118 | F나 X로 둔 값이 자격증명 자리 밖에 있는 경우 |
+| 정답: 개인키 | 1,229 | BEGIN 줄 뒤 본문이 16자 이상인 개인키 블록. 형식만으로 정답 |
+| 정답: 자격증명 자리 | 8,865 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). CredData F 1,102행, X 2,276행이 여기서 정답이 됐다 |
+| 정답: 형식 | 6,936 | 자격증명 자리 규칙에는 안 걸리지만 CredData가 T로 둔 값(토큰, 키 형식) |
+| 음성: 제외 규칙 | 28,633 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`), 코드(`code`, 버전 번호와 enum 상수 포함), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자(비밀 자리가 아닌 UUID, `ChangeToken`, `PublicKeyToken`), 문서 예시, 변수 참조 |
+| 음성: 자격증명 자리 아님 | 22,226 | F나 X로 둔 값이 자격증명 자리 밖에 있는 경우 |
 
-CredData가 T로 둔 행 중 2,696행이 음성이 됐다. 대부분(2,299행)은 `"id": "…"`, `collectionId`, `X-Correlation-Id` 자리의 UUID와 URL 속 버킷 호스트 이름이다. LABELING.md는 이들을 `identifier`로 정한다.
+정답 값이 세션의 다른 곳에 또 나오면 퍼뜨림 기준(`label_rules.judge_occurrence`)을 따른다. 그렇게 정답이 된 등장이 676곳, 정답이 아닌 등장이 2,268곳이다(labels의 `creddata_id`가 비어 있는 행).
+
+CredData가 T로 둔 행 중 일부가 음성이 됐다. 대부분(2,299행)은 `"id": "…"`, `collectionId`, `X-Correlation-Id` 자리의 UUID와 URL 속 버킷 호스트 이름이다. LABELING.md는 이들을 `identifier`로 정한다.
 
 규칙은 F/X에서 정답으로 바뀌는 행 중 층화 표본 40개(X 20, F 20)를 사람이 검수해 다듬었다. X는 20개 모두 맞았고, F는 20개 중 3개가 틀렸다. 틀린 형태(enum 숫자 상수, `php artisan credentials:edit`, CredData가 잘못 잡은 URL 비밀번호 범위)는 규칙에 반영했다.
 
@@ -52,8 +54,8 @@ CredData가 T로 둔 행 중 2,696행이 음성이 됐다. 대부분(2,299행)�
 | `gold_from_CredData.jsonl` | 정답 span. `gold.jsonl`과 같은 형식 |
 | `labels_from_CredData.jsonl` | CredData 전체 행을 item 좌표로 옮기고 우리 판정(`gold`, `kind`, `rule`)을 붙인 분석용 파일. Category와 Id를 함께 남긴다 |
 
-세션 11,030개, item 25,345개, gold span 16,271개(SECRET 7,040 / PASSWORD 4,823 / TOKEN 2,765 / PRIVATE_KEY 1,452 / ACCESS_KEY 191). 정답인 행에서 겹치는 행을 정리한 수다(변환 규칙 참고).
-gold가 있는 item은 6,118개다. 나머지 item은 스캐너가 후보로 잡았지만 비밀이 아닌 값만 있어서 어려운 음성 데이터로 쓸 수 있다.
+세션 11,030개, item 25,345개, gold span 17,500개(SECRET 7,301 / PASSWORD 5,520 / TOKEN 3,028 / PRIVATE_KEY 1,459 / ACCESS_KEY 192). 정답인 행과 그 값의 다른 등장(아래)에서 겹치는 것을 정리한 수다(변환 규칙 참고).
+gold가 있는 item은 6,432개다. 나머지 item은 스캐너가 후보로 잡았지만 비밀이 아닌 값만 있어서 어려운 음성 데이터로 쓸 수 있다.
 
 ## 변환 규칙
 

@@ -24,7 +24,9 @@ Gold, by the rules of metric-detection/LABELING.md (label_rules.py):
   - Password hashes (category "hashed") are not gold (password_hash), as in privesc.
   - Variable references ($Password, %PASS%) (reference), redactions and templates such as ****, ####, xxxx, <token>,
     ${VAR}, your-key, EXAMPLE (placeholder), and public documentation examples such as RFC 7617's "open sesame"
-    (known_example) are not gold. Short, weak or patterned values (aaaaaaaa, 12345678, changeme) are gold.
+    (known_example) are not gold, nor is a capture label_rules.exclusion_kind names (mypassword, SOME_PASSWORD).
+    Short, weak or patterned values (aaaaaaaa, 12345678, changeme) are gold. Captures are normalized
+    (label_rules.normalize_span) and a value whose format decides its type gets that type (sk-... is SECRET).
   - Another occurrence of a gold value in the item follows the propagation rule (label_rules.classify, is_common,
     is_gold): gold (repeated_value), or identifier / not_propagated. Overlapping spans are merged; the type of the
     longest wins.
@@ -40,7 +42,7 @@ import subprocess
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
-from label_rules import classify, is_common, is_gold, occurrences
+from label_rules import exclusion_kind, expected_type, is_common, judge_occurrence, normalize_span, occurrences
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "noseyparker"
@@ -131,10 +133,13 @@ def captures(rules: list[dict], text: str) -> list[dict]:
                     continue
                 a, b = m.span(g)
                 lead, trail = EDGE_LEAD.match(text, a, b), EDGE_TRAIL.search(text, a, b)
-                a, b = lead.end(), max(lead.end(), trail.start())
+                a, b = normalize_span(text, lead.end(), max(lead.end(), trail.start()))
                 value = text[a:b]
+                kind = judge(rule, value)
+                if kind == "gold" and a < b and gold_type(rule, g) != "PRIVATE_KEY":
+                    kind = exclusion_kind(text, a, b) or "gold"
                 out.append({"start": a, "end": b, "rule": rule["id"], "group": g,
-                            "kind": judge(rule, value), "type": gold_type(rule, g)})
+                            "kind": kind, "type": expected_type(value) or gold_type(rule, g)})
     return [c for c in out if c["end"] > c["start"]]
 
 
@@ -168,14 +173,14 @@ def convert(root: Path):
                     for m in occurrences(text, value):
                         if any(c["start"] <= m.start() and m.end() <= c["end"] for c in positive):
                             continue
-                        verdict, rule_name = classify(text, m.start(), m.end())
-                        if is_gold(common, verdict):
+                        is_gold, kind, rule_name = judge_occurrence(text, m.start(), m.end(), common)
+                        if is_gold:
                             positive.append({"start": m.start(), "end": m.end(), "rule": None, "group": None,
                                              "kind": "gold", "type": kind_type})
                             stats["gold_repeated_value"] += 1
                         else:
                             others.append({"start": m.start(), "end": m.end(), "rule": rule_name, "group": None,
-                                           "kind": "identifier" if verdict == "ident" else "not_propagated"})
+                                           "kind": kind})
                 spans = merge(positive, stats)
                 for span_id, s in enumerate(spans):
                     gold.append({"session_id": session_id, "item_id": 0, "span_id": span_id,

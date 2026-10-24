@@ -28,7 +28,7 @@ import json
 from pathlib import Path
 import re
 
-from label_rules import classify, is_common, is_gold, occurrences
+from label_rules import is_common, judge_occurrence, occurrences
 REVIEWS_DIR = Path(__file__).resolve().parents[1] / "reviews"
 KEY = r"(?:pass(?:word|wd)?|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|auth|credential|client[_-]?secret)"
 REGEXES = {
@@ -70,7 +70,7 @@ def apply_review(sessions: list[dict], review: dict[tuple[str, str], dict], name
     """Gold and label rows from a review file (see review_candidates.py). Each verdict names one place the value
     occurs; the value is read back from there and checked against its SHA-256, so the file stores no values. A
     value judged a credential is gold where it was judged, and at its other occurrences in that session by the
-    propagation rule of LABELING.md (label_rules.classify, is_common, is_gold)."""
+    propagation rule of LABELING.md (label_rules.judge_occurrence)."""
     texts = {(s["session_id"], i["item_id"]): i["text"] for s in sessions for i in s["items"]}
     channels = {(s["session_id"], i["item_id"]): i["channel"] for s in sessions for i in s["items"]}
     items_of_session: dict[str, list[int]] = {}
@@ -89,10 +89,9 @@ def apply_review(sessions: list[dict], review: dict[tuple[str, str], dict], name
             for m in occurrences(text, value):
                 row = r
                 if r["verdict"] == "credential" and (item_id, m.start(), m.end()) != (iid, a, b):
-                    verdict, rule = classify(text, m.start(), m.end())
-                    if not is_gold(common, verdict):
-                        row = {**r, "verdict": "not_credential",
-                               "reason": "identifier" if verdict == "ident" else "not_propagated"}
+                    gold, kind, _ = judge_occurrence(text, m.start(), m.end(), common)
+                    if not gold:
+                        row = {**r, "verdict": "not_credential", "reason": kind}
                 per_item.setdefault((sid, item_id), []).append((m.start(), m.end(), r["type"], row))
         if not any(x == a and y == b for x, y, _, _ in per_item.get((sid, iid), [])):  # judged inside a longer string
             per_item.setdefault((sid, iid), []).append((a, b, r["type"], r))

@@ -25,6 +25,9 @@ credential positions, so a source span is a credential position; its length or s
     credentials (non_auth_cookie).
   - A value the text presents as an example ("such as River2025!", an OpenAPI "example:" field) is not gold
     (doc_example, label_rules.is_example).
+  - A source span that label_rules.exclusion_kind names (a label or phrase such as "Temporary Password:** ...",
+    "username and password") is not gold. Gold spans are normalized (label_rules.normalize_span) and a value
+    whose format decides its type gets that type (a JWT is TOKEN).
   - Placeholders and partly masked values (********, 732****, YOUR_API_KEY_HERE) are not gold (placeholder).
   - pin and cvv spans are not gold (pin, cvv): short card and account codes, outside metric-detection's credentials.
   - Another occurrence of a gold value in the same document is gold if the value is distinct and the occurrence is
@@ -47,7 +50,7 @@ import re
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
-from label_rules import classify, is_common, is_example, is_gold, occurrences
+from label_rules import exclusion_kind, expected_type, is_common, is_example, judge_occurrence, normalize_span, occurrences
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "Nemotron-PII"
@@ -158,7 +161,11 @@ def document_spans(text: str, spans: list[dict], stats: Counter) -> tuple[list[d
             labels.append({"start": start, "end": end, "source_label": label, "gold": False, "kind": "pii_other"})
             continue
         kind, kind_type, a, b = judge(label, text, start, end)
-        a, b = trim(text, a, b)
+        a, b = normalize_span(text, *trim(text, a, b))
+        if kind_type and a < b and (excluded := exclusion_kind(text, a, b)):
+            kind, kind_type = excluded, None  # the generator's span holds a label or phrase, not a value
+        if kind_type:
+            kind_type = expected_type(text[a:b]) or kind_type
         stats[f"{label}:{kind}"] += 1
         if kind_type and a < b:
             gold.append({"start": a, "end": b, "type": kind_type, "kind": kind})
@@ -171,13 +178,12 @@ def document_spans(text: str, spans: list[dict], stats: Counter) -> tuple[list[d
         for m in occurrences(text, value):
             if any(g["start"] <= m.start() and m.end() <= g["end"] for g in gold + extra):
                 continue
-            verdict, rule = classify(text, m.start(), m.end())
-            if is_gold(common, verdict):
+            is_gold, kind, rule = judge_occurrence(text, m.start(), m.end(), common)
+            if is_gold:
                 extra.append({"start": m.start(), "end": m.end(), "type": kind_type, "kind": "repeated_value",
                               "rule": rule})
                 stats["gold_repeated_value"] += 1
             else:
-                kind = "identifier" if verdict == "ident" else "not_propagated"
                 others.append({"start": m.start(), "end": m.end(), "source_label": None, "gold": False, "kind": kind,
                                "rule": rule})
                 stats[kind] += 1

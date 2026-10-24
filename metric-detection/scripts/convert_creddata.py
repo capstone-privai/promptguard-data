@@ -19,6 +19,8 @@ T/F/X verdict answers a different question (is this a real, live credential in a
   - Otherwise a T row is gold, and an F or X row is gold only in a credential position (label_rules.classify:
     "password": "test", aws_secret_access_key='dummy'); weak and test values count, as everywhere else.
   - A T row in an identifier position (a bucket host name in a URL) is not gold.
+  - Other occurrences of a gold value in the session follow the propagation rule (label_rules.judge_occurrence).
+  - Spans are normalized (label_rules.normalize_span) and a value whose format decides its type gets that type.
 
 Conversion rules:
   - Lines are split the way CredData does: \\r\\n and \\r become \\n, then split on \\n.
@@ -43,7 +45,7 @@ import subprocess
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
-from label_rules import classify, exclusion_kind
+from label_rules import classify, exclusion_kind, expected_type, is_common, judge_occurrence, normalize_span, occurrences
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "CredData"
@@ -51,6 +53,7 @@ NAME = "CredData"
 PRIVATE_KEY_CATEGORIES = {"PEM Private Key", "BASE64 Private Key", "BASE64 encoded PEM Private Key",
                           "JWK", "PASERK Keys", "NKEY Seed"}
 PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
+PEM_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY-----")
 PEM_MIN_BODY = 16  # base64 characters after the BEGIN line, header lines (Proc-Type: ...) aside; as in privesc
 ACCESS_KEY_CATEGORIES = {"AWS Client ID", "Alibaba Access Key ID", "Tencent WeChat API App ID",
                          "AWS S3 Bucket", "Firebase Domain"}
@@ -153,6 +156,31 @@ def judge(truth: str, kind_type: str, text: str, start: int, end: int) -> tuple[
     return False, "identifier" if verdict == "ident" else "not_credential_position", rule
 
 
+def propagate(items: list[dict], item_spans: list[list[dict]], session_id: str, labels: list[dict], stats: Counter):
+    """Other occurrences of a gold value in the session, by the propagation rule (label_rules.judge_occurrence)."""
+    values = {}
+    for item, spans in zip(items, item_spans):
+        for s in spans:
+            values.setdefault(item["text"][s["start"]:s["end"]], s)
+    for value, source in sorted(values.items()):
+        common = is_common(value)
+        for item, spans in zip(items, item_spans):
+            text = item["text"]
+            for m in occurrences(text, value):
+                if any(s["start"] < m.end() and m.start() < s["end"] for s in spans):
+                    continue
+                if source["type"] == "PRIVATE_KEY":  # gold by its format wherever it is
+                    is_gold, kind, rule = True, "private_key", None
+                else:
+                    is_gold, kind, rule = judge_occurrence(text, m.start(), m.end(), common)
+                labels.append({"session_id": session_id, "item_id": item["item_id"], "start": m.start(), "end": m.end(),
+                               "gold": is_gold, "kind": "repeated_value" if is_gold else kind, "rule": rule,
+                               "category": source["category"], "type": source["type"], "creddata_id": None})
+                stats[f"{'gold' if is_gold else 'excluded'}_repeated_{'value' if is_gold else kind}"] += 1
+                if is_gold:
+                    spans.append({"start": m.start(), "end": m.end(), "type": source["type"], "category": source["category"]})
+
+
 def resolve_overlaps(spans: list[dict], stats: Counter) -> list[dict]:
     """spans: {start, end, type, category}. Returns non-overlapping spans sorted by start."""
     def overlaps(a, b):
@@ -196,7 +224,7 @@ def convert(creddata: Path, context: int):
         lines = read_lines(path)
         repo, file_id = rows[0].raw["RepoName"], rows[0].raw["FileID"]
         session_id = f"creddata-{repo}-{file_id}"
-        items, item_lines = [], []
+        items, item_lines, item_spans = [], [], []
         for item_id, (a, b) in enumerate(windows(rows, len(lines), context)):
             text_lines = lines[a - 1:b]
             text = "".join(line + "\n" for line in text_lines)
@@ -206,11 +234,15 @@ def convert(creddata: Path, context: int):
                 pos += len(line) + 1
             spans = []
             for row in (r for r in rows if a <= r.first and r.last <= b):
-                start, end = tidy(text, *trim(text, *locate(row, lines, line_offset)))
+                start, end = normalize_span(text, *tidy(text, *trim(text, *locate(row, lines, line_offset))))
                 if start >= end:
                     stats["empty"] += 1
                     continue
-                kind = gold_type(row.raw["Category"], row.raw["CryptographyKey"])
+                kind = expected_type(text[start:end]) or gold_type(row.raw["Category"], row.raw["CryptographyKey"])
+                if kind == "PRIVATE_KEY" and (m := PEM_BEGIN.search(text, start, end)):
+                    # BEGIN line through END line (or the last body line), as LABELING.md 경계 asks
+                    last = PEM_END.search(text, m.start(), end)
+                    start, end = m.start(), last.end() if last else end
                 is_gold, verdict, rule = judge(row.truth, kind, text, start, end)
                 labels.append({"session_id": session_id, "item_id": item_id, "start": start, "end": end,
                                "gold": is_gold, "kind": verdict, "rule": rule, "category": row.raw["Category"],
@@ -218,11 +250,14 @@ def convert(creddata: Path, context: int):
                 stats[f"{'gold' if is_gold else 'excluded'}_{verdict}"] += 1
                 if is_gold:
                     spans.append({"start": start, "end": end, "type": kind, "category": row.raw["Category"]})
+            item_spans.append(spans)
+            items.append({"item_id": item_id, "turn_id": "t0", "channel": "tool_output", "text": text})
+            item_lines.append([a, b])
+        propagate(items, item_spans, session_id, labels, stats)
+        for item_id, spans in enumerate(item_spans):
             for span_id, s in enumerate(resolve_overlaps(spans, stats)):
                 gold.append({"session_id": session_id, "item_id": item_id, "span_id": span_id,
                              "span": {"start": s["start"], "end": s["end"], "type": s["type"]}})
-            items.append({"item_id": item_id, "turn_id": "t0", "channel": "tool_output", "text": text})
-            item_lines.append([a, b])
         sessions.append({"session_id": session_id, "items": items, "meta": {
             "dataset_version": f"creddata@{commit[:12]}", "source": "creddata",
             "origin": "external", "allowed_use": ALLOWED_USE["external"],

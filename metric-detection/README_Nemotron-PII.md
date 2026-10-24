@@ -28,12 +28,12 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_Nemotron-PII.jsonl` | 정답 span. `gold.jsonl`과 같은 형식 |
 | `labels_from_Nemotron-PII.jsonl` | 원본의 모든 span(자격증명이 아닌 PII 포함)을 item 좌표로 옮기고 우리 판정을 붙인 분석용 파일. 값은 들어 있지 않다 |
 
-세션 6,000개: 정답이 있는 문서 3,000개, 정답이 없는 문서 3,000개. 정답 span 3,892개(PASSWORD 2,144 / SECRET 1,275 / TOKEN 473). 29개 업종, 1,365가지 문서 유형이고, 미국식(`us`)과 국제식(`intl`) 문서가 반씩이다.
+세션 6,000개: 정답이 있는 문서 3,000개, 정답이 없는 문서 3,000개. 정답 span 3,857개(PASSWORD 2,104 / SECRET 1,269 / TOKEN 484). 29개 업종, 1,365가지 문서 유형이고, 미국식(`us`)과 국제식(`intl`) 문서가 반씩이다.
 
 | channel | item | 정답 span |
 |---|---|---|
-| `prompt` | 3,056 | 1,873 |
-| `tool_output` | 2,944 | 2,019 |
+| `prompt` | 3,056 | 1,876 |
+| `tool_output` | 2,944 | 1,981 |
 
 정답이 많은 문서 유형은 Application Setup Guide, Temporary Password Notification, API Endpoint, API Documentation, Test Login Script, System Configuration File 순이다.
 
@@ -70,7 +70,7 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 - **인증 쿠키**: 쿠키 이름에 `sess`, `sid`, `auth`, `jwt`, `token`, `api_key`, `access`, `refresh`, `remember`, `login`, `credential`이 들어가면 인증 쿠키로 본다. 이름에 `csrf`, `xsrf`, `xss`, `cart`, `consent`, `pref`, `track`, `utm`, `_ga`, `feature`, `order`, `timezone`, `lang`, `font`, `theme`가 들어가면 인증 쿠키가 아니다.
 - 원본 span은 생성기가 자격증명 자리에 넣은 값이라, 길이나 강도와 상관없이 정답이다([LABELING.md](LABELING.md)). 짧은 비밀번호(`River45#`, `welcome1`)도 정답이다.
 - **예시라고 밝힌 값은 정답이 아니다**(`doc_example`). 값 바로 앞이 "such as", "like", "e.g.", "for example", OpenAPI의 `example:`인 경우다(`label_rules.is_example`). 정책 문서의 "use a strong password, such as `River2025!`"가 여기에 든다.
-- **같은 값이 문서의 다른 곳에 또 나오면** LABELING.md의 퍼뜨림 기준을 따른다. 고유한 값은 식별자 자리가 아니면 정답(`repeated_value`, 14개), 흔한 값은 자격증명 자리에서만 정답이다. 정답이 아닌 등장은 `identifier`나 `not_propagated`로 남는다.
+- **같은 값이 문서의 다른 곳에 또 나오면** LABELING.md의 퍼뜨림 기준을 따른다. 고유한 값은 식별자 자리가 아니면 정답(`repeated_value`, 9개), 흔한 값은 자격증명 자리에서만 정답이다. 정답이 아닌 등장은 `identifier`나 `not_propagated`로 남는다.
 - 겹치는 정답 span은 합치고, type은 더 긴 span을 따른다.
 - 원본의 offset을 기준으로 쓴다. 원본 span의 `text` 필드는 가끔 소문자로 바뀌어 있다(문서에서 문장 첫 글자라 대문자인 `Password1`이 `password1`로 적힌 경우). 대소문자 말고도 다르면 그 span을 버린다(이 표본에서는 0개).
 
@@ -78,13 +78,14 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 | kind | 원본 라벨 | 수 | 내용 |
 |---|---|---|---|
-| `doc_example` | password 33, api_key 27, http_cookie 22 | 82 | 글에서 예시라고 밝힌 값 ("such as …", "like …", `example:`) |
+| `doc_example` | 원본 span 82, 다른 등장 16 | 98 | 글에서 예시라고 밝힌 값 ("such as …", "like …", `example:`) |
+| `descriptor` 외 | password 등 | 38 | 원본 span이 값이 아니라 라벨이나 문구인 것(`Temporary Password:** …`, `username and password`)과 코드·참조 (`label_rules.exclusion_kind`) |
 | `placeholder` | password | 1 | `********`, `732****`, `YOUR_API_KEY_HERE` 같은 자리표시자 |
-| `known_example` | api_key 32, http_cookie 68 | 100 | jwt.io의 예시 JWT를 그대로 쓰거나 payload만 바꾼 값 (AWS 문서의 `…EXAMPLE` 키처럼 `example`이 든 값은 placeholder로 센다) |
+| `known_example` | api_key, http_cookie | 103 | jwt.io의 예시 JWT를 그대로 쓰거나 payload만 바꾼 값 (AWS 문서의 `…EXAMPLE` 키처럼 `example`이 든 값은 placeholder로 센다) |
 | `non_auth_cookie` | http_cookie | 193 | `csrf_token`, `timezone`, `_ga`, `pref_layout`, `order_id` 같은 쿠키 |
 | `cookie_name_only` | http_cookie | 11 | `=`가 없이 쿠키 이름만 라벨된 span |
-| `identifier` | 정답 값의 다른 등장 | 11 | 정답 값이 사용자명 칸 같은 식별자 자리에 또 나온 것 |
-| `pin` | pin | 405 | 4~6자리 PIN |
+| `identifier` | 정답 값의 다른 등장 | 2 | 정답 값이 사용자명 칸 같은 식별자 자리에 또 나온 것 |
+| `pin` | pin | 404 | 4~6자리 PIN |
 | `cvv` | cvv | 288 | 카드 보안 코드 |
 | `pii_other` | 그 밖의 라벨 | 45,024 | 이름, 이메일, 날짜, 주소, 카드 번호, 계좌 번호 등 |
 

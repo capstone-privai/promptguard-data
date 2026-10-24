@@ -27,7 +27,7 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_noseyparker.jsonl` | 정답 span |
 | `labels_from_noseyparker.jsonl` | 모든 규칙의 모든 캡처와 우리 판정(규칙 id, 그룹 번호 포함). 값은 들어 있지 않다 |
 
-세션 573개(양성 예시 430 + 음성 예시 143), 정답 span 408개(SECRET 149 / TOKEN 147 / PASSWORD 100 / ACCESS_KEY 6 / PRIVATE_KEY 6). 정답이 있는 세션은 391개다. 양성 예시 430개 중 359개, 음성 예시 143개 중 32개에 정답이 있다(아래).
+세션 573개(양성 예시 430 + 음성 예시 143), 정답 span 396개(SECRET 150 / TOKEN 145 / PASSWORD 89 / ACCESS_KEY 6 / PRIVATE_KEY 6). 정답이 있는 세션은 379개다. 양성 예시 430개 중 344개, 음성 예시 143개 중 35개에 정답이 있다(아래).
 
 예시는 에이전트가 읽은 파일 조각으로 보고 모두 `tool_output`에 둔다. CredData 변환과 같다.
 
@@ -48,11 +48,11 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 | kind | 수 | 내용 |
 |---|---|---|
-| `identifier` | 57 | `secret` 카테고리가 없는 규칙의 캡처, 또는 정답 값이 식별자 자리에 또 나온 것 |
-| `placeholder` | 5 | 가린 흔적과 자리표시자: `****`, `####`, `xxxx`, `<…>`, `${…}`, `your-…`, `redacted`. `aaaa…`, `12345678`, `a1b2c3…`처럼 무작위 모양이 아닌 값은 정답이다(LABELING.md) |
+| `identifier` | 58 | `secret` 카테고리가 없는 규칙의 캡처, 또는 정답 값이 식별자 자리에 또 나온 것 |
+| `placeholder`, `template` | 12 | 가린 흔적과 자리표시자(`mypassword`, `SOME_PASSWORD`, `YOURPASSWROD` 포함): `****`, `####`, `xxxx`, `<…>`, `${…}`, `your-…`, `redacted`. `aaaa…`, `12345678`, `a1b2c3…`처럼 무작위 모양이 아닌 값은 정답이다(LABELING.md) |
 | `password_hash` | 19 | 비밀번호 해시 |
 | `known_example` | 10 | 공개 문서의 예시 값: RFC 7617의 `open sesame`과 그 Basic 인증 문자열, RFC 6750의 `mF_9.B5f-4.1JqM`, `EXAMPLE`이 든 값 |
-| `reference` | 4 | 변수 참조 (`$Password`, `%nothing%`) |
+| `reference` | 7 | 변수 참조 (`$Password`, `%nothing%`) |
 | `not_propagated` | 4 | 흔한 정답 값이 자격증명 자리 밖에 또 나온 것 |
 
 - 같은 값이 예시의 다른 곳에 또 나오면 그 위치도 정답이다.

@@ -123,23 +123,27 @@ EXCLUDED_VALUE = [
     ("template", re.compile(r"<[^<>\n]*(?:pass|token|key|secret|your|user|name|value|here|id)[^<>\n]*>|\{\{|\byour[_-]?"
                             r"|_here\b|placeholder|change[_-]?this"
                             r"|^(?:my|some|the|a)[_-]?(?:password|passwd|pass|secret|token|key|api[_-]?key)$", re.I)),
-    ("doc_example", re.compile(r"example", re.I)),
+    ("doc_example", re.compile(r"example(?!\.(?:com|org|net|edu|invalid|test|local)\b)", re.I)),  # AKIA...EXAMPLE, not example.com
     # ${TOKEN}, %PASS%, {token}, or the NAME of an environment variable (GITHUB_PASSWORD)
     ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|os\.environ|process\.env|getenv"
                              r"|^(?:[A-Z0-9]+_)*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|KEY|APIKEY|AUTH|USER)(?:_[A-Z0-9]+)*$")),
-    ("code", re.compile(r"\w\(|\w\[|[{}]$|^[A-Za-z_]{1,16}=$|\bself\.|\bthis\.|^\w+(?:\.\w+)+,?$"
-                        r"|^(?:true|false|null|none|nil|undefined)$"
+    ("code", re.compile(r"^[A-Za-z_$][\w.$]*[(\[]|[{}]$|^[A-Za-z_]{1,16}=$|\bself\.|\bthis\.|^[A-Za-z_]+(?:\.[A-Za-z_]+)+,?$"
+                        r"|^(?:true|false|null|none|nil|undefined)$|^[).,;:\]}>]|\s\+$|^:\w+$|^&\w+$|\[$|^\W$|^\d+/\w+$"
+                        r"|\\u00[0-9a-fA-F]{2}|&(?:lt|gt|amp|quot);"  # punctuation, symbols, escaped markup
                         r"|^[\^~>=<]*v?\d+(?:\.\d+)+(?:[-+.]\w+)*$", re.I)),  # also version numbers
 ]
 # (kind, pattern on the text right before the value)
 EXCLUDED_BEFORE = [
     ("identifier", re.compile(r"(?i)(?:PublicKeyToken|ClientToken|ChangeToken|ClientRequestToken|client_request_token"
                               r"|next_?token|page_?token|idempotency_?key)\W{0,4}$")),
-    ("descriptor", re.compile(r"\s--?[\w-]+\s{2,}$")),  # --password   help text column
+    ("descriptor", re.compile(r"(?:^|\n)[ \t]*(?:-\w,[ \t]*)?--?[\w-]+[ \t]{2,}$")),  # --password   help text column
     ("code", re.compile(r"\b(?:artisan|rake|rails)\s+[\w-]*:$")),  # php artisan credentials:edit
 ]
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-SECRET_WORD = re.compile(r"(?i)secret|token|passw|pwd|api_?key|apikey|access_?key|private|auth|credential")
+SECRET_WORD = re.compile(r"(?i)secret|token|passw|pwd|api[ _-]?key|access[ _-]?key|private|auth|credential")
+# An unquoted variable named after a credential: clientSecret, new_password (quoted, it is a literal value)
+SECRET_NAME = re.compile(r"[a-z]+(?:[A-Z][a-z]+|_[a-z]+)*_?(?:[Ss]ecret|[Pp]assword|[Pp]asswd|[Tt]oken|[Aa]pi[Kk]ey)"
+                         r"(?:[A-Z][a-z]+|_[a-z]+)*")
 UNQUOTED_CODE_AFTER = re.compile(r"^[,)}]")  # PrivateKey: priv, / Credentials: creds}
 
 
@@ -205,13 +209,17 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
     if UUID.fullmatch(value) and not SECRET_WORD.search(before[-60:]):
         return "identifier"  # "id": "…", RequestId: a UUID outside a secret's place
     quoted = before[-1:] in ("'", '"', "`")
-    if not quoted and re.fullmatch(r"[A-Za-z_]+", value) and UNQUOTED_CODE_AFTER.match(text[end:end + 5]):
+    if not quoted and SECRET_NAME.fullmatch(value):
+        return "reference"
+    if (not quoted and re.fullmatch(r"[A-Za-z_]+", value) and UNQUOTED_CODE_AFTER.match(text[end:end + 5])
+            and re.search(r"[:=][ \t]*$", before)):
         return "code"  # an unquoted variable: PrivateKey: priv,
     if not quoted and value.isdigit() and re.match(r"\s*,", text[end:end + 5]) and re.search(
             r"\b[A-Z]\w*_[A-Z]\w*\s*=\s*$", before):
         return "code"  # an enum member: IoErr_Auth = 7178,
     key = re.search(r"([A-Za-z_][\w.-]*)\W{0,4}$", before)
-    if key and len(value) > 3 and re.sub(r"[-.]", "_", value.lower()) in key.group(1).lower():
+    if (key and (value.isupper() or "-" in value) and re.search(r"[A-Za-z0-9][_-][A-Za-z0-9]", value)
+            and re.sub(r"[-.]", "_", value.lower()) in key.group(1).lower()):
         return "code"  # REFRESH_TOKEN = "REFRESH_TOKEN": the value names its own key
     return None
 
@@ -219,7 +227,7 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
 def is_phrase(value: str) -> bool:
     """Words rather than a value: "Authentication token", "force password prompt", a translated screen string.
     One line of two or more words, most of them English words or non-ASCII words."""
-    if "\n" in value or not re.search(r"\S\s+\S", value):
+    if "\n" in value or not re.search(r"\S\s+\S", value) or re.search(r"[=;]", value):
         return False
     words = re.findall(r"[^\W\d_]{3,}", value)
     wordish = sum(1 for w in words if not w.isascii() or w.lower() in common_words())
@@ -252,3 +260,69 @@ def is_common(value: str, session_identifiers: set[str] = frozenset()) -> bool:
 
 def is_gold(common: bool, verdict: str) -> bool:
     return verdict == "slot" or (not common and verdict != "ident")
+
+
+def judge_occurrence(text: str, start: int, end: int, common: bool,
+                     negative_context: re.Pattern | None = None) -> tuple[bool, str, str | None]:
+    """(gold, kind, rule) for another occurrence of a gold value: an excluded kind (exclusion_kind) is never gold,
+    otherwise the propagation rule decides. kind is the classify verdict when gold, else the exclusion kind,
+    identifier or not_propagated."""
+    excluded = exclusion_kind(text, start, end)
+    if excluded:
+        return False, excluded, None
+    verdict, rule = classify(text, start, end, negative_context)
+    if is_gold(common, verdict):
+        return True, verdict, rule
+    return False, "identifier" if verdict == "ident" else "not_propagated", rule
+
+
+QUOTES = "'\"`"
+AUTH_SCHEME = re.compile(r"(?i)(?:Bearer|Basic|Digest|token)[ \t]+(?=\S)")
+TRAILING_PUNCT = ".,;)]`*"
+
+
+def normalize_span(text: str, start: int, end: int) -> tuple[int, int]:
+    """The span LABELING.md "경계" asks for: no surrounding whitespace, wrapping quotes, auth scheme, or trailing
+    punctuation. Punctuation stays when a quote right after the value closes it ("abc!." in quotes)."""
+    while start < end and text[start].isspace():
+        start += 1
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    while end - start >= 2 and text[start] in QUOTES and text[end - 1] == text[start]:
+        start, end = start + 1, end - 1
+    m = AUTH_SCHEME.match(text, start, end)
+    if m:
+        start = m.end()
+    closed = start > 0 and text[start - 1] in QUOTES and text[end:end + 1] == text[start - 1]
+    if not closed:
+        while end > start + 1:
+            if text[end - 1].isspace() or (text[end - 1] in TRAILING_PUNCT and not _closes(text, start, end)):
+                end -= 1
+            elif re.search(r"\\[nrt]$", text[start:end]) and end - start > 2:  # an escaped line break after it
+                end -= 2
+            else:
+                break
+    return start, end
+
+
+def _closes(text: str, start: int, end: int) -> bool:
+    """Whether the last character closes a bracket opened inside the value: [FUZZ], f(x)."""
+    opening = {")": "(", "]": "["}.get(text[end - 1])
+    return bool(opening) and text.count(opening, start, end - 1) > text.count(text[end - 1], start, end - 1)
+
+
+# Formats that decide the type on their own (LABELING.md "유형").
+TYPE_BY_FORMAT = [
+    ("PRIVATE_KEY", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
+    ("ACCESS_KEY", re.compile(r"^(?:AKIA|ASIA)[A-Z0-9]{16}$|^pk_(?:live|test)_\w+$|^pk\.ey")),
+    ("TOKEN", re.compile(r"^(?:gh[pousr]_|github_pat_|glpat-|xox[abposr]-)\w|^eyJ[\w-]+\.eyJ[\w-]+\.[\w-]*$")),
+    ("SECRET", re.compile(r"^(?:sk-|sk_live_|AIza)[\w-]{10,}$|^https://hooks\.slack\.com/")),
+]
+
+
+def expected_type(value: str) -> str | None:
+    """The type a value's format alone decides, or None when the format does not decide it."""
+    for kind, pattern in TYPE_BY_FORMAT:
+        if pattern.search(value):
+            return kind
+    return None

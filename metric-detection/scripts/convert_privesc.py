@@ -35,6 +35,7 @@ Excluded candidates, kept only in the labels file:
   - password_hash: crypt(3) hashes such as /etc/shadow entries (not usable to authenticate).
   - identifier: a candidate in an identifier position (a username, path, host name, ls owner column).
   - not_propagated: a common candidate outside a credential position ("Running as root", "password" as a JSON key).
+  - an exclusion kind of label_rules.exclusion_kind (code, template, ...): never gold, wherever it is.
 Every labels row of a candidate occurrence also records its rule and value class (common or distinct).
 """
 from __future__ import annotations
@@ -47,7 +48,7 @@ import re
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
-from label_rules import BREAK, classify, is_common, is_gold, occurrences
+from label_rules import BREAK, is_common, judge_occurrence, occurrences
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "privesc-llm-data"
@@ -106,13 +107,13 @@ def find_values(text: str, channel: str, values, common: set[str]) -> tuple[list
     for value in values:
         value_class = "common" if value in common else "distinct"
         for m in occurrences(text, value):
-            verdict, rule = classify(text, m.start(), m.end(), negative_context)
+            gold, kind, rule = judge_occurrence(text, m.start(), m.end(), value in common, negative_context)
             row = {"start": m.start(), "end": m.end(), "rule": rule, "value_class": value_class}
-            if is_gold(value in common, verdict):
-                spans.append({**row, "type": "PASSWORD", "kind": "credential_slot" if verdict == "slot" else "propagated",
+            if gold:
+                spans.append({**row, "type": "PASSWORD", "kind": "credential_slot" if kind == "slot" else "propagated",
                               "wrapped": m.group() != value})
             else:
-                others.append({**row, "kind": "identifier" if verdict == "ident" else "not_propagated"})
+                others.append({**row, "kind": kind})
     return spans, others
 
 

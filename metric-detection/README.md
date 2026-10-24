@@ -116,7 +116,7 @@ python metric-detection/scripts/dataset_verify.py <sessions 파일> [--gold <gol
     [--nemotron ../Nemotron-PII] [--openhands ../openhands-feedback] [--swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories] [--noseyparker ../noseyparker]
 ```
 
-검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, 정답 누락(같은 비밀값이 그 세션의 다른 곳에도 나오는데 정답에서 빠졌는지), 재생성 시 바이트 단위 일치다. 누락 검사는 세션 안에서만 본다. 정답은 세션별 출처에서 나오므로, 같은 사용자명이나 흔한 비밀번호가 아무것도 심지 않은 다른 세션에 나오는 것은 비밀이 아니다.
+검증 항목은 스키마, origin과 용도의 일치, span 범위와 겹침, [LABELING.md](LABELING.md)의 "검증" 네 가지(제외 규칙에 걸린 정답, 정규화되지 않은 span, 퍼뜨림 기준으로 정답이어야 하는데 빠진 등장, 형식과 맞지 않는 유형), 재생성 시 바이트 단위 일치다. 누락 검사는 세션 안에서만 본다. 정답은 세션별 출처에서 나오므로, 같은 사용자명이나 흔한 비밀번호가 아무것도 심지 않은 다른 세션에 나오는 것은 비밀이 아니다.
 
 생성 스크립트는 세션을 `metric-detection/data_test/`, 정답을 `metric-detection/data_answer/`에 쓰고, 폴더가 없으면 만든다. 채점기의 기본 입력(`data_test/sessions.jsonl`)도 내장 코퍼스를 만들어야 생긴다. 검증 스크립트는 `data_test/sessions*.jsonl`에 짝지어진 `data_answer/gold*.jsonl`을 자동으로 찾는다.
 
