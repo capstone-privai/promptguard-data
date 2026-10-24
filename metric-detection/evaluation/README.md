@@ -114,7 +114,7 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 - **줄 단위 지표는 다른 데이터셋과 비교하지 않는다.** `tool_output`의 text는 도구 결과의 JSON 문자열이라, 그 안의 줄바꿈이 실제 줄바꿈이 아니라 `\n` 두 글자다. 그래서 이 채널의 item 58,943개는 모두 한 줄로 세고, `lines_total`(133,743. 채점하지 않는 `tool_input` 58,943줄은 빠진다)이 작게 잡힌다. 이를 분모로 쓰는 `fp_per_1k_lines`와 `density_per_1k_lines`는 이 데이터 안에서만 비교한다.
 - **같은 이유로 줄 단위로 동작하는 탐지 규칙에 불리할 수 있다.** 도구 결과 전체가 한 줄이고 비밀 주변에 JSON 따옴표와 escape가 붙는다. 실제 에이전트의 셸 출력과 모양이 다르다는 점을 결과에 적는다.
 - **유형별 recall은 PASSWORD와 PRIVATE_KEY만 나온다.** 나머지 유형은 `None`이다. PASSWORD는 대부분 12자 무작위 영숫자나 16자 hex라 키 이름이나 맥락 없이 값만 보고는 찾기 어렵다.
-- **과잉 마스킹의 출처는 labels 파일로 나눈다.** `metric-detection/labels_from_privesc-llm-data.jsonl`에는 정답에서 뺀 `password_hash`(`/etc/shadow` 해시), `username_occurrence`(사용자 이름과 같은 비밀번호가 경로나 사용자명 필드에 나온 것), `attempted_password`(에이전트가 시도했지만 심은 값이 아닌 비밀번호)의 좌표가 있다. `per_edit.jsonl`에서 `overlaps_gold`가 false인 edit를 이 좌표와 맞추면, 과잉 마스킹이 이런 비밀번호성 문자열에서 나왔는지 다른 텍스트에서 나왔는지 나눠 볼 수 있다.
+- **과잉 마스킹의 출처는 labels 파일로 나눈다.** `metric-detection/labels_from_privesc-llm-data.jsonl`에는 정답에서 뺀 `password_hash`(`/etc/shadow` 해시), `identifier`(비밀번호 후보가 사용자명·경로·소유자 칸 같은 식별자 자리에 나온 것), `not_propagated`(흔한 값이 자격증명 자리 밖에 나온 것)의 좌표가 있다. `per_edit.jsonl`에서 `overlaps_gold`가 false인 edit를 이 좌표와 맞추면, 과잉 마스킹이 이런 비밀번호성 문자열에서 나왔는지 다른 텍스트에서 나왔는지 나눠 볼 수 있다.
 - **규모.** 세션 2,200개, item 122,286개다. 채점하는 세 채널을 검사할 때 gitleaks는 `run_gitleaks.py` 전체가 약 15초, CredSweeper(`--ml off`)는 약 35초 걸린다(Apple Silicon 노트북 기준).
 - origin이 `recorded`라 `rule_eval`, `ml_eval`, `ml_train` 모두 허용된다. CredSweeper `--ml on`으로도 평가할 수 있다.
 

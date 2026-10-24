@@ -27,7 +27,7 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_noseyparker.jsonl` | 정답 span |
 | `labels_from_noseyparker.jsonl` | 모든 규칙의 모든 캡처와 우리 판정(규칙 id, 그룹 번호 포함). 값은 들어 있지 않다 |
 
-세션 573개(양성 예시 430 + 음성 예시 143), 정답 span 351개(TOKEN 141 / SECRET 137 / PASSWORD 67 / ACCESS_KEY 3 / PRIVATE_KEY 3). 정답이 있는 세션은 336개다. 양성 예시 430개 중 311개, 음성 예시 143개 중 25개에 정답이 있다(아래).
+세션 573개(양성 예시 430 + 음성 예시 143), 정답 span 396개(SECRET 150 / TOKEN 145 / PASSWORD 89 / ACCESS_KEY 6 / PRIVATE_KEY 6). 정답이 있는 세션은 379개다. 양성 예시 430개 중 344개, 음성 예시 143개 중 35개에 정답이 있다(아래).
 
 예시는 에이전트가 읽은 파일 조각으로 보고 모두 `tool_output`에 둔다. CredData 변환과 같다.
 
@@ -48,31 +48,32 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 | kind | 수 | 내용 |
 |---|---|---|
-| `identifier` | 56 | `secret` 카테고리가 없는 규칙의 캡처 |
-| `short` | 39 | 9자 미만 (`admin`, `pyne`, `4ian1234`, `password`) |
-| `placeholder` | 35 | `aaaa…`(같은 글자 8개 이상), `ABCDEFGH…`, `12345678`, `a1b2c3…`, `xxxx`, `<…>`, `${…}` |
+| `identifier` | 58 | `secret` 카테고리가 없는 규칙의 캡처, 또는 정답 값이 식별자 자리에 또 나온 것 |
+| `placeholder`, `template` | 12 | 가린 흔적과 자리표시자(`mypassword`, `SOME_PASSWORD`, `YOURPASSWROD` 포함): `****`, `####`, `xxxx`, `<…>`, `${…}`, `your-…`, `redacted`. `aaaa…`, `12345678`, `a1b2c3…`처럼 무작위 모양이 아닌 값은 정답이다(LABELING.md) |
 | `password_hash` | 19 | 비밀번호 해시 |
 | `known_example` | 10 | 공개 문서의 예시 값: RFC 7617의 `open sesame`과 그 Basic 인증 문자열, RFC 6750의 `mF_9.B5f-4.1JqM`, `EXAMPLE`이 든 값 |
-| `reference` | 4 | 변수 참조 (`$Password`, `%nothing%`) |
-| `common_password` | 1 | 흔한 비밀번호 (`Secret123`) |
+| `reference` | 7 | 변수 참조 (`$Password`, `%nothing%`) |
+| `not_propagated` | 4 | 흔한 정답 값이 자격증명 자리 밖에 또 나온 것 |
 
 - 같은 값이 예시의 다른 곳에 또 나오면 그 위치도 정답이다.
 - 겹치는 정답 span은 합치고, type은 더 긴 span을 따른다. 여러 규칙이 같은 값을 잡는 경우가 많아 66번 합쳤다.
 - Python `re`가 받지 않는 정규식 2개(패턴 중간의 전역 플래그)는 플래그를 맨 앞으로 옮겨 컴파일한다.
 - 예시 값 상당수는 Nosey Parker 작성자가 실제 값을 일부 바꿔 무력화한 값이다(값 중간의 `ace5`, `Cf99` 같은 표시). 실제 형식을 따르는 합성·난독화 값이므로 metric-detection 정의에서는 자격증명이다. CredData의 난독화 T 값과 같다.
 
-## 기존 두 데이터(CredData, privesc-llm-data)와 같은 기준으로 맞춘 점
+## LABELING.md를 이 데이터에 적용한 점
 
 | 결정 | 근거 |
 |---|---|
 | 해시는 정답이 아님 | privesc의 `password_hash` |
-| 9자 미만, 흔한 비밀번호는 정답이 아님 | privesc, CredData |
-| placeholder, 문서 예시 값, 변수 참조는 정답이 아님 | metric-detection 정의, CredData의 X |
+| 짧거나 흔한 값도 자격증명 자리에 있으면 정답 (`password=secret`, `admin`, `aaaa…`) | LABELING.md "원칙". 값의 강도는 보지 않는다 |
+| 가린 흔적, 자리표시자, 문서 예시 값, 변수 참조는 정답이 아님 | LABELING.md `redaction`, `template`, `doc_example`, `reference` |
 | 식별자(계정 id, 버킷, client id)는 정답이 아님. 단 AWS 액세스 키 id와 공개용 키는 ACCESS_KEY 정답 | CredData가 AWS Client ID를 ACCESS_KEY로 두는 것, metric-detection 정의의 "공개용 키 → 자격증명", 합성 데이터의 `pk_test_` |
 | 사용자명과 비밀을 함께 잡는 규칙은 비밀 부분만 | privesc에서 사용자명은 자격증명 자리에서만 정답으로 본 것과 같은 취지 |
-| 같은 값의 모든 등장 위치가 정답 | privesc |
+| 같은 값의 다른 등장 위치는 퍼뜨림 기준을 따른다 | LABELING.md |
 
 ## 기준 시스템 점수
+
+아래 점수는 2026-10-24 정답 기준 통일(LABELING.md) 전의 정답으로 잰 것이다. 다시 재야 한다.
 
 `metric-detection/results/all_20261014-021351`(2026-10-14, 정확 일치 채점. CredSweeper 1.19.0, gitleaks 8.30.1, PromptGuard `promptguard-claude-demoV0@8973016`의 탐지기 앙상블). 모든 item이 `tool_output`이라 세 시스템이 같은 텍스트를 본다.
 

@@ -28,12 +28,12 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_Nemotron-PII.jsonl` | 정답 span. `gold.jsonl`과 같은 형식 |
 | `labels_from_Nemotron-PII.jsonl` | 원본의 모든 span(자격증명이 아닌 PII 포함)을 item 좌표로 옮기고 우리 판정을 붙인 분석용 파일. 값은 들어 있지 않다 |
 
-세션 6,000개: 정답이 있는 문서 3,000개, 정답이 없는 문서 3,000개. 정답 span 3,866개(PASSWORD 1,969 / SECRET 1,388 / TOKEN 509). 29개 업종, 1,365가지 문서 유형이고, 미국식(`us`)과 국제식(`intl`) 문서가 반씩이다.
+세션 6,000개: 정답이 있는 문서 3,000개, 정답이 없는 문서 3,000개. 정답 span 3,857개(PASSWORD 2,104 / SECRET 1,269 / TOKEN 484). 29개 업종, 1,365가지 문서 유형이고, 미국식(`us`)과 국제식(`intl`) 문서가 반씩이다.
 
 | channel | item | 정답 span |
 |---|---|---|
-| `prompt` | 3,062 | 1,892 |
-| `tool_output` | 2,938 | 1,974 |
+| `prompt` | 3,056 | 1,876 |
+| `tool_output` | 2,944 | 1,981 |
 
 정답이 많은 문서 유형은 Application Setup Guide, Temporary Password Notification, API Endpoint, API Documentation, Test Login Script, System Configuration File 순이다.
 
@@ -61,14 +61,16 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 | 원본 라벨 | 정답 | type | 정답에서 빼는 경우 |
 |---|---|---|---|
-| `password` | span 전체 | PASSWORD | 9자 미만, 흔한 비밀번호 목록, placeholder |
-| `api_key` | span 전체 | SECRET | 9자 미만, 공개 문서 예시 값, placeholder |
-| `http_cookie` | **쿠키 값만** (`user_session=⟦값⟧; Path=/`) | TOKEN | 인증과 무관한 쿠키, 9자 미만, 공개 문서 예시 값 |
+| `password` | span 전체 | PASSWORD | 예시라고 밝힌 값, placeholder |
+| `api_key` | span 전체 | SECRET | 예시라고 밝힌 값, 공개 문서 예시 값, placeholder |
+| `http_cookie` | **쿠키 값만** (`user_session=⟦값⟧; Path=/`) | TOKEN | 인증과 무관한 쿠키, 예시라고 밝힌 값, 공개 문서 예시 값 |
 | `pin`, `cvv` | 아님 | | 전부 |
 | 그 밖의 PII (이름, 이메일, 카드 번호 …) | 아님 | | 전부 |
 
 - **인증 쿠키**: 쿠키 이름에 `sess`, `sid`, `auth`, `jwt`, `token`, `api_key`, `access`, `refresh`, `remember`, `login`, `credential`이 들어가면 인증 쿠키로 본다. 이름에 `csrf`, `xsrf`, `xss`, `cart`, `consent`, `pref`, `track`, `utm`, `_ga`, `feature`, `order`, `timezone`, `lang`, `font`, `theme`가 들어가면 인증 쿠키가 아니다.
-- **같은 값이 문서의 다른 곳에 또 나오면 그 위치도 정답이다**(9개). 원본은 한 번만 라벨한 경우가 있다.
+- 원본 span은 생성기가 자격증명 자리에 넣은 값이라, 길이나 강도와 상관없이 정답이다([LABELING.md](LABELING.md)). 짧은 비밀번호(`River45#`, `welcome1`)도 정답이다.
+- **예시라고 밝힌 값은 정답이 아니다**(`doc_example`). 값 바로 앞이 "such as", "like", "e.g.", "for example", OpenAPI의 `example:`인 경우다(`label_rules.is_example`). 정책 문서의 "use a strong password, such as `River2025!`"가 여기에 든다.
+- **같은 값이 문서의 다른 곳에 또 나오면** LABELING.md의 퍼뜨림 기준을 따른다. 고유한 값은 식별자 자리가 아니면 정답(`repeated_value`, 9개), 흔한 값은 자격증명 자리에서만 정답이다. 정답이 아닌 등장은 `identifier`나 `not_propagated`로 남는다.
 - 겹치는 정답 span은 합치고, type은 더 긴 span을 따른다.
 - 원본의 offset을 기준으로 쓴다. 원본 span의 `text` 필드는 가끔 소문자로 바뀌어 있다(문서에서 문장 첫 글자라 대문자인 `Password1`이 `password1`로 적힌 경우). 대소문자 말고도 다르면 그 span을 버린다(이 표본에서는 0개).
 
@@ -76,32 +78,34 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 | kind | 원본 라벨 | 수 | 내용 |
 |---|---|---|---|
-| `short_password` | password | 93 | 9자 미만 (`River45#`, `iloveyou`, `welcome1`) |
-| `common_password` | password | 5 | 흔한 비밀번호 목록에 있는 9자 이상 값 (`123456789`, `password1` 등) |
+| `doc_example` | 원본 span 82, 다른 등장 16 | 98 | 글에서 예시라고 밝힌 값 ("such as …", "like …", `example:`) |
+| `descriptor` 외 | password 등 | 38 | 원본 span이 값이 아니라 라벨이나 문구인 것(`Temporary Password:** …`, `username and password`)과 코드·참조 (`label_rules.exclusion_kind`) |
 | `placeholder` | password | 1 | `********`, `732****`, `YOUR_API_KEY_HERE` 같은 자리표시자 |
-| `known_example` | api_key 32, http_cookie 83 | 115 | jwt.io의 예시 JWT를 그대로 쓰거나 payload만 바꾼 값 (AWS 문서의 `…EXAMPLE` 키처럼 `example`이 든 값은 placeholder로 센다) |
-| `non_auth_cookie` | http_cookie | 208 | `csrf_token`, `timezone`, `_ga`, `pref_layout`, `order_id` 같은 쿠키 |
-| `cookie_name_only` | http_cookie | 13 | `=`가 없이 쿠키 이름만 라벨된 span |
-| `short_cookie` | http_cookie | 1 | 값이 9자 미만인 인증 쿠키 |
-| `pin` | pin | 377 | 4~6자리 PIN |
-| `cvv` | cvv | 286 | 카드 보안 코드 |
-| `pii_other` | 그 밖의 라벨 | 44,999 | 이름, 이메일, 날짜, 주소, 카드 번호, 계좌 번호 등 |
+| `known_example` | api_key, http_cookie | 103 | jwt.io의 예시 JWT를 그대로 쓰거나 payload만 바꾼 값 (AWS 문서의 `…EXAMPLE` 키처럼 `example`이 든 값은 placeholder로 센다) |
+| `non_auth_cookie` | http_cookie | 193 | `csrf_token`, `timezone`, `_ga`, `pref_layout`, `order_id` 같은 쿠키 |
+| `cookie_name_only` | http_cookie | 11 | `=`가 없이 쿠키 이름만 라벨된 span |
+| `identifier` | 정답 값의 다른 등장 | 2 | 정답 값이 사용자명 칸 같은 식별자 자리에 또 나온 것 |
+| `pin` | pin | 404 | 4~6자리 PIN |
+| `cvv` | cvv | 288 | 카드 보안 코드 |
+| `pii_other` | 그 밖의 라벨 | 45,024 | 이름, 이메일, 날짜, 주소, 카드 번호, 계좌 번호 등 |
 
 탐지기가 이런 값을 가리면 과잉 마스킹으로 센다. `per_edit.jsonl`의 좌표를 labels 파일과 맞추면 과잉 마스킹이 PIN이나 카드 번호에서 나왔는지, 쿠키에서 나왔는지 나눠 볼 수 있다.
 
-## 기존 두 데이터(CredData, privesc-llm-data)와 같은 기준으로 맞춘 점
+## LABELING.md를 이 데이터에 적용한 점
 
 | 결정 | 근거 |
 |---|---|
-| 9자 미만 비밀번호와 흔한 비밀번호는 정답이 아니다 | privesc가 9자 미만 값을 흔한 비밀번호 목록에서 온 값으로 보고 뺐고, CredData도 약한 비밀번호를 F로 둔다. 이 데이터의 짧은 값도 `River45#`, `welcome1` 같은 흔한 값이다. 길이 기준만으로 남는 `123456789` 같은 값은 목록으로 뺐다 |
+| 짧거나 흔한 비밀번호도 정답이다 | 값의 강도는 보지 않는다(LABELING.md "원칙"). 생성기가 비밀번호 자리에 넣은 값이다 |
 | 공개 문서 예시 값(jwt.io 예시 JWT 등)은 정답이 아니다 | metric-detection 정의의 "문서에 나오는 예시 값 → 아님"(`AKIAIOSFODNN7EXAMPLE`)과 같다 |
 | placeholder와 일부를 가린 값은 정답이 아니다 | metric-detection 정의, CredData의 X |
 | 쿠키는 값만 정답이다 | 합성 데이터의 `Set-Cookie: session=⟦값⟧`과 같다. 쿠키 이름과 속성은 비밀이 아니다 |
-| 같은 값의 다른 등장 위치도 정답이다 | privesc의 "값이 등장하는 모든 위치를 정답으로 잡는다"와 같다 |
-| PIN과 CVV는 정답이 아니다 | metric-detection은 소프트웨어 자격증명(PASSWORD, SECRET, TOKEN, ACCESS_KEY, PRIVATE_KEY)을 본다. PIN은 4~6자리라 privesc의 길이 기준에도 걸린다 |
-| 업무 문서 속 정책 예시 비밀번호("such as `Ocean@2025`")도 정답이다 | Nemotron은 실제 값과 예시 값을 구분하지 않는다. 문맥으로 가르는 규칙을 만들면 근거 없는 추측이 들어가므로 원본 라벨을 따른다. CredData의 T를 그대로 쓴 것과 같은 태도다 |
+| 같은 값의 다른 등장 위치는 퍼뜨림 기준을 따른다 | LABELING.md "같은 값의 다른 등장 위치" |
+| PIN과 CVV는 정답이 아니다 | metric-detection은 소프트웨어 자격증명(PASSWORD, SECRET, TOKEN, ACCESS_KEY, PRIVATE_KEY)을 본다(LABELING.md `non_credential`) |
+| 업무 문서 속 예시 비밀번호("such as `Ocean@2025`")는 정답이 아니다 | LABELING.md `doc_example`: 글에서 예시라고 밝힌 값. Nemotron은 실제 값과 예시 값을 구분하지 않으므로 앞 문맥으로 가른다 |
 
 ## 기준 시스템 점수
+
+아래 점수는 2026-10-24 정답 기준 통일(LABELING.md) 전의 정답으로 잰 것이다. 문서 표본과 정답이 바뀌었으므로 다시 재야 한다.
 
 `metric-detection/results/all_20261014-021351`(2026-10-14, 정확 일치 채점. CredSweeper 1.19.0, gitleaks 8.30.1, PromptGuard `promptguard-claude-demoV0@8973016`의 탐지기 앙상블). 세 시스템 모두 채점하는 세 채널(`prompt`, `instructions`, `tool_output`)을 검사한다.
 

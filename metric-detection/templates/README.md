@@ -55,7 +55,7 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `aws_access_key` | ACCESS_KEY | `AKIA` + 16자 |
 | `aws_secret_key` | SECRET | 40자 (`/+` 포함) |
 | `publishable_key` | ACCESS_KEY | `pk_test_` + 24자 |
-| `db_uri` | SECRET | `postgresql://service:<pw>@db.example.invalid:5432/app` 전체 |
+| `db_uri` | PASSWORD | `postgresql://service:<pw>@db.example.invalid:5432/app`의 `<pw>` 부분만 (URL 속 자격증명은 비밀번호만 정답, [LABELING.md](../LABELING.md)). `url` 변환만 쓸 수 있다 |
 | `private_key` | PRIVATE_KEY | Ed25519 PKCS#8 PEM (BEGIN/END 포함) |
 
 | transform | 결과 |

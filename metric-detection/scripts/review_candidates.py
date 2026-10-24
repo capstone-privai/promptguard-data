@@ -16,8 +16,8 @@ The worksheet holds the values with their context: keep it under metric-detectio
 per value, its SHA-256, one place it occurs (session_id, item_id, start, end), type, verdict, reason and which
 detectors found it; the converter reads the value back from that place.
 
-collect pre-fills verdicts that follow mechanically from the definition and from the privesc and CredData
-conversions (placeholders, references, numbers, values shorter than 9 characters); the rest is left empty.
+collect pre-fills verdicts that follow mechanically from metric-detection/LABELING.md (placeholders, references,
+numbers, code); the rest is left empty. Length is not a reason: a short value in a credential position is gold.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ import json
 from pathlib import Path
 import re
 
-MIN_VALUE_LEN = 9
+from label_rules import is_common, judge_occurrence, occurrences
 REVIEWS_DIR = Path(__file__).resolve().parents[1] / "reviews"
 KEY = r"(?:pass(?:word|wd)?|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|auth|credential|client[_-]?secret)"
 REGEXES = {
@@ -69,7 +69,8 @@ def load_review(name: str) -> dict[tuple[str, str], dict]:
 def apply_review(sessions: list[dict], review: dict[tuple[str, str], dict], name: str):
     """Gold and label rows from a review file (see review_candidates.py). Each verdict names one place the value
     occurs; the value is read back from there and checked against its SHA-256, so the file stores no values. A
-    value judged a credential is gold at every occurrence in that session."""
+    value judged a credential is gold where it was judged, and at its other occurrences in that session by the
+    propagation rule of LABELING.md (label_rules.judge_occurrence)."""
     texts = {(s["session_id"], i["item_id"]): i["text"] for s in sessions for i in s["items"]}
     channels = {(s["session_id"], i["item_id"]): i["channel"] for s in sessions for i in s["items"]}
     items_of_session: dict[str, list[int]] = {}
@@ -82,9 +83,18 @@ def apply_review(sessions: list[dict], review: dict[tuple[str, str], dict], name
         value = texts.get((sid, iid), "")[a:b]
         if sha256(value) != r["sha256"]:
             raise ValueError(f"review {r['sha256'][:12]} no longer matches {sid}/{iid}; regenerate the review for {name}")
+        common = is_common(value)
         for item_id in items_of_session[sid]:
-            for m in re.finditer(re.escape(value), texts[(sid, item_id)]):
-                per_item.setdefault((sid, item_id), []).append((m.start(), m.end(), r["type"], r))
+            text = texts[(sid, item_id)]
+            for m in occurrences(text, value):
+                row = r
+                if r["verdict"] == "credential" and (item_id, m.start(), m.end()) != (iid, a, b):
+                    gold, kind, _ = judge_occurrence(text, m.start(), m.end(), common)
+                    if not gold:
+                        row = {**r, "verdict": "not_credential", "reason": kind}
+                per_item.setdefault((sid, item_id), []).append((m.start(), m.end(), r["type"], row))
+        if not any(x == a and y == b for x, y, _, _ in per_item.get((sid, iid), [])):  # judged inside a longer string
+            per_item.setdefault((sid, iid), []).append((a, b, r["type"], r))
         stats[f"reviewed_{r['verdict']}"] += 1
     gold, labels = [], []
     order = {key: n for n, key in enumerate(texts)}
@@ -127,8 +137,6 @@ def suggest(value: str, before: str = "") -> tuple[str | None, str | None]:
         return "not_credential", "variable or attribute reference"
     if NUMBER.match(value):
         return "not_credential", "number, version or time format"
-    if len(value) < MIN_VALUE_LEN:
-        return "not_credential", "shorter than 9 characters (privesc, CredData)"
     if IDENTIFIER.match(value):
         return "not_credential", "plain identifier or word"
     return None, None

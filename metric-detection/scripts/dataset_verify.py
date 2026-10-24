@@ -15,10 +15,13 @@ Checks:
   2. meta: one source per file; allowed_use matches dataset_policy.ALLOWED_USE[origin]
   3. gold schema: one span per row, span_id = 0..k-1 per item, items without spans omitted
   4. span bounds: 0 <= start < end <= len(text), no overlap within an item, known type
-  5. coverage: within the session a long (>= 9 chars) gold value belongs to, every occurrence of it is
-     inside a gold span, or in a range the converter's labels file records as username_occurrence
-     (deliberately not gold)
-     (skipped for origin=external: those labels are the source dataset's, not ours)
+  5. LABELING.md "검증" (every dataset):
+     a. no gold value is a kind label_rules.exclusion_kind names (private keys aside)
+     b. every gold span is normalized: label_rules.normalize_span leaves it as it is
+     c. coverage: within the session a gold value belongs to, an occurrence outside every gold span is one the
+        propagation rule leaves out (a common value outside a credential position, an identifier position), or
+        one the converter's labels file records as identifier or not_propagated
+     d. a value whose format decides its type (label_rules.expected_type) has that type
   6. reproduction: regenerating from the recorded source yields byte-identical files
      (built-in corpus, meta.template, or the converter's source folder flag; skipped without the flag)
 Exits 1 and lists every problem found if any check fails.
@@ -35,12 +38,12 @@ import tempfile
 
 from dataset_build import CHANNELS, REPO_ROOT, TYPES, build, from_template, write_jsonl
 from dataset_policy import ALLOWED_USE
+from label_rules import exclusion_kind, expected_type, is_common, judge_occurrence, normalize_span, occurrences
 
 SESSION_KEYS = {"session_id", "items", "meta"}
 ITEM_KEYS = {"item_id", "turn_id", "channel", "text"}
 GOLD_KEYS = {"session_id", "item_id", "span_id", "span"}
 SPAN_KEYS = {"start", "end", "type"}
-MIN_COVERAGE_LEN = 9
 
 
 def read_jsonl(path: Path, errors: list[str]) -> list[dict]:
@@ -155,11 +158,26 @@ def check_gold(gold: list[dict], texts: dict[tuple[str, int], str], name: str, e
     return spans
 
 
+def check_labels(spans: list[tuple], texts: dict[tuple[str, int], str], errors: list[str]):
+    """LABELING.md checks 1, 2 and 4 on every gold span."""
+    for sid, iid, start, end, kind in spans:
+        text = texts[(sid, iid)]
+        value = text[start:end]
+        where = f"{sid}/{iid} at {start}"
+        if kind != "PRIVATE_KEY" and (excluded := exclusion_kind(text, start, end)):
+            errors.append(f"gold {value[:20]!r}... in {where} is {excluded} (LABELING.md 정답이 아닌 것)")
+        if normalize_span(text, start, end) != (start, end):
+            a, b = normalize_span(text, start, end)
+            errors.append(f"gold span {value[:20]!r}... in {where} is not normalized (expected {text[a:b][:20]!r}...)")
+        if (want := expected_type(value)) and want != kind:
+            errors.append(f"gold {value[:20]!r}... in {where} is {kind}, its format says {want}")
+
+
 def check_coverage(spans: list[tuple], texts: dict[tuple[str, int], str], errors: list[str],
                    exempt: dict[tuple[str, int], list[tuple[int, int]]] | None = None):
-    # Short values ("postgres", "changeme") also occur as ordinary words, so they are exempt.
     # A value is searched only in the session it is gold in: gold comes from that session's own source, and
     # the same username or common password can appear in another session where nothing was planted.
+    # Part of a longer string is not an occurrence (label_rules.occurrences, LABELING.md).
     covered, per_session = {}, {}
     for sid, iid, start, end, _ in spans:
         covered.setdefault((sid, iid), []).append((start, end))
@@ -170,21 +188,23 @@ def check_coverage(spans: list[tuple], texts: dict[tuple[str, int], str], errors
         items_of_session.setdefault(key[0], []).append(key)
     for sid, values in per_session.items():
         for value in values:
-            if len(value) < MIN_COVERAGE_LEN:
-                continue
+            common = is_common(value)
             for key in items_of_session.get(sid, []):
-                allowed = covered.get(key, []) + exempt.get(key, [])
-                for m in re.finditer(re.escape(value), texts[key]):
-                    if not any(s <= m.start() and m.end() <= e for s, e in allowed):
+                for m in occurrences(texts[key], value):
+                    # overlapping a gold span counts: the converters skip occurrences that overlap gold
+                    if (any(s < m.end() and m.start() < e for s, e in covered.get(key, []))
+                            or any(s <= m.start() and m.end() <= e for s, e in exempt.get(key, []))):
+                        continue
+                    if judge_occurrence(texts[key], m.start(), m.end(), common)[0]:
                         errors.append(f"uncovered occurrence of {value[:20]!r}... in {key} at {m.start()}")
 
 
 def excluded_on_purpose(sessions_path: Path) -> dict[tuple[str, int], list[tuple[int, int]]]:
     """Ranges a converter recorded as deliberately not gold, from its labels file.
 
-    Only username_occurrence: a planted password that is also a username, where it is not being supplied as
-    a credential (a home directory path, an /etc/passwd user field). The value is gold elsewhere, so the
-    coverage check would otherwise flag every such occurrence.
+    Only occurrences of a value that is gold elsewhere: identifier (a username, path, host name) and
+    not_propagated (a common value outside a credential position). The coverage check would otherwise flag
+    every such occurrence.
     """
     name = sessions_path.name
     labels = sessions_path.parents[1] / ("labels" + name[len("sessions"):]) if name.startswith("sessions") else None
@@ -192,7 +212,8 @@ def excluded_on_purpose(sessions_path: Path) -> dict[tuple[str, int], list[tuple
         return {}
     out: dict[tuple[str, int], list[tuple[int, int]]] = {}
     for row in read_jsonl(labels, []):
-        if not row.get("gold") and row.get("kind") == "username_occurrence":
+        if not row.get("gold") and (row.get("kind") in ("identifier", "not_propagated")
+                                    or row.get("reason") in ("identifier", "not_propagated")):
             out.setdefault((row["session_id"], row["item_id"]), []).append((row["start"], row["end"]))
     return out
 
@@ -278,9 +299,8 @@ def main():
     texts = check_sessions(sessions, args.sessions.name, errors)
     source, origin = check_meta(sessions, args.sessions.name, errors)
     spans = check_gold(gold, texts, gold_path.name, errors)
-    coverage = "skipped (external labels)" if origin == "external" else "passed"
-    if origin != "external":
-        check_coverage(spans, texts, errors, excluded_on_purpose(args.sessions))
+    check_labels(spans, texts, errors)
+    check_coverage(spans, texts, errors, excluded_on_purpose(args.sessions))
     reproduction = "skipped"
     if not args.skip_rebuild and sessions:
         rows, reproduction = regenerate(sessions, source, origin, args.creddata, args.privesc,
@@ -308,7 +328,7 @@ def main():
         "items_without_spans": len(texts) - len(positive),
         "spans": len(spans),
         "spans_by_type": dict(sorted(Counter(s[4] for s in spans).items())),
-        "coverage": coverage,
+        "labeling": "passed",
         "reproduction": reproduction,
     }, ensure_ascii=False, indent=2))
 

@@ -28,14 +28,14 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_SWE-Gym.jsonl` | 정답 span |
 | `labels_from_SWE-Gym.jsonl` | 검토한 후보 값의 모든 등장 위치와 판정, 이유. 값은 들어 있지 않다 |
 
-세션 491개, item 18,900개, 약 60만 줄, 정답 span 2개(TOKEN).
+세션 491개, item 18,900개, 약 60만 줄, 정답 span 58개(PASSWORD 46 / SECRET 9 / TOKEN 3, 세션 15개). 채점하는 정답은 `tool_input`을 뺀 27개(PASSWORD 20 / SECRET 4 / TOKEN 3)다.
 
 | channel | item | 정답 span |
 |---|---|---|
 | `instructions` | 491 | 0 |
-| `prompt` | 1,331 | 0 |
-| `tool_input` | 8,779 | 0 |
-| `tool_output` | 8,299 | 2 |
+| `prompt` | 1,331 | 4 |
+| `tool_input` | 8,779 | 31 |
+| `tool_output` | 8,299 | 23 |
 
 ## 변환 규칙
 
@@ -54,38 +54,42 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 ### 정답
 
-라벨이 없는 데이터라 후보 852개를 모아 판정했다. 방법과 기준은 [reviews/README.md](reviews/README.md)에 있다.
+라벨이 없는 데이터라 후보 852개를 모아 판정했다. 방법과 기준은 [reviews/README.md](reviews/README.md)에 있다. 정답 값의 다른 등장 위치는 [LABELING.md](LABELING.md)의 퍼뜨림 기준을 따른다.
 
 | 판정 | 값 | 내용 |
 |---|---|---|
-| credential | 2 | moto의 가짜 Cognito가 재현 스크립트 실행 중에 발급한 AccessToken과 IdToken (RS256 JWT, `swe-gym-251`). 무작위 값이고 그 모의 서비스에 대해 실제로 동작한다 |
-| not_credential | 850 | 아래 표 |
+| credential | 23 | moto 테스트와 재현 스크립트에서 비밀번호·키 자리에 넣은 리터럴(`Password='Password123!'`, `TemporaryPassword='TempP@ssw0rd!'`, `MasterUserPassword="test123456789"`, `SecretString='test-value'`, `aws_secret_access_key='fake'` 등 21개), moto의 가짜 Cognito가 발급한 AccessToken과 IdToken(`swe-gym-251`) |
+| not_credential | 829 | 아래 표 |
 
 | 이유 | 값 |
 |---|---|
-| 이름이나 단어 하나 | 249 |
+| 이름이나 단어 하나 | 240 |
 | 코드 표현식 (`kwargs.get(`, `Optional[str`) | 194 |
-| 9자 미만 | 121 |
+| 어느 등장 위치도 자격증명 자리가 아닌 짧은 값 | 118 |
 | 변수·속성 참조 | 102 |
 | 비밀 자리가 아닌 UUID (AWS request id, 리소스 id) | 89 |
 | 코드, 이름, 식별자, 옵션 (사람 판정) | 41 |
 | 리소스 이름(ARN), 이메일, 경로 | 16 |
 | 숫자, 버전 | 12 |
-| 테스트 placeholder 값, 시크릿 이름 (`test-token`, `test-secret`) | 10 |
-| 흔한 패턴의 테스트 비밀번호 (`Password123!`, `P@ssw0rd!`, `TempPass123!`) | 8 |
+| 시크릿 이름, 기기 푸시 토큰 (`test-secret`, SNS의 `test-token`) | 9 |
 | 해시 (dask `tokenize()` 출력) | 4 |
 | placeholder | 4 |
 
-## 기존 두 데이터(CredData, privesc-llm-data)와 같은 기준으로 맞춘 점
+2026-10-24에 길이와 모양으로 자동 판정했던 음성 중, 등장 위치 하나라도 자격증명 자리 규칙(`label_rules.classify`)에 걸리는 값을 모두 다시 봤고 21개를 정답으로 바꿨다.
+
+## LABELING.md를 이 데이터에 적용한 점
 
 | 결정 | 근거 |
 |---|---|
-| moto 가짜 Cognito의 JWT는 정답 | 테스트 환경이지만 무작위 값이 실제로 인증에 쓰인다. privesc가 시나리오 환경에 심은 값을 정답으로 둔 것과 같다 |
-| moto 테스트의 `Password123!`류 비밀번호는 정답이 아님 | 흔한 패턴의 테스트 값. CredData의 F, privesc의 흔한 비밀번호와 같다 |
-| request id로 쓰인 UUID는 정답이 아님 | metric-detection 정의의 "UUID, request id → 아님" |
-| 해시는 정답이 아님 | privesc의 `password_hash`와 같다 |
+| 테스트 비밀번호(`Password123!`, `P@ssw0rd!`, `TempPass123!`)도 자격증명 자리에 있으면 정답 | 값의 강도나 테스트용인지는 보지 않는다 |
+| moto 가짜 Cognito의 JWT는 정답 | 인증 자리의 JWT |
+| request id로 쓰인 UUID, `ClientToken`(중복 요청 방지 값), 페이지네이션 토큰은 정답이 아님 | LABELING.md `identifier` |
+| enum 상수(`REFRESH_TOKEN = "REFRESH_TOKEN"`, `AWS_SECRET_ACCESS_KEY = 'AWS_SECRET_ACCESS_KEY'`)는 정답이 아님 | 값이 아니라 이름이다 |
+| 해시는 정답이 아님 | LABELING.md `hash` |
 
 ## 기준 시스템 점수
+
+아래 점수는 2026-10-24 정답 기준 통일(LABELING.md) 전의 정답으로 잰 것이다. 다시 재야 한다.
 
 `metric-detection/results/all_20261014-021351`(2026-10-14, 정확 일치 채점. CredSweeper 1.19.0, gitleaks 8.30.1, PromptGuard `promptguard-claude-demoV0@8973016`의 탐지기 앙상블). 세 시스템 모두 채점하는 세 채널(`prompt`, `instructions`, `tool_output`)을 검사한다. `tool_input`(정답 없음)의 edit와 줄 75,990줄은 채점하지 않는다.
 
