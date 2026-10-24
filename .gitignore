@@ -29,3 +29,7 @@ metric-detection/**/*_from_SWE-Gym.jsonl
 metric-detection/**/*_from_noseyparker.jsonl
 # ML training corpus (ml_train_build.py): fake credentials in real formats, like the synthetic sets above
 metric-detection/**/labels_ml_*.jsonl
+# LLM responses as returned (ml_train_write.py): a rejected one may hold a literal secret the model wrote
+metric-detection/templates/ml_train/raw/
+# Cards are rebuilt byte for byte from card_config.toml (ml_train_cards.py); batches/ records the sha256 used
+metric-detection/templates/ml_train/cards*.jsonl

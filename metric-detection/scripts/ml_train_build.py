@@ -5,6 +5,11 @@ dataset_build placeholder syntax and generators (metric-detection/templates/READ
   {{kind:name}} with a value_gen.SECRET_KINDS kind      service formats, password families, private keys
   {{neg:kind}}                                          a value that is not gold (value_gen.NEGATIVE_KINDS),
                                                         recorded in the labels file
+  {{mask:NAME}}                                         in tool_input only: the placeholder PromptGuard would have
+                                                        shown the agent for a secret seen earlier ([KIND_n],
+                                                        value_gen.mask_kind), recorded in the labels file as mask.
+                                                        NAME is the secret's name (s1 of {{password:s1}}) or the
+                                                        value of a {{TYPE=value}}. A tool_input holds no secret
   |wrap=N, |truncate=N                                  terminal wrapping; a key block cut after N body lines
   meta.split (required)        train, val, test or test_ood; part of every value seed. A group stays in one split
   meta.variants                build the session N times with different values (session_id~k)
@@ -30,8 +35,8 @@ import re
 import sys
 import tempfile
 
-from dataset_build import (CHANNELS, GENERATORS, PLACEHOLDER, REPO_ROOT, SUSPICIOUS, TYPES, VERSION, transform,
-                           uri_parts, write_jsonl)
+from dataset_build import (CHANNELS, GENERATORS, PLACEHOLDER, REPO_ROOT, SUSPICIOUS, TYPES, URI_HOST, VERSION,
+                           transform, uri_parts, write_jsonl)
 from dataset_policy import ALLOWED_USE
 import dataset_verify as V
 from label_rules import classify, exclusion_kind, is_common, normalize_span
@@ -42,6 +47,8 @@ ORIGIN = "authored"
 SPLITS = ("train", "val", "test", "test_ood")
 REDRAWS = 8
 NEG = "neg:"  # Slot.kind prefix of a {{neg:kind}} value: recorded in labels, never gold
+MASK = "mask"  # labels kind of a {{mask:NAME}}
+MASK_TEXT = re.compile(r"\[[A-Z0-9_]+_\d+\]")
 KINDS = {**GENERATORS, **{kind: (kind_type, lambda seed, gen=gen: gen(value_gen.Draw(seed)))
                           for kind, (kind_type, gen) in value_gen.SECRET_KINDS.items()}}
 assert len(KINDS) == len(GENERATORS) + len(value_gen.SECRET_KINDS)
@@ -76,10 +83,44 @@ def apply_transforms(out: str, kind_type: str, transforms: list[str]) -> tuple[s
     return out, kind_type
 
 
+class Masks:
+    """What PromptGuard's Native Mod shows the agent for the secrets of a session so far: [KIND_n], numbered per kind
+    in the order the secrets first appear outside tool_input (the agent only sees a value after it is masked)."""
+
+    def __init__(self):
+        self.mask: dict[str, str] = {}
+        self.keys_of: dict[str, set[str]] = {}
+        self.count: Counter = Counter()
+
+    def see(self, key: str, kind_type: str):
+        if key in self.mask:
+            return
+        kind, sep, ref = key.partition(":")
+        if not sep:  # {{TYPE=value}}
+            kind, _, ref = key.partition("=")
+        mask_kind = value_gen.mask_kind(kind) if sep else value_gen.MASK_KIND_OF_TYPE[kind_type]
+        if mask_kind == "PASSWORD" and kind_type == "TOKEN":  # Basic auth: the detector masks the base64 as a token
+            mask_kind = "TOKEN"
+        self.count[mask_kind] += 1
+        self.mask[key] = f"[{mask_kind}_{self.count[mask_kind]}]"
+        self.keys_of.setdefault(ref, set()).add(key)
+
+    def resolve(self, ref: str) -> str:
+        keys = self.keys_of.get(ref, set())
+        if len(keys) != 1:
+            raise ValueError(f"{{{{mask:{ref}}}}} " + ("names more than one secret" if keys else
+                                                       "names no secret that appeared before this item"))
+        key = next(iter(keys))
+        if key.startswith("db_uri:"):  # the Mod masks only the password of a connection URI
+            return f"postgresql://service:{self.mask[key]}{URI_HOST}"
+        return self.mask[key]
+
+
 def parse_text(text: str, seed: str, unnamed: list[int], profile: str | None,
-               redraw: dict[str, int]) -> list[str | Slot]:
+               redraw: dict[str, int], masks: Masks | None = None) -> list[str | Slot]:
     """Template text as literal strings and Slots. redraw[kind:name] = n draws that value for the n-th time, from
-    a seed of its own and a family without common strings (value_gen.NOT_COMMON)."""
+    a seed of its own and a family without common strings (value_gen.NOT_COMMON). masks resolves {{mask:NAME}}; it
+    is given for tool_input items only."""
     parts, pos = [], 0
     for m in PLACEHOLDER.finditer(text):
         parts.append(text[pos:m.start()])
@@ -90,10 +131,15 @@ def parse_text(text: str, seed: str, unnamed: list[int], profile: str | None,
         if m.group("type"):
             if m.group("type") not in TYPES:
                 raise ValueError(f"unknown gold type in {m.group(0)!r}, expected one of {sorted(TYPES)}")
-            parts.append(Slot(m.group("literal"), m.group("type")))
+            parts.append(Slot(m.group("literal"), m.group("type"), f"{m.group('type')}={m.group('literal')}"))
             continue
         kind, name = m.group("kind"), m.group("name")
         transforms = list(filter(None, m.group("transforms").split("|")))
+        if kind == MASK:
+            if masks is None:
+                raise ValueError(f"{m.group(0)!r}: a mask belongs in tool_input, where the agent writes it")
+            parts.append(Slot(masks.resolve(name), NEG + MASK))
+            continue
         if kind == "neg":
             if name not in value_gen.NEGATIVE_KINDS:
                 raise ValueError(f"{m.group(0)!r}: expected {{{{neg:KIND}}}}, KIND one of {sorted(value_gen.NEGATIVE_KINDS)}")
@@ -160,14 +206,21 @@ def unfit(text: str, start: int, end: int) -> str | None:
 def render_session(items: list[dict], seed: str, profile: str | None) -> list[tuple[str, list[dict], list[dict]]]:
     redraw: dict[str, int] = {}
     while True:
-        unnamed, rendered, bad = [0], [], set()
+        unnamed, rendered, bad, masks = [0], [], set(), Masks()
         for i, item in enumerate(items):
+            tool_input = item["channel"] == "tool_input"
             try:
-                rendered.append(render(parse_text(item["text"], seed, unnamed, profile, redraw)))
+                rendered.append(render(parse_text(item["text"], seed, unnamed, profile, redraw,
+                                                  masks if tool_input else None)))
             except ValueError as e:
                 raise ValueError(f"item {i}: {e}") from None
             text, spans, _ = rendered[-1]
-            bad |= {sp["key"] for sp in spans if sp["key"] and unfit(text, sp["start"], sp["end"])}
+            if tool_input and spans:
+                raise ValueError(f"item {i}: a tool_input holds a secret; the agent writes {{{{mask:NAME}}}} there")
+            for sp in spans:
+                masks.see(sp["key"], sp["type"])
+            # only generated values (kind:name) can be drawn again; a {{TYPE=value}} is fixed
+            bad |= {sp["key"] for sp in spans if ":" in sp["key"] and unfit(text, sp["start"], sp["end"])}
         retry = {key for key in bad if redraw.get(key, 0) < REDRAWS}
         if not retry:
             return rendered  # verify reports what a redraw could not fix
@@ -184,13 +237,17 @@ def template_name(path: Path) -> str:
 
 def build(path: Path) -> tuple[list[dict], list[dict], list[dict]]:
     """(sessions, gold, labels) of one template file."""
+    return build_lines(path.read_text(encoding="utf-8").split("\n"), path.name, path.stem, template_name(path))
+
+
+def build_lines(lines: list[str], name: str, stem: str, template: str) -> tuple[list[dict], list[dict], list[dict]]:
+    """build() on template lines: name for messages, stem for the value seeds, template for meta.template."""
     sessions, gold, labels = [], [], []
     seen, splits = set(), {}
-    template = template_name(path)
-    for n, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+    for n, line in enumerate(lines, 1):
         if not line.strip():
             continue
-        where = f"{path.name}:{n}"
+        where = f"{name}:{n}"
         s = json.loads(line)
         if set(s) - {"session_id", "items", "meta"} or not {"session_id", "items", "meta"} <= set(s):
             raise ValueError(f"{where}: a session needs session_id, items and meta; got {sorted(s)}")
@@ -223,7 +280,7 @@ def build(path: Path) -> tuple[list[dict], list[dict], list[dict]]:
             if session_id in seen:
                 raise ValueError(f"{where}: duplicate session_id {session_id}")
             seen.add(session_id)
-            seed = f"{split}:{path.stem}:{sid}" + (f"~{k}" if variants else "")
+            seed = f"{split}:{stem}:{sid}" + (f"~{k}" if variants else "")
             try:
                 rendered = render_session(s["items"], seed, profile)
             except ValueError as e:
@@ -269,11 +326,17 @@ def check_positions(spans, texts, errors):
                           f"({rule}): LABELING.md does not count it as gold; rewrite the template there")
 
 
-def check_negatives(labels, texts, errors):
+def check_negatives(labels, texts, channels, errors):
     for row in labels:
         key = (row["session_id"], row["item_id"])
         if key not in texts or not 0 <= row["start"] <= row["end"] <= len(texts[key]):
             errors.append(f"labels: bad row {row}")
+            continue
+        if row["kind"] == MASK:
+            value = texts[key][row["start"]:row["end"]]
+            if channels[key] != "tool_input" or not MASK_TEXT.search(value):
+                errors.append(f"mask {value[:30]!r} in {key[0]}/{key[1]} ({channels[key]}): a mask is a [KIND_n] in "
+                              "tool_input")
             continue
         want = value_gen.NEGATIVE_KINDS[row["kind"]][1]
         got = exclusion_kind(texts[key], row["start"], row["end"])
@@ -300,22 +363,32 @@ def check_splits(sessions, spans, texts, errors) -> Counter:
     return Counter(split_of.values())
 
 
+def check_rows(sessions, gold, labels, name: str, errors: list[str]) -> tuple[dict, list[tuple], Counter]:
+    """Every check but reproduction on built rows: (texts, spans, sessions per split). ml_train_write.py runs it on
+    one LLM template before accepting it."""
+    texts = V.check_sessions(sessions, name, errors)
+    source, origin = V.check_meta(sessions, name, errors)
+    if source != SOURCE or origin != ORIGIN:
+        errors.append(f"{name}: source {source!r}, origin {origin!r}; expected {SOURCE}, {ORIGIN}")
+    spans = V.check_gold(gold, texts, name, errors)
+    V.check_labels(spans, texts, errors)
+    V.check_coverage(spans, texts, errors)
+    check_positions(spans, texts, errors)
+    channels = {(s["session_id"], i["item_id"]): i["channel"] for s in sessions for i in s["items"]}
+    for sid, iid, start, _, _ in spans:
+        if channels[(sid, iid)] == "tool_input":  # the agent writes what PromptGuard showed it: masks, no values
+            errors.append(f"gold in tool_input {sid}/{iid} at {start}: training data keeps secrets out of tool_input")
+    check_negatives(labels, texts, channels, errors)
+    return texts, spans, check_splits(sessions, spans, texts, errors)
+
+
 def verify(sessions_path: Path, rebuild: bool = True) -> dict:
     sessions_path, gold_path, labels_path = paths_of(sessions_path)
     errors: list[str] = []
     sessions = V.read_jsonl(sessions_path, errors)
     gold = V.read_jsonl(gold_path, errors)
     labels = V.read_jsonl(labels_path, errors) if labels_path.is_file() else []
-    texts = V.check_sessions(sessions, sessions_path.name, errors)
-    source, origin = V.check_meta(sessions, sessions_path.name, errors)
-    if source != SOURCE or origin != ORIGIN:
-        errors.append(f"{sessions_path.name}: source {source!r}, origin {origin!r}; expected {SOURCE}, {ORIGIN}")
-    spans = V.check_gold(gold, texts, gold_path.name, errors)
-    V.check_labels(spans, texts, errors)
-    V.check_coverage(spans, texts, errors)
-    check_positions(spans, texts, errors)
-    check_negatives(labels, texts, errors)
-    splits = check_splits(sessions, spans, texts, errors)
+    texts, spans, splits = check_rows(sessions, gold, labels, sessions_path.name, errors)
     reproduction = "skipped"
     if rebuild and sessions:
         template = Path(sessions[0]["meta"]["template"])
