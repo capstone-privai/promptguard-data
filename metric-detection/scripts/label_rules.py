@@ -107,6 +107,10 @@ NEGATIVE_FORM = [
     ("prose_word", re.compile(r"[A-Za-z]{2,}[,.]?\s+\*{0,2}\"?$"), re.compile(r"^\"?\*{0,2}[\s,.]")),
 ]
 BEFORE, AFTER = 160, 60
+# A value the text itself presents as an example (LABELING.md doc_example): "such as ...", "like ...", "e.g. ...",
+# an OpenAPI/YAML "example:" field.
+EXAMPLE_BEFORE = re.compile(r"(?i)(?:\bsuch as|\be\.g\.,?|\bfor (?:example|instance),?|\bexamples?:|\blike|\bsample:)"
+                            r"\s*[\"'`*]*$")
 
 
 @lru_cache(maxsize=4096)
@@ -152,6 +156,11 @@ def classify(text: str, start: int, end: int, negative_context: re.Pattern | Non
         if (b is None or b.search(before)) and (a is None or a.search(after)):
             return "negative", name
     return "residual", None
+
+
+def is_example(text: str, start: int) -> bool:
+    """Whether the text right before start presents the value as an example."""
+    return bool(EXAMPLE_BEFORE.search(text[max(0, start - 40):start]))
 
 
 def _wordlist(name: str) -> frozenset[str]:

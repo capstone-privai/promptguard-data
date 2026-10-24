@@ -15,19 +15,19 @@ Each rule has a regular expression whose capture groups hold the secret, example
 examples it must not match. Every rule is applied to every item, so a negative example of one rule that another
 rule matches gets that rule's gold.
 
-Gold, with the criteria of the privesc-llm-data and CredData conversions:
+Gold, by the rules of metric-detection/LABELING.md (label_rules.py):
   - Rules of category "secret": the captures listed in SECRET_GROUPS (default: group 1). A rule pairing a username,
     client id or host with the secret contributes only the secret.
   - Rules without "secret" capture identifiers (account ids, bucket names, OAuth client ids, public keys): not
     gold (identifier). Exceptions, as in the CredData conversion and the synthetic data: the AWS access key id
     (ACCESS_KEY) and Mapbox's public access token, a publishable key (ACCESS_KEY).
   - Password hashes (category "hashed") are not gold (password_hash), as in privesc.
-  - Variable references ($Password, %PASS%) (reference), values shorter than MIN_VALUE_LEN (short),
-    placeholders such as aaaa..., ABCDEFGH..., a1b2c3..., EXAMPLE (placeholder),
-    public documentation examples such as RFC 7617's "open sesame" (known_example) and common passwords
-    (common_password) are not gold.
-  - Every other occurrence of a gold value in the item is gold too, as in privesc. Overlapping spans are merged;
-    the type of the longest wins.
+  - Variable references ($Password, %PASS%) (reference), redactions and templates such as ****, ####, xxxx, <token>,
+    ${VAR}, your-key, EXAMPLE (placeholder), and public documentation examples such as RFC 7617's "open sesame"
+    (known_example) are not gold. Short, weak or patterned values (aaaaaaaa, 12345678, changeme) are gold.
+  - Another occurrence of a gold value in the item follows the propagation rule (label_rules.classify, is_common,
+    is_gold): gold (repeated_value), or identifier / not_propagated. Overlapping spans are merged; the type of the
+    longest wins.
 """
 from __future__ import annotations
 
@@ -40,13 +40,13 @@ import subprocess
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
+from label_rules import classify, is_common, is_gold, occurrences
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "noseyparker"
 UPSTREAM = "https://github.com/praetorian-inc/noseyparker"
 REVISION = "2e6e7f36ce36619852532bbe698d8cb7a26d2da7"
 RULES_DIR = "crates/noseyparker/data/default/builtin/rules"
-MIN_VALUE_LEN = 9
 
 # Rules whose captures pair the secret with something that is not secret: which group(s) hold the secret.
 SECRET_GROUPS = {
@@ -58,12 +58,12 @@ SECRET_GROUPS = {
 }
 # Captures that are credentials although their rule is not in category "secret".
 PUBLIC_CREDENTIALS = {"np.aws.1": "ACCESS_KEY", "np.mapbox.1": "ACCESS_KEY"}
-PLACEHOLDER = re.compile(r"(.)\1{7}|abcdefgh|bcdefghi|ijklmnop|12345678|01234567|a1b2c3|1a2b3c|x{4}|example|<[^>]*>|"
-                         r"\$\{|\{\{|your[_-]|redacted|changeme|placeholder", re.I)
+PLACEHOLDER = re.compile(r"\*{3}|#{4}|x{4}|example|<[^>]*>|\$\{|\{\{|your[_-]|redacted|placeholder", re.I)
+# Around a capture: whitespace, quotes, string concatenation (+) and escaped line breaks are not the value.
+EDGE_LEAD = re.compile(r"""(?:\s|["'+]|\\[rn])*""")
+EDGE_TRAIL = re.compile(r"""(?:\s|["'+]|\\[rn])*$""")
 REFERENCE = re.compile(r"^\$[A-Za-z_]\w*$|^%\w+%$|^\$\(|^\{\w+\}$")
 KNOWN_EXAMPLES = {"open sesame", "open_sesame", "open-sesame", "QWxhZGRpbjpvcGVuIHNlc2FtZQ==", "mF_9.B5f-4.1JqM"}
-COMMON_PASSWORDS = {"password", "password1", "password123", "123456789", "qwerty123", "letmein123", "welcome123",
-                    "administrator", "changeme123", "secret123", "iloveyou1", "trustno1!"}
 
 
 def compile_rule(pattern: str) -> re.Pattern:
@@ -102,10 +102,6 @@ def judge(rule: dict, value: str) -> str:
         return "known_example"
     if PLACEHOLDER.search(value):
         return "placeholder"
-    if len(value) < MIN_VALUE_LEN:
-        return "short"
-    if value.lower() in COMMON_PASSWORDS:
-        return "common_password"
     return "gold"
 
 
@@ -134,9 +130,10 @@ def captures(rules: list[dict], text: str) -> list[dict]:
                 if g > rule["regex"].groups or m.group(g) is None or m.start(g) == m.end(g):
                     continue
                 a, b = m.span(g)
-                value = text[a:b].strip().strip("\"'")
-                a = text.index(value, a) if value else a
-                out.append({"start": a, "end": a + len(value), "rule": rule["id"], "group": g,
+                lead, trail = EDGE_LEAD.match(text, a, b), EDGE_TRAIL.search(text, a, b)
+                a, b = lead.end(), max(lead.end(), trail.start())
+                value = text[a:b]
+                out.append({"start": a, "end": b, "rule": rule["id"], "group": g,
                             "kind": judge(rule, value), "type": gold_type(rule, g)})
     return [c for c in out if c["end"] > c["start"]]
 
@@ -165,17 +162,25 @@ def convert(root: Path):
                 session_id = f"np-{rule['id'].removeprefix('np.')}-{'ex' if kind == 'example' else 'neg'}{n}"
                 found = captures(rules, text)
                 positive = [c for c in found if c["kind"] == "gold"]
-                for value, kind_type in {(text[c["start"]:c["end"]], c["type"]) for c in positive}:
-                    for m in re.finditer(re.escape(value), text):
-                        if not any(c["start"] <= m.start() and m.end() <= c["end"] for c in positive):
+                others = []
+                for value, kind_type in sorted({(text[c["start"]:c["end"]], c["type"]) for c in positive}):
+                    common = is_common(value)
+                    for m in occurrences(text, value):
+                        if any(c["start"] <= m.start() and m.end() <= c["end"] for c in positive):
+                            continue
+                        verdict, rule_name = classify(text, m.start(), m.end())
+                        if is_gold(common, verdict):
                             positive.append({"start": m.start(), "end": m.end(), "rule": None, "group": None,
                                              "kind": "gold", "type": kind_type})
                             stats["gold_repeated_value"] += 1
+                        else:
+                            others.append({"start": m.start(), "end": m.end(), "rule": rule_name, "group": None,
+                                           "kind": "identifier" if verdict == "ident" else "not_propagated"})
                 spans = merge(positive, stats)
                 for span_id, s in enumerate(spans):
                     gold.append({"session_id": session_id, "item_id": 0, "span_id": span_id,
                                  "span": {"start": s["start"], "end": s["end"], "type": s["type"]}})
-                for c in sorted(found, key=lambda c: (c["start"], c["end"])):
+                for c in sorted(found + others, key=lambda c: (c["start"], c["end"])):
                     labels.append({"session_id": session_id, "item_id": 0, "start": c["start"], "end": c["end"],
                                    "gold": c["kind"] == "gold", "kind": c["kind"], "rule": c["rule"],
                                    "group": c["group"], **({"type": c["type"]} if c["kind"] == "gold" else {})})

@@ -16,18 +16,20 @@ one gold span and --negatives documents that hold none. The channel follows the 
 documents (configuration files, forms, scripts) -> tool_output, a file the agent read; unstructured ones
 (emails, letters, notes, policies) -> prompt, text the user pasted in. --channel overrides it.
 
-Gold, with the criteria of the privesc-llm-data and CredData conversions:
-  - password spans -> PASSWORD if at least MIN_VALUE_LEN characters. Shorter ones are common passwords
-    ("River45#", "welcome"); like privesc and CredData they are not gold (short_password), and neither are longer
-    ones from the common-password list below (common_password).
-  - api_key spans -> SECRET if at least MIN_VALUE_LEN characters (short_api_key) and not a public
-    documentation example such as the jwt.io sample token (known_example).
+Gold, by the rules of metric-detection/LABELING.md (label_rules.py). The generator labeled the values it put in
+credential positions, so a source span is a credential position; its length or strength does not matter.
+  - password spans -> PASSWORD, short and common ones too ("River45#", "welcome").
+  - api_key spans -> SECRET, unless a public documentation example such as the jwt.io sample token (known_example).
   - http_cookie spans -> TOKEN on the cookie value, only for authentication cookies (session, auth, token, jwt,
-    api key ...) of at least MIN_VALUE_LEN characters. Name and attributes are not the secret. CSRF, tracking,
-    consent and preference cookies are not credentials (non_auth_cookie, short_cookie).
+    api key ...). Name and attributes are not the secret. CSRF, tracking, consent and preference cookies are not
+    credentials (non_auth_cookie).
+  - A value the text presents as an example ("such as River2025!", an OpenAPI "example:" field) is not gold
+    (doc_example, label_rules.is_example).
   - Placeholders and partly masked values (********, 732****, YOUR_API_KEY_HERE) are not gold (placeholder).
   - pin and cvv spans are not gold (pin, cvv): short card and account codes, outside metric-detection's credentials.
-  - Every other occurrence of a gold value in the same document is gold too, as in privesc.
+  - Another occurrence of a gold value in the same document is gold if the value is distinct and the occurrence is
+    not in an identifier position, or if it is in a credential position (repeated_value). Otherwise it is
+    identifier or not_propagated (label_rules.classify, is_common, is_gold).
   - The dataset's offsets are authoritative; its span text is sometimes lower-cased (a sentence-initial capital
     in the document). A span whose text differs beyond case is dropped (offset_mismatch).
   - Overlapping gold spans are merged; the type of the longest wins.
@@ -45,6 +47,7 @@ import re
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
+from label_rules import classify, is_common, is_example, is_gold, occurrences
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "Nemotron-PII"
@@ -52,17 +55,7 @@ SOURCE = "nemotron-pii"
 HF_REPO = "nvidia/Nemotron-PII"
 REVISION = "b70ffaf5ff39e079776134c5bf4381f00a9fd1ed"
 SPLIT_FILE = "data/test-00000-of-00001.parquet"
-MIN_VALUE_LEN = 9
 CREDENTIAL_LABELS = {"password", "api_key", "http_cookie", "pin", "cvv"}
-# Most common passwords of public breach lists that are MIN_VALUE_LEN or longer (shorter ones fail the length rule
-# anyway). privesc and CredData leave common passwords out of gold; the length rule alone keeps these.
-COMMON_PASSWORDS = {
-    "123456789", "1234567890", "987654321", "123123123", "111111111", "1111111111", "000000000", "123456789a",
-    "qwerty123", "qwertyuiop", "asdfghjkl", "zxcvbnm123", "1q2w3e4r5t", "1qaz2wsx3edc", "password1", "password12",
-    "password123", "passw0rd1", "iloveyou1", "iloveyou123", "welcome123", "welcome01", "admin1234", "administrator",
-    "letmein123", "trustno1!", "sunshine1", "princess1", "football1", "baseball1", "superman1", "starwars1",
-    "changeme123", "qwerty1234", "abcd12345", "abc123456",
-}
 
 PLACEHOLDER = re.compile(r"\*{3}|x{4}|X{4}|<[^>]*>|\{\{|\$\{|redacted|your[_-]|_here\b|example", re.I)
 # The jwt.io sample token, reused by the generator with edited payloads: its signature or its payload marks it.
@@ -103,6 +96,8 @@ def judge(label: str, text: str, start: int, end: int) -> tuple[str, str | None,
     value = text[start:end]
     if label in ("pin", "cvv"):
         return label, None, start, end
+    if is_example(text, start):
+        return "doc_example", None, start, end
     if label == "http_cookie":
         name, start, end = cookie_value(text, start, end)
         if name is None:
@@ -110,8 +105,6 @@ def judge(label: str, text: str, start: int, end: int) -> tuple[str, str | None,
         if NOT_AUTH_COOKIE.search(name) or not AUTH_COOKIE.search(name):
             return "non_auth_cookie", None, start, end
         value = text[start:end]
-        if len(value) < MIN_VALUE_LEN:
-            return "short_cookie", None, start, end
         if PLACEHOLDER.search(value):
             return "placeholder", None, start, end
         if known_example(value):
@@ -120,16 +113,10 @@ def judge(label: str, text: str, start: int, end: int) -> tuple[str, str | None,
     if PLACEHOLDER.search(value):
         return "placeholder", None, start, end
     if label == "password":
-        if len(value) < MIN_VALUE_LEN:
-            return "short_password", None, start, end
-        if value.lower() in COMMON_PASSWORDS:
-            return "common_password", None, start, end
         return "password", "PASSWORD", start, end
     if label == "api_key":
         if known_example(value):
             return "known_example", None, start, end
-        if len(value) < MIN_VALUE_LEN:
-            return "short_api_key", None, start, end
         return "api_key", "SECRET", start, end
     raise ValueError(label)
 
@@ -177,15 +164,25 @@ def document_spans(text: str, spans: list[dict], stats: Counter) -> tuple[list[d
             gold.append({"start": a, "end": b, "type": kind_type, "kind": kind})
         labels.append({"start": a if kind_type else start, "end": b if kind_type else end, "source_label": label,
                        "gold": bool(kind_type), "kind": kind, **({"type": kind_type} if kind_type else {})})
-    # Every occurrence of a gold value counts, as in the privesc conversion.
-    extra = []
-    for value, kind_type in {(text[g["start"]:g["end"]], g["type"]) for g in gold}:
-        for m in re.finditer(re.escape(value), text):
-            if not any(g["start"] <= m.start() and m.end() <= g["end"] for g in gold + extra):
-                extra.append({"start": m.start(), "end": m.end(), "type": kind_type, "kind": "repeated_value"})
+    # Other occurrences of a gold value: spread to them by the propagation rule (LABELING.md).
+    extra, others = [], []
+    for value, kind_type in sorted({(text[g["start"]:g["end"]], g["type"]) for g in gold}):
+        common = is_common(value)
+        for m in occurrences(text, value):
+            if any(g["start"] <= m.start() and m.end() <= g["end"] for g in gold + extra):
+                continue
+            verdict, rule = classify(text, m.start(), m.end())
+            if is_gold(common, verdict):
+                extra.append({"start": m.start(), "end": m.end(), "type": kind_type, "kind": "repeated_value",
+                              "rule": rule})
                 stats["gold_repeated_value"] += 1
+            else:
+                kind = "identifier" if verdict == "ident" else "not_propagated"
+                others.append({"start": m.start(), "end": m.end(), "source_label": None, "gold": False, "kind": kind,
+                               "rule": rule})
+                stats[kind] += 1
     labels += [{"start": e["start"], "end": e["end"], "source_label": None, "gold": True, "kind": e["kind"],
-                "type": e["type"]} for e in extra]
+                "type": e["type"], "rule": e["rule"]} for e in extra] + others
     return merge(gold + extra, stats), labels
 
 
