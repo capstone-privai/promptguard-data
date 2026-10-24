@@ -95,6 +95,37 @@ def allocate(cells: list[tuple[object, int]], total: int) -> list[object]:
     return [exact[i][0] for i in range(len(exact)) for _ in range(counts[i])]
 
 
+def stratified_splits(slots: list, split_weights: list[tuple[str, int]]) -> list[str]:
+    """A split for every slot: each cell (context, type) is divided in the split proportions, and the split totals
+    are exactly those of allocate() over all slots. Within a cell, slots take the splits in their (shuffled) order."""
+    totals = Counter(allocate(split_weights, len(slots)))
+    names, weight = [s for s, _ in split_weights], sum(w for _, w in split_weights)
+    size = Counter(slots)
+    cells = sorted(size, key=str)
+    quota = {(c, s): size[c] * w / weight for c in cells for s, w in split_weights}
+    take = {k: int(v) for k, v in quota.items()}
+    room = {c: size[c] - sum(take[(c, s)] for s in names) for c in cells}
+    need = {s: totals[s] - sum(take[(c, s)] for c in cells) for s in names}
+    # the remaining slots go to the largest fractional parts, within each cell's and split's room
+    for c, s in sorted(quota, key=lambda k: (-(quota[k] - int(quota[k])), str(k))):
+        if room[c] and need[s]:
+            take[(c, s)] += 1
+            room[c] -= 1
+            need[s] -= 1
+    for c, s in [(c, s) for c in cells for s in names]:  # anything left: wherever both still have room
+        while room[c] and need[s]:
+            take[(c, s)] += 1
+            room[c] -= 1
+            need[s] -= 1
+    order = {c: [s for s in names for _ in range(take[(c, s)])] for c in cells}
+    seen: Counter = Counter()
+    out = []
+    for c in slots:
+        out.append(order[c][seen[c]])
+        seen[c] += 1
+    return out
+
+
 def shuffle(items: list, d: value_gen.Draw) -> list:
     items = list(items)
     for i in range(len(items) - 1, 0, -1):
@@ -201,7 +232,7 @@ def draw(cfg: dict) -> list[dict]:
     base = f"{cfg['seed']}:{cfg['version']}"
     cells = [((ctx, t), int(w)) for ctx, c in cfg["contexts"].items() for t, w in c["weights"].items() if int(w) > 0]
     slots = shuffle(allocate(cells, cfg["templates"]["in_distribution"]), value_gen.Draw(base + ":order"))
-    splits = allocate(pairs(cfg["split"]), len(slots))
+    splits = stratified_splits(slots, pairs(cfg["split"]))
     cards = [card(value_gen.Draw(f"{base}:c{i:04d}"), cfg, f"c{i:04d}", split, ctx, t, None)
              for i, ((ctx, t), split) in enumerate(zip(slots, splits), 1)]
     # test_ood: each card carries one feature never drawn for the other splits

@@ -11,30 +11,37 @@
 | `raw/` | 응답 원문과 거절 사유. 거절된 응답에는 모델이 쓴 리터럴 비밀이 있을 수 있다 | 안 올림 |
 | `NAME.jsonl` | 통과한 템플릿. placeholder만 있고 값은 없다. 다시 만들 수 없는 원본이라 이 저장소에 커밋한다(본 생성분 약 10MB). 커밋 전에 gitleaks로 한 번 더 본다 | 올림 |
 
-## 순서 (파일럿)
+## 순서
 
 저장소 루트에서 실행한다. API 키는 `ANTHROPIC_API_KEY`나 `ant auth login` 프로필에서 읽는다. `anthropic` SDK가 필요하다(`pip install anthropic`).
+
+파일럿과 본 생성은 **같은 이름**(아래 예의 `v1`)을 쓴다. `submit`은 그 이름으로 이미 통과한 카드를 건너뛰므로, 본 생성은 파일럿에서 통과한 카드를 다시 만들지 않는다. 파일럿 뒤에 프롬프트를 고쳤다면 `prompt_v2.md`를 만들고(`ml_train_write.PROMPT_VERSION`도 올린다) 이름도 `v2`로 바꿔 처음부터 다시 한다. 한 이름 안에 다른 프롬프트로 쓴 템플릿이 섞이지 않게 하기 위해서다.
 
 ```bash
 # 1. 카드: 전체 2,490장과, 그중 split·문맥 비율을 지킨 파일럿 100장
 python metric-detection/scripts/ml_train_cards.py
 python metric-detection/scripts/ml_train_cards.py --limit 100 --out metric-detection/templates/ml_train/cards_pilot.jsonl
 
-# 2. 요청 확인 (API를 부르지 않는다)
+# 2. 파일럿 (약 $6). requests는 API를 부르지 않고 요청만 확인한다
 python metric-detection/scripts/ml_train_write.py requests metric-detection/templates/ml_train/cards_pilot.jsonl --out /tmp/pilot_requests.jsonl
+python metric-detection/scripts/ml_train_write.py submit metric-detection/templates/ml_train/cards_pilot.jsonl --name v1
+python metric-detection/scripts/ml_train_write.py collect v1 --wait
+python metric-detection/scripts/ml_train_write.py process v1 --cards metric-detection/templates/ml_train/cards_pilot.jsonl
+# 거절된 카드만 다시: submit -> collect -> process를 같은 이름으로 다시 돌린다
 
-# 3. batch 만들기, 결과 받기, 검사 (비용이 드는 것은 submit뿐이다)
-python metric-detection/scripts/ml_train_write.py submit metric-detection/templates/ml_train/cards_pilot.jsonl --name pilot
-python metric-detection/scripts/ml_train_write.py collect pilot --wait
-python metric-detection/scripts/ml_train_write.py process pilot --cards metric-detection/templates/ml_train/cards_pilot.jsonl
+# 3. 빌드하고 따로 검증한 뒤 사람이 검토한다 (계획 6절의 통과 기준)
+python metric-detection/scripts/ml_train_build.py build metric-detection/templates/ml_train/v1.jsonl
+python metric-detection/scripts/ml_train_build.py verify metric-detection/data_test/sessions_ml_v1.jsonl
+python metric-detection/scripts/ml_train_build.py report metric-detection/data_test/sessions_ml_v1.jsonl
 
-# 4. 거절된 카드만 다시: submit -> collect -> process를 같은 이름으로 다시 돌린다
-
-# 5. 데이터로 빌드하고 따로 검증
-python metric-detection/scripts/ml_train_build.py build metric-detection/templates/ml_train/pilot.jsonl
-python metric-detection/scripts/ml_train_build.py verify metric-detection/data_test/sessions_ml_pilot.jsonl
-python metric-detection/scripts/ml_train_build.py report metric-detection/data_test/sessions_ml_pilot.jsonl
+# 4. 본 생성 (약 $130): 전체 카드로 같은 이름. 파일럿에서 통과한 카드는 건너뛴다
+python metric-detection/scripts/ml_train_write.py submit metric-detection/templates/ml_train/cards.jsonl --name v1
+python metric-detection/scripts/ml_train_write.py collect v1 --wait
+python metric-detection/scripts/ml_train_write.py process v1
+# 다시 3번으로 빌드와 검증. 그다음 v1.jsonl과 batches/v1.json을 gitleaks로 확인하고 커밋한다
 ```
+
+split은 카드를 뽑을 때 정해진다. 문맥 × 비밀 유형 칸마다 train 80, val 10, test 10으로 나누고(전체 수는 정확히 1,792, 224, 224), 분포 이동 test 250장은 따로 뽑는다. 템플릿은 카드의 split과 group_id를 그대로 meta에 받고, 그 템플릿의 variants도 모두 같은 split에 남는다.
 
 `process`가 템플릿을 받아들이는 조건은 다섯 가지다.
 - 응답이 끝까지 나왔다(`stop_reason`이 `end_turn`).
