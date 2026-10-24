@@ -18,6 +18,8 @@
 | [`../docs/README_baseline-recall.md`](docs/README_baseline-recall.md) | 기존 시스템(CredSweeper, gitleaks)과 PromptGuard 데모의 recall이 낮은 이유 분석 (합성 데이터, CredData, privesc-llm-data) |
 | [`../docs/README_baseline-new-sources.md`](docs/README_baseline-new-sources.md) | 새 외부 소스 4개로 본 기존 시스템의 약점: 문장·문서 서식 속 비밀, 서비스별 토큰 형식, 실제 에이전트 트래픽의 과잉 마스킹 |
 | [`../docs/README_ensemble.md`](docs/README_ensemble.md) | 탐지기 구성별 성능: 어댑터(CredSweeper, gitleaks, 자체 규칙) 단독과 셋의 투표(any, majority, unanimous)를 모든 데이터셋에서 비교 |
+| [`docs/README_ml-train-plan.md`](docs/README_ml-train-plan.md) | ML 학습용 합성 데이터 계획: 지금 `ml_train` 데이터의 빈틈 분석, 생성 방식, 커버리지, 분할, 검증, 비용 |
+| [`docs/README_ml-train-open-questions.md`](docs/README_ml-train-open-questions.md) | ML 학습 데이터에서 아직 정하지 않은 것: 모델 입출력과 크기, 파일럿 승인, LABELING과 label_rules가 어긋나는 곳 |
 | [`README_Nemotron-PII.md`](README_Nemotron-PII.md), [`README_openhands-feedback.md`](README_openhands-feedback.md), [`README_SWE-Gym.md`](README_SWE-Gym.md), [`README_noseyparker.md`](README_noseyparker.md) | 2026-10-08에 더한 외부 소스 4개의 변환 방법, 정답 규칙, 기존 데이터와 맞춘 점, 기준 점수 |
 | [`reviews/`](reviews/README.md) | 라벨이 없는 소스(openhands-feedback, SWE-Gym)의 정답 판정. 값 없이 해시와 위치만 둔다 |
 
