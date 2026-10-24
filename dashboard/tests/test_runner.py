@@ -138,7 +138,8 @@ class EvaluateSnapshotTest(unittest.TestCase):
                 datasets[0].gold.write_text("changed gold\n")
                 return weights
 
-            def fake_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, *, shard_script):
+            def fake_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, *, shard_script,
+                            gitleaks_cache):
                 self.assertNotEqual(shard_script, runner.SHARD_SCRIPT)
                 for shard in shards:
                     self.assertEqual(shard.dataset.sessions.read_bytes(), original)
