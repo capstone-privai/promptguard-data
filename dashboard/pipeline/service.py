@@ -90,6 +90,10 @@ def points(value: float | None, before: float | None) -> str:
     return "—" if value is None or before is None else f"{(value - before) * 100:+.1f}%p"
 
 
+def named(commit: repo.Commit) -> str:
+    return f'{commit.short} "{commit.title}"'
+
+
 def ms(value: float | None) -> str:
     """Rounded like the dashboard's ms()."""
     if value is None:
@@ -320,8 +324,8 @@ class Service:
         checkout = self.data / "checkouts" / commit.fingerprint[:12]
         name = f"{track} {commit.short} ({key})"
         log(f"{name}: started, {len(pending) - 1} more queued")
-        self.alert(f"▶️ {label} 평가 시작 · {commit.short} {commit.title}"
-                   + (f"\n뒤에 {len(pending) - 1}개 대기" if len(pending) > 1 else ""))
+        self.alert(f"{named(commit)} 커밋 {label} 평가 돌려 볼게요."
+                   + (f" 뒤에 {len(pending) - 1}개 더 기다리고 있어요." if len(pending) > 1 else ""))
         began = time.monotonic()
         finished = threading.Event()
         watcher = None
@@ -330,7 +334,8 @@ class Service:
             watcher.start()
         hours = self.config.overdue_hours
         overdue = threading.Timer(hours * 3600, self.alert,
-                                  args=(f"⏳ {label} 평가가 {hours:g}시간째 끝나지 않음 · {commit.short} {commit.title}",))
+                                  args=(f"{named(commit)} 커밋 {label} 평가가 {hours:g}시간째 안 끝나네요. "
+                                        "한번 확인해 줄래요?",))
         overdue.daemon = True
         if hours > 0 and self.config.notify_url:
             overdue.start()
@@ -364,8 +369,8 @@ class Service:
             (self.data / "logs").mkdir(parents=True, exist_ok=True)
             with (self.data / "logs" / "failures.log").open("a", encoding="utf-8") as out:
                 out.write(f"{now()} {track} {commit.sha} {key}\n{traceback.format_exc()}\n")
-            self.alert(f"❌ {label} 평가 실패 · {commit.short} {commit.title}\n{str(exc)[:500]}\n"
-                       "다시 돌리려면 대시보드 위쪽 커밋 버튼에서 '실패한 평가 다시 돌리기'를 누른다.")
+            self.alert(f"{named(commit)} 커밋 {label} 평가가 실패했네요.\n{str(exc)[:500]}\n"
+                       "확인해 보고 대시보드 위쪽 커밋 버튼에서 '실패한 평가 다시 돌리기' 눌러 주세요.")
         else:
             log(f"{name}: done in {time.monotonic() - began:.0f} s")
         finally:
@@ -416,9 +421,9 @@ class Service:
         lines = []
         for item in new:
             due = [TRACK_LABELS[track] for track, key in self.keys(plan, item).items() if (track, key) in queued]
-            lines.append(f"• {item.short} {item.title} · "
-                         + (f"평가 대기 ({', '.join(due)})" if due else "탐지기가 같아 이전 결과를 씀"))
-        self.alert(f"🆕 {self.config.branch}에 새 커밋 {len(new)}개\n" + "\n".join(lines))
+            lines.append(f"• {named(item)}: "
+                         + (f"{', '.join(due)} 평가해 볼게요." if due else "탐지기가 그대로라 이전 결과 쓸게요."))
+        self.alert(f"{self.config.branch}에 커밋이 {len(new)}개 새로 올라왔네요.\n" + "\n".join(lines))
 
     def report(self, plan: dict[str, Any], commit: repo.Commit) -> None:
         """Alert the commit's numbers once no track of it is left to run."""
@@ -428,7 +433,7 @@ class Service:
         metas = {track: self.meta(track, key) for track, key in keys.items()}
         if any(meta is None and f"{track}:{keys[track]}" not in self.failures for track, meta in metas.items()):
             return
-        lines = []
+        lines, closing = [], ""
         for track, meta in metas.items():
             if meta is None:
                 lines.append(f"{TRACK_LABELS[track]}: 실패")
@@ -442,12 +447,16 @@ class Service:
                     lines.append(f"  이전 탐지기 변경({item.short}) 대비: " + " · ".join(
                         f"{name} {points(numbers.get(field), old.get(field))}"
                         for name, field in (("P", "precision"), ("R", "recall"), ("F1", "f1"))))
+                    if numbers.get("f1") is not None and old.get("f1") is not None:
+                        change = round((numbers["f1"] - old["f1"]) * 100, 1)
+                        closing = ("F1이 올랐네요. 수고 많았어요." if change > 0 else
+                                   "F1이 떨어졌네요. 원인 한번 살펴봐 주세요." if change < 0 else "")
             else:
                 lines.append(f"탐지 지연: 1KB {ms(numbers.get('single_1k_p50'))} · 64KB "
                              f"{ms(numbers.get('single_64k_p50'))} (p50) · 문자열당 +{ms(numbers.get('ms_per_string'))}"
                              f" · timeout 초과 {numbers.get('over_timeout', '—')}회")
-        head = "✅ 평가 완료" if all(metas.values()) else "⚠️ 평가 끝 (일부 실패)"
-        self.alert(f"{head} · {commit.short} {commit.title}\n" + "\n".join(lines))
+        head = "평가 다 끝났어요." if all(metas.values()) else "평가 끝났는데, 일부는 실패했어요."
+        self.alert(f"{named(commit)} 커밋 {head}\n" + "\n".join(lines + ([closing] if closing else [])))
 
     def previous(self, plan: dict[str, Any], track: str, commit: repo.Commit,
                  key: str) -> tuple[repo.Commit, dict[str, Any]] | None:
@@ -529,7 +538,7 @@ class Service:
                     ran = self.cycle()
                     waiting = False
                     if failing:
-                        self.alert("✅ 평가 서비스 복구: 저장소 확인과 평가를 다시 하고 있다.")
+                        self.alert("평가 서버 다시 돌아왔어요. 저장소 확인하고 평가 이어서 할게요.")
                         failing = False
                 except DataDirBusy as busy:  # keep serving; evaluate once the other process is done
                     if not waiting:
@@ -544,8 +553,8 @@ class Service:
                     with (self.data / "logs" / "service.log").open("a", encoding="utf-8") as out:
                         out.write(f"{now()}\n{traceback.format_exc()}\n")
                     if not failing:  # once per outage, not every poll
-                        self.alert(f"⚠️ 평가 서비스 오류: {str(exc)[:500]}\n"
-                                   "다음 주기마다 다시 시도하고, 복구되면 알린다.")
+                        self.alert(f"평가 서버에 문제가 생겼네요.\n{str(exc)[:500]}\n"
+                                   "계속 다시 시도해 보고, 돌아오면 알려 줄게요.")
                         failing = True
                 if not ran and not self.stopping.is_set():
                     self.wake.wait(pause)
