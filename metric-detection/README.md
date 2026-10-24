@@ -10,7 +10,7 @@
 |---|---|
 | `data_test/` | 평가기 입력(세션). 정답은 들어 있지 않다 |
 | `data_answer/` | 정답 span(gold) |
-| `scripts/` | 생성(`dataset_build.py`, `convert_*.py`), 학습용 합성 데이터의 생성과 검증(`ml_train_build.py`, `value_gen.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), 전체 조합 채점(`run_all.py`), gitleaks 탐지(`run_gitleaks.py`), 후보 검토(`review_candidates.py`) |
+| `scripts/` | 생성(`dataset_build.py`, `convert_*.py`), 학습용 합성 데이터의 템플릿 작성(`ml_train_cards.py`, `ml_train_write.py`)과 생성·검증(`ml_train_build.py`, `value_gen.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), 전체 조합 채점(`run_all.py`), gitleaks 탐지(`run_gitleaks.py`), 후보 검토(`review_candidates.py`) |
 | [`evaluation/`](evaluation/README.md) | 채점기: 시스템 어댑터, span 채점, 지표 집계, 결과 파일 |
 | `templates/` | placeholder로 세션을 쓰는 템플릿과 [작성법](templates/README.md) |
 | [`README_CredData.md`](README_CredData.md) | CredData 변환 방법, 변환 규칙, 우리 라벨 기준과 다른 점 |
