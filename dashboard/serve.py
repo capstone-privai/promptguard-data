@@ -142,6 +142,15 @@ def export(data_dir: Path, out: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PromptGuard evaluation dashboard (see dashboard/README.md)")
+    alerts = parser.add_argument_group("alerts", "Discord webhook alerts (see dashboard/README.md)")
+    alerts.add_argument("--notify-url", default=os.environ.get("DASHBOARD_NOTIFY_URL"),
+                        help="Discord webhook for evaluation alerts (default $DASHBOARD_NOTIFY_URL; prefer the "
+                             "variable, the URL is a secret)")
+    alerts.add_argument("--dashboard-url", default=os.environ.get("DASHBOARD_URL"),
+                        help="link put under each alert (default $DASHBOARD_URL)")
+    alerts.add_argument("--overdue-hours", type=float, default=24.0,
+                        help="alert once when a job runs this long (default 24; 0 never)")
+
     parser.add_argument("--host", default="127.0.0.1", help="address to listen on (default 127.0.0.1; 0.0.0.0 for "
                                                             "every interface)")
     parser.add_argument("--port", type=int, default=8765)
@@ -168,13 +177,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-task", action="store_true", help="hide metric-task")
     parser.add_argument("--auth", default=os.environ.get("DASHBOARD_AUTH"),
                         help="USER:PASSWORD for HTTP Basic authentication (default $DASHBOARD_AUTH)")
-    parser.add_argument("--notify-url", default=os.environ.get("DASHBOARD_NOTIFY_URL"),
-                        help="Discord webhook for failure alerts (default $DASHBOARD_NOTIFY_URL; prefer the variable, "
-                             "the URL is a secret)")
-    parser.add_argument("--dashboard-url", default=os.environ.get("DASHBOARD_URL"),
-                        help="link put under each alert (default $DASHBOARD_URL)")
-    parser.add_argument("--overdue-hours", type=float, default=24.0,
-                        help="alert once when a job runs this long (default 24; 0 never)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--once", action="store_true", help="evaluate what is missing, then exit")
     mode.add_argument("--serve-only", action="store_true", help="serve without fetching or evaluating")
