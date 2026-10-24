@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import subprocess
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -92,6 +94,83 @@ class GitleaksCacheTest(unittest.TestCase):
         self.cache([str(self.binary), "version"], input=b"", capture_output=True)
         self.cache([str(self.binary), "version"], input=b"", capture_output=True)
         self.assertEqual(self.runs(), 5)  # only the bytes stdin scan was cached
+
+
+# Reports the value after PASSWORD= or "password " as [[start, end], ...].
+SCANNER = """#!{python}
+import json, re, sys
+from pathlib import Path
+with open(Path(__file__).with_name("runs.log"), "a") as log:
+    log.write("run\\n")
+text = sys.stdin.buffer.read().decode()
+print(json.dumps([m.span(1) for m in re.finditer(r"(?:PASSWORD=|password )(\\S+)", text)]))
+"""
+
+
+class GitleaksSystem:
+    """A system under test whose only detector is a gitleaks binary run per text, the way PromptGuard runs it."""
+
+    name = "gitleaks-only"
+
+    def __init__(self, binary: Path):
+        self.binary = binary
+
+    def describe(self):
+        return {"system": self.name}
+
+    def run_session(self, session):
+        from evaluation.adapters.base import ItemOutput
+        from evaluation.scorer.edits import Edit, apply_edits
+
+        outputs = {}
+        for item in session.items:
+            completed = subprocess.run([str(self.binary), "stdin"], input=item.text.encode(), capture_output=True,
+                                       check=True)
+            edits = [Edit(start, end, "[PASSWORD_1]") for start, end in json.loads(completed.stdout)]
+            outputs[item.item_id] = ItemOutput(item.item_id, apply_edits(item.text, edits), edits)
+        return outputs
+
+
+class GoldChangeTest(unittest.TestCase):
+    """The cache holds detector output only; scoring against the gold labels is redone on every evaluation."""
+
+    def test_changed_gold_scores_the_same_with_a_warm_cache_as_without_one(self):
+        from pipeline.shard import load_range
+        from tests.test_collect import FIXTURES, payload_for
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = root / "gitleaks"
+            binary.write_text(SCANNER.format(python=sys.executable))
+            binary.chmod(binary.stat().st_mode | stat.S_IEXEC)
+            runs = root / "runs.log"
+            gold = FIXTURES / "gold.jsonl"
+            changed = root / "gold_changed.jsonl"
+            changed.write_text("".join(gold.read_text().splitlines(keepends=True)[::2]))  # drop every other label
+            system = GitleaksSystem(binary)
+
+            def score(gold_path: Path, cache_path: Path | None):
+                sessions = load_range(FIXTURES / "sessions.jsonl", gold_path, 0, sys.maxsize)
+                if cache_path is None:
+                    return payload_for(sessions, system)[0]
+                cache = GitleaksCache(cache_path, subprocess.run)
+                try:
+                    with patch.object(subprocess, "run", cache):
+                        return payload_for(sessions, system)[0]
+                finally:
+                    cache.close()
+
+            original = score(gold, root / "cache.sqlite")
+            scanned = len(runs.read_text().splitlines())
+            uncached = score(changed, None)
+            runs.write_text("")
+            warm = score(changed, root / "cache.sqlite")
+
+            self.assertGreater(original["counts"]["edits_tp"], 0)  # the scanner finds some gold
+            self.assertNotEqual(warm["counts"], original["counts"])
+            self.assertEqual(warm, uncached)
+            self.assertEqual(runs.read_text(), "")  # every text came from the cache
+            self.assertGreater(scanned, 0)
 
 
 if __name__ == "__main__":
