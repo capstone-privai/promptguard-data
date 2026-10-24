@@ -174,11 +174,19 @@ const state = {
   taskError: null,
   taskOpen: null,
   taskFailuresOpen: false,
+  view: "detection", // the detail tab below the overview
 };
+
+const VIEWS = [
+  { key: "detection", label: "탐지 성능", cls: "f1" },
+  { key: "latency", label: "탐지 지연", cls: "lat" },
+  { key: "task", label: "작업 성공", cls: "task" },
+];
 
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
   state.sha = params.get("c");
+  state.view = VIEWS.some((view) => view.key === params.get("v")) ? params.get("v") : "detection";
   state.filters = { d: params.get("d"), t: params.get("t"), c: params.get("ch"), g: params.get("g") };
   state.outcome = params.get("o");
   state.by = AXES.some((axis) => axis.key === params.get("by")) ? params.get("by") : "dataset";
@@ -196,6 +204,7 @@ function writeHash() {
   if (state.outcome) params.set("o", state.outcome);
   if (state.by !== "dataset") params.set("by", state.by);
   if (state.trendDataset) params.set("td", state.trendDataset);
+  if (state.view !== "detection") params.set("v", state.view);
   const text = params.toString();
   history.replaceState(null, "", text ? `#${text}` : location.pathname + location.search);
 }
@@ -594,6 +603,7 @@ function renderKpis() {
   const box = clear($("#kpis"));
   const more = clear($("#kpi-more"));
   const summary = state.summary;
+  renderGoldBar();
   if (!summary) {
     const empty = state.summaryError
       ? requestFailure("탐지 성능 결과를 불러오지 못했어요.", showSelected)
@@ -628,6 +638,32 @@ function renderKpis() {
   }
   if (state.kpiOpen) more.append(kpiDetail(state.kpiOpen));
   requestAnimationFrame(() => drawSparklines(box));
+}
+
+/** Where every gold secret ended up, as one bar; a label opens its examples below. */
+function renderGoldBar() {
+  const box = clear($("#gold-outcomes"));
+  if (!state.summary) return;
+  const counts = state.summary.totals.counts;
+  const gold = GOLD_OUTCOMES.reduce((total, key) => total + counts[key], 0);
+  if (!gold) return;
+  const open = (key) => {
+    state.outcome = key;
+    state.shown = PAGE;
+    state.openExamples.clear();
+    showView("detection", true);
+    renderOutcomes();
+  };
+  const share = (count) => `${Math.round((count / gold) * 100)}%`;
+  box.append(
+    h("div", { class: "mini-title" }, `정답 ${int(gold)}개 판정`),
+    h("div", { class: "ob", role: "img", "aria-label": GOLD_OUTCOMES.map((key) => `${OUTCOMES[key].label} ${counts[key]}`).join(", ") },
+      GOLD_OUTCOMES.filter((key) => counts[key]).map((key) => h("i", { class: OUTCOMES[key].cls, style: `flex:${counts[key]}`, title: `${OUTCOMES[key].label} ${int(counts[key])}` }))),
+    h("div", { class: "ob-keys" },
+      GOLD_OUTCOMES.map((key) => h("button", { class: "ob-key", type: "button", disabled: counts[key] ? null : true, onclick: () => open(key) },
+        h("span", { class: `sw ${OUTCOMES[key].cls}` }), OUTCOMES[key].label, h("b", null, share(counts[key])))),
+      h("button", { class: "ob-key", type: "button", disabled: counts.edits_fp ? null : true, onclick: () => open("fp") },
+        h("span", { class: "sw st-fp hollow" }), OUTCOMES.fp.label, h("b", null, `${int(counts.edits_fp)}곳`))));
 }
 
 function kpiDetail(key) {
@@ -718,6 +754,7 @@ function renderTrend() {
   if (history.length === 1) body.append(h("div", { class: "muted", style: "font-size:12px;margin-top:6px" }, "평가된 커밋이 하나뿐이에요."));
   lineChart(chart, {
     label: "커밋별 Precision, Recall, F1",
+    height: 170,
     labels: history.map((commit) => commit.short),
     series: METRICS.map((metric) => ({ ...metric, values: history.map((commit) => valueOf(commit, metric.key)) })),
     domain: percentDomain,
@@ -1075,12 +1112,9 @@ function exampleDetail(example, before, after) {
 }
 
 function renderDetails() {
-  const details = $("#details");
-  if (!state.summary) {
-    details.hidden = true;
-    return;
-  }
-  details.hidden = false;
+  $("#detection-empty").hidden = Boolean(state.summary);
+  $("#detection-detail").hidden = !state.summary;
+  if (!state.summary) return;
   validateFilters();
   renderFilters();
   renderSlice();
@@ -1090,10 +1124,17 @@ function renderDetails() {
 
 // ------------------------------------------------------------------ latency
 
+/** A short status label on a panel; the full sentence is its tooltip. */
+function flag(text, title) {
+  return h("span", { class: "flag", title: title || null }, text);
+}
+
 function renderLatency() {
   const section = $("#latency");
   const body = clear($("#latency-body"));
+  const detail = clear($("#latency-detail"));
   clear($("#latency-tools"));
+  state.drawLatencyCharts = null;
   if (!state.index || !tracks().includes("latency")) {
     section.hidden = !state.index;
     body.append(h("div", { class: "empty" }, "이 서버는 탐지 지연을 재지 않도록 설정돼 있어요."));
@@ -1111,22 +1152,20 @@ function renderLatency() {
       : record && record.state === "running" ? "이 커밋의 지연을 재는 중이에요."
       : "아직 잰 결과가 없어요. 탐지 성능 평가가 끝나면 이어서 재요.";
     body.append(h("div", { class: "empty" }, text));
+    detail.append(h("div", { class: "empty" }, text));
     return;
   }
   const data = state.latency;
   const ensemble = data.detectors.find((item) => item.label === "ensemble") || data.detectors[0];
   if (pickInfo.fallbackFrom || pickInfo.stale) {
-    body.append(h("div", { class: "note", style: "margin:0 0 12px" }, pickInfo.stale
-      ? "측정 환경이 바뀌어 다시 재는 중이에요. 지금 숫자는 이전 측정이에요."
-      : `${pickInfo.fallbackFrom.short} 커밋은 아직 재지 않아서 ${pickInfo.commit.short} 커밋의 측정을 보여 주고 있어요.`));
+    body.append(h("div", { class: "flags" }, pickInfo.stale
+      ? flag("이전 측정 · 다시 재는 중", "측정 환경이 바뀌어 다시 재는 중이에요. 지금 숫자는 이전 측정이에요.")
+      : flag(`${pickInfo.commit.short} 커밋의 측정`, `${pickInfo.fallbackFrom.short} 커밋은 아직 재지 않아서 ${pickInfo.commit.short} 커밋의 측정을 보여 주고 있어요.`)));
   }
-  const history = doneCommits("latency");
-  const currentIndex = history.findIndex((commit) => commit.sha === pickInfo.commit.sha);
   const largestBatch = ensemble.batch_sweep[ensemble.batch_sweep.length - 1];
   const fit = ensemble.fit_items;
   const tiles = [
     { key: "single_1k", label: "텍스트 1개 · 1KB", value: ensemble.single_1k.p50, sub: `p95 ${ms(ensemble.single_1k.p95)}ms`,
-      spark: history.slice(-12).map((commit) => commit.latency.headline.single_1k_p50),
       detail: "Native Mod처럼 텍스트 하나를 보낸 탐지기 호출 한 번의 시간(탐지기가 보고한 detector_ms)의 중앙값이에요. 합성 로그·코드 텍스트 1,024자, 비밀이 있는 것과 없는 것을 합쳐 셉니다." },
     { key: "single_64k", label: "텍스트 1개 · 64KB", value: ensemble.single_64k.p50, sub: `p95 ${ms(ensemble.single_64k.p95)}ms`,
       detail: "큰 도구 결과 하나(65,536자)를 보낸 호출의 중앙값이에요." },
@@ -1134,6 +1173,7 @@ function renderLatency() {
       sub: largestBatch ? `${int(largestBatch.batch)}개면 ${ms(largestBatch.p50)}ms` : "",
       detail: `1,024자 텍스트를 1·4·16·64·256개 묶어 보낸 호출에 직선을 맞춘 기울기예요${fit ? `(${ms(fit.fixed_ms)}ms + ${ms(fit.ms_per_string)}ms × 문자열 수)` : ""}. Final Guard처럼 한 번에 여러 문자열을 보낼 때 늘어나는 시간입니다.` },
     { key: "timeouts", label: `${int(data.timeout_ms)}ms 넘은 호출`, count: ensemble.over_timeout, sub: `표본 ${int(ensemble.all.n)}개 중`,
+      bad: ensemble.over_timeout > 0,
       detail: `HTTP 왕복이 시스템의 탐지기 timeout(${int(data.timeout_ms)}ms)을 넘은 표본 수예요. 시스템은 fail-closed라 실제라면 그 호출의 텍스트가 막힙니다.` },
   ];
   if (ensemble.guard) {
@@ -1147,18 +1187,17 @@ function renderLatency() {
           : `세션 ${int(guard.sessions)}개 · 총 요청 ${int(guard.requests)}개 · 캐시 통과 ${int(guard.cache_only)}개. ` +
             "실패하거나 모든 호출의 시간을 알 수 없는 요청은 시간 통계에서 제외해요. 캐시 통과로 검사 호출이 없는 정상 요청은 0ms로 셉니다.") });
   }
-  const grid = h("div", { class: "tiles", style: tiles.length > 4 ? "grid-template-columns:repeat(auto-fit,minmax(150px,1fr))" : null });
+  const grid = h("div", { class: "tiles" });
   for (const tile of tiles) {
     grid.append(h("button", {
       class: "tile", type: "button", "aria-expanded": String(state.tileOpen === tile.key),
       onclick: () => { state.tileOpen = state.tileOpen === tile.key ? null : tile.key; renderLatency(); },
     },
     h("div", { class: "label" }, tile.label),
-    h("div", { class: "value" }, tile.count != null ? int(tile.count)
+    h("div", { class: `value${tile.bad ? " bad" : ""}` }, tile.count != null ? int(tile.count)
       : tile.key === "guard" && tile.value == null ? "미측정"
         : [tile.plus && tile.value != null ? "+" : "", msValue(tile.value)]),
-    h("div", { class: "sub" }, tile.sub),
-    tile.spark ? sparkline(tile.spark, currentIndex - Math.max(0, history.length - 12), "var(--lat)") : null));
+    h("div", { class: "sub" }, tile.sub)));
   }
   body.append(grid);
   const open = tiles.find((tile) => tile.key === state.tileOpen);
@@ -1170,20 +1209,29 @@ function renderLatency() {
       h("dt", null, "반복"), h("dd", null, `호출마다 ${data.repeat}번, 백분위수는 nearest rank`),
       h("dt", null, "측정"), h("dd", null, `${pickInfo.commit.short} · ${dateTimeLabel(data.evaluated_at)}`))));
   }
+  if (data.detectors.length > 1) {
+    const rows = data.detectors.map((item) => ({ label: item.label === "ensemble" ? "앙상블 (시스템)" : item.label, value: item.single_1k.p50, strong: item.label === "ensemble" }));
+    const max = Math.max(...rows.map((row) => row.value || 0), 0.001);
+    body.append(h("div", { class: "mini-title" }, "어댑터별 · 1KB 중앙값"),
+      h("div", { class: "hbars" }, rows.map((row) => h("div", { class: "hbar" },
+        h("span", { class: `name${row.strong ? " strong" : ""}`, title: row.label }, row.label),
+        h("span", { class: "bar lat" }, h("i", { style: `width:${Math.max(0.5, ((row.value || 0) / max) * 100).toFixed(1)}%` })),
+        h("span", { class: "num" }, `${ms(row.value)}ms`)))));
+  }
 
   const charts = h("div", { class: "charts2" });
   const sizeChart = h("div", { class: "chart" });
   const batchChart = h("div", { class: "chart" });
   charts.append(h("div", null, h("div", { class: "mini-title" }, "텍스트 크기별 (텍스트 1개, 중앙값과 p95)"), sizeChart),
     h("div", null, h("div", { class: "mini-title" }, `한 번에 보낸 문자열 수별 (각 ${sizeLabel(data.batch_item_chars)}자)`), batchChart));
-  body.append(charts);
+  detail.append(charts);
   const sweepChart = (container, sweep, keyName, labelOf, unitLabel) => lineChart(container, {
     label: unitLabel,
     labels: sweep.map((point) => labelOf(point[keyName])),
     xPositions: sweep.map((point) => Math.log2(point[keyName])),
     series: [{ key: "p50", short: "p50", color: "var(--lat)", values: sweep.map((point) => point.p50) }],
     band: { low: sweep.map((point) => point.p50), high: sweep.map((point) => point.p95), color: "var(--lat)" },
-    height: 170,
+    height: 200,
     domain: (values) => [0, Math.max(1, ...values) * 1.1],
     yFormat: (value) => (value === 0 ? "0" : ms(value)),
     tooltip: (index) => [
@@ -1196,20 +1244,7 @@ function renderLatency() {
     if (ensemble.size_sweep.length) sweepChart(sizeChart, ensemble.size_sweep, "size", sizeLabel, (size) => `텍스트 1개, ${int(size)}자`);
     if (ensemble.batch_sweep.length) sweepChart(batchChart, ensemble.batch_sweep, "batch", String, (batch) => `문자열 ${batch}개 × ${int(data.batch_item_chars)}자`);
   };
-
-  if (data.detectors.length > 1) {
-    const rows = data.detectors.map((item) => ({ label: item.label === "ensemble" ? "앙상블 (시스템)" : `${item.label} 단독`, value: item.single_1k.p50, strong: item.label === "ensemble" }));
-    const max = Math.max(...rows.map((row) => row.value || 0), 0.001);
-    body.append(h("div", { class: "mini-title", style: "margin-top:20px" }, "어댑터별 · 텍스트 1개 1KB 중앙값"),
-      h("div", { class: "hbars", style: "margin-top:6px" }, rows.map((row) => h("div", { class: "hbar" },
-        h("span", { class: `name${row.strong ? " strong" : ""}` }, row.label),
-        h("span", { class: "bar lat" }, h("i", { style: `width:${Math.max(0.5, ((row.value || 0) / max) * 100).toFixed(1)}%` })),
-        h("span", { class: "num" }, `${ms(row.value)}ms`)))));
-  }
-  requestAnimationFrame(() => {
-    state.drawLatencyCharts();
-    drawSparklines(body);
-  });
+  requestAnimationFrame(() => state.drawLatencyCharts && state.drawLatencyCharts());
 }
 
 // ------------------------------------------------------------------ metric-task
@@ -1251,14 +1286,17 @@ function rateText(value) {
 function renderTask() {
   const section = $("#task");
   const batches = taskBatches();
-  const tools = clear($("#task-tools"));
+  clear($("#task-tools"));
   const body = clear($("#task-body"));
+  const detail = clear($("#task-detail"));
   section.hidden = batches == null;
   if (batches == null) return;
+  const howLink = (label) => h("button", { class: "link", type: "button", "aria-expanded": String(state.taskOpen === "how"),
+    onclick: () => { state.taskOpen = state.taskOpen === "how" ? null : "how"; renderTask(); } }, label);
   if (!batches.length) {
-    body.append(h("div", { class: "empty" }, "아직 읽어 온 metric-task 실행이 없어요. ",
-      h("button", { class: "link", type: "button", onclick: () => { state.taskOpen = state.taskOpen === "how" ? null : "how"; renderTask(); } }, "추가하는 법")));
+    body.append(h("div", { class: "empty" }, "아직 읽어 온 metric-task 실행이 없어요. ", howLink("추가하는 법")));
     if (state.taskOpen === "how") body.append(taskHowTo());
+    detail.append(h("div", { class: "empty" }, "아직 읽어 온 metric-task 실행이 없어요."));
     return;
   }
   const pickInfo = state.taskPick;
@@ -1266,7 +1304,8 @@ function renderTask() {
     h("option", { value: "" }, "이 커밋 기준 (자동)"),
     batches.slice().reverse().map((batch) => h("option", { value: batch.key }, batchLabel(batch))));
   select.value = state.taskKey || "";
-  tools.append(h("div", { class: "select" }, select));
+  detail.append(h("div", { class: "detail-bar" }, h("div", { class: "select" }, select), howLink("실행을 추가하는 법")));
+  if (state.taskOpen === "how") detail.append(taskHowTo());
   if (state.taskError) {
     body.append(requestFailure("배치를 불러오지 못했어요.", showSelected));
     return;
@@ -1278,27 +1317,22 @@ function renderTask() {
   const data = state.task;
   const batch = pickInfo.batch;
   const commit = selectedCommit();
-  if (batch.provenance !== "clean") {
-    body.append(h("div", { class: "note", style: "margin:0 0 12px" },
-      `${provenanceLabel(batch)}: 이 배치는 해당 커밋의 대표 결과에 포함하지 않아요.`));
-  }
-  if (!pickInfo.own && !pickInfo.chosen) {
-    body.append(h("div", { class: "note", style: "margin:0 0 12px" },
-      `이 커밋${commit ? `(${commit.short})` : ""}으로 돌린 실행이 없어서 가장 최근 실행(${batchLabel(batch)})을 보여 주고 있어요. `,
-      h("button", { class: "link", type: "button", "aria-expanded": String(state.taskOpen === "how"),
-        onclick: () => { state.taskOpen = state.taskOpen === "how" ? null : "how"; renderTask(); } }, "실행을 추가하는 법")));
-    if (state.taskOpen === "how") body.append(h("div", { style: "margin:0 0 12px" }, taskHowTo()));
-  }
+  body.append(h("div", { class: "flags" },
+    h("span", { class: "batch-name", title: batchLabel(batch) }, `PromptGuard 조건 · ${data.name}`),
+    batch.provenance !== "clean"
+      ? flag(provenanceLabel(batch), `${provenanceLabel(batch)}: 이 배치는 해당 커밋의 대표 결과에 포함하지 않아요.`) : null,
+    !pickInfo.own && !pickInfo.chosen
+      ? flag("이 커밋의 실행 없음", `이 커밋${commit ? `(${commit.short})` : ""}으로 돌린 실행이 없어서 가장 최근 실행(${batchLabel(batch)})을 보여 주고 있어요.`) : null));
   const conditions = data.by_condition;
   const pg = conditions.promptguard || {};
-  const context = (key, field) => data.conditions.filter((name) => name !== "promptguard" && conditions[name])
+  const context = (field) => data.conditions.filter((name) => name !== "promptguard" && conditions[name])
     .map((name) => `${CONDITION_LABELS[name] || name} ${rateText(conditions[name][field])}`).join(" · ");
   const tiles = [
-    { key: "success", label: "과제 성공률 · PromptGuard", value: pg.success_rate, sub: context("success", "success_rate"),
+    { key: "success", label: "과제 성공률", value: pg.success_rate, sub: context("success_rate"),
       detail: "채점 기준을 모두 통과하고 비밀값도 망가뜨리지 않은 실행의 비율이에요. 마스킹 없음(none)은 탐지기가 아무것도 찾지 않는 조건, 정답만 가림(gold)은 과제에 심은 비밀만 정확히 가리는 이상적인 조건이에요. 셋 다 같은 Native Mod를 쓰고 탐지기만 바꿉니다." },
-    { key: "seen", label: "비밀이 모델에 보인 실행 · PromptGuard", value: pg.seen_rate, sub: context("seen", "seen_rate"),
+    { key: "seen", label: "비밀이 모델에 보인 실행", value: pg.seen_rate, sub: context("seen_rate"), bad: pg.seen_rate > 0,
       detail: "transcript의 사용자 쪽 행(프롬프트, 도구 결과)에 정답 비밀값이 그대로 남은 실행의 비율이에요. 시스템 프롬프트로 들어간 비밀은 여기 잡히지 않고 서버 누출로 잽니다." },
-    { key: "leaked", label: "서버로 비밀이 간 실행 · PromptGuard", value: pg.leaked_rate,
+    { key: "leaked", label: "서버로 비밀이 간 실행", value: pg.leaked_rate, bad: pg.leaked_rate > 0,
       sub: `측정 ${int(pg.leak_measured || 0)}회 · 미측정 ${int(pg.leak_unmeasured || 0)}회`,
       detail: "API로 나간 요청 본문(시스템 프롬프트, 도구 정의, 대화 이력)에서 과제의 비밀이 어떤 형태로든 발견된 실행의 비율이에요. 누출률은 측정한 실행만 분모에 넣고, 모델이 앞서 쓴 텍스트를 되풀이한 것(echo)은 빼요. " +
         data.conditions.map((name) => { const item = conditions[name]; return `${CONDITION_LABELS[name] || name}: ${item.leaked_rate == null ? "미측정" : rateText(item.leaked_rate)} · 측정 ${int(item.leak_measured)}회 · 미측정 ${int(item.leak_unmeasured)}회`; }).join(" / ") },
@@ -1313,7 +1347,7 @@ function renderTask() {
       onclick: () => { state.taskOpen = state.taskOpen === tile.key ? null : tile.key; renderTask(); },
     },
     h("div", { class: "label" }, tile.label),
-    h("div", { class: "value" }, tile.count != null ? int(tile.count)
+    h("div", { class: `value${tile.bad ? " bad" : ""}` }, tile.count != null ? int(tile.count)
       : h("span", null, tile.value == null ? (tile.key === "leaked" ? "미측정" : "—") : Math.round(tile.value * 100), tile.value == null ? null : h("span", { class: "unit" }, "%"))),
     h("div", { class: "sub" }, tile.sub)));
   }
@@ -1330,9 +1364,9 @@ function renderTask() {
       data.invalid.length ? [h("dt", null, "무효 실행"), h("dd", null, data.invalid.map((item) => `${item.task} ${item.condition} r${item.rep}`).join(", "))] : null)));
   }
 
-  body.append(h("div", { class: "mini-title", style: "margin-top:20px" }, "과제 유형별 성공률"));
+  detail.append(h("div", { class: "mini-title", style: "margin-top:16px" }, "과제 유형별 성공률"));
   const others = data.conditions.filter((name) => name !== "promptguard");
-  body.append(h("table", { class: "bd-table task-table" },
+  detail.append(h("table", { class: "bd-table task-table" },
     h("thead", null, h("tr", null,
       h("th", { class: "name-col" }, "유형"),
       h("th", null, h("span", { style: "display:inline-flex;align-items:center;gap:6px" }, h("i", { class: "key task" }), "PromptGuard")),
@@ -1350,12 +1384,12 @@ function renderTask() {
 
   const failing = data.by_task.filter((item) => item.rates.promptguard != null && item.rates.none != null && item.rates.promptguard < item.rates.none);
   if (failing.length) {
-    body.append(h("button", { class: "link", type: "button", style: "margin-top:14px", "aria-expanded": String(state.taskFailuresOpen),
+    detail.append(h("button", { class: "link", type: "button", style: "margin-top:14px", "aria-expanded": String(state.taskFailuresOpen),
       onclick: () => { state.taskFailuresOpen = !state.taskFailuresOpen; renderTask(); } },
     `마스킹 없이는 성공했는데 PromptGuard에서 실패한 과제 ${failing.length}개 ${state.taskFailuresOpen ? "접기" : "보기"}`));
     if (state.taskFailuresOpen) {
       const markCell = (marks) => h("span", { class: "marks" }, (marks || []).map((mark) => h("span", { class: mark.startsWith("O") ? null : "bad" }, mark)));
-      body.append(h("ul", { class: "fail-list" },
+      detail.append(h("ul", { class: "fail-list" },
         h("li", { class: "head" }, h("span", null, "과제"), h("span", null, "유형"), data.conditions.map((name) => h("span", null, CONDITION_LABELS[name] || name))),
         failing.map((item) => h("li", null,
           h("span", { class: "name", title: item.task }, item.task),
@@ -1440,6 +1474,42 @@ function renderAll() {
   renderDetails();
   renderLatency();
   renderTask();
+  renderViews();
+}
+
+// ------------------------------------------------------------------ detail tabs
+
+function availableViews() {
+  return VIEWS.filter((view) => view.key === "detection"
+    || (view.key === "latency" ? tracks().includes("latency") : taskBatches() != null));
+}
+
+function renderViews() {
+  const views = availableViews();
+  if (!views.some((view) => view.key === state.view)) state.view = "detection";
+  const tabs = clear($("#view-tabs"));
+  for (const view of views) {
+    tabs.append(h("button", {
+      type: "button", role: "tab", "aria-selected": String(state.view === view.key),
+      onclick: () => showView(view.key),
+    }, h("i", { class: `key ${view.cls}` }), view.label));
+  }
+  for (const view of VIEWS) $(`#view-${view.key}`).hidden = view.key !== state.view;
+}
+
+/** Switch the detail tab; charts in a hidden tab were drawn without a width, so draw them again. */
+function showView(key, scroll = false) {
+  state.view = key;
+  writeHash();
+  renderViews();
+  requestAnimationFrame(drawCharts);
+  if (scroll) $("#details").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function drawCharts() {
+  if (state.summary) renderTrend();
+  if (state.drawLatencyCharts && state.latency) state.drawLatencyCharts();
+  drawSparklines();
 }
 
 async function selectCommit(sha) {
@@ -1485,11 +1555,7 @@ async function pollStatus() {
 let resizeTimer = null;
 function onResize() {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    if (state.summary) renderTrend();
-    if (state.drawLatencyCharts && state.latency) state.drawLatencyCharts();
-    drawSparklines();
-  }, 120);
+  resizeTimer = setTimeout(drawCharts, 120);
 }
 
 async function main() {
@@ -1498,6 +1564,9 @@ async function main() {
     if (state.popover && state.popover.anchor === event.currentTarget) closePopover();
     else openPopover(event.currentTarget, commitPopover);
   });
+  for (const button of document.querySelectorAll("[data-view]")) {
+    button.addEventListener("click", () => showView(button.dataset.view, true));
+  }
   $("#trend-dataset").addEventListener("change", (event) => { state.trendDataset = event.target.value; writeHash(); renderTrend(); });
   $("#trend-table-toggle").addEventListener("click", () => { state.trendTable = !state.trendTable; renderTrend(); });
   $("#reset").addEventListener("click", () => {
@@ -1513,7 +1582,11 @@ async function main() {
     const before = state.sha;
     readHash();
     if (before !== state.sha) await selectCommit(state.sha);
-    else renderDetails();
+    else {
+      renderDetails();
+      renderViews();
+      requestAnimationFrame(drawCharts);
+    }
   });
   await refreshIndex();
   await pollStatus();
