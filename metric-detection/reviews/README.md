@@ -18,7 +18,7 @@
 ```
 
 - `where`: 그 값이 나오는 한 곳 (session_id, item_id, start, end). 변환 규칙이 바뀌어 위치가 어긋나면 변환기가 멈춘다. 그때는 아래 순서로 다시 검토한다.
-- `verdict`: `credential` 또는 `not_credential`. `credential`이면 같은 세션 안의 모든 등장 위치가 정답이다.
+- `verdict`: `credential` 또는 `not_credential`. `credential`이면 `where`가 정답이고, 같은 세션 안의 다른 등장 위치는 [LABELING.md](../LABELING.md)의 퍼뜨림 기준(`label_rules.classify`, `is_common`, `is_gold`)으로 정한다.
 - `reviewed_by`: `rule`(아래 규칙으로 정해짐) 또는 `manual`(사람이 판단).
 - `found_by`: 그 값을 후보로 낸 탐지기와 정규식.
 
@@ -47,7 +47,7 @@ python metric-detection/scripts/convert_swe_gym.py --swe-gym ../SWE-Gym-OpenHand
 
 ## 판정 기준
 
-[metric-detection의 정답 정의](../README.md#정답의-정의)를 따르고, 정의가 갈리는 곳은 기존 외부 데이터(CredData, privesc-llm-data)와 같게 정했다.
+[LABELING.md](../LABELING.md)를 따른다. 값의 길이, 강도, 테스트용인지는 판정에 쓰지 않는다.
 
 ### 규칙으로 정하는 것 (`reviewed_by: rule`, 모두 `not_credential`)
 
@@ -56,8 +56,7 @@ python metric-detection/scripts/convert_swe_gym.py --swe-gym ../SWE-Gym-OpenHand
 | placeholder, 가린 흔적 | `ghp_-XXX`, `sk--XXX`, `<your_token_here>`, `YOUR_GITHUB_TOKEN`, `your-secret-key-change-this-in-production` | 정의의 placeholder, CredData의 X |
 | 변수·속성 참조 | `$GITHUB_TOKEN`, `os.environ.get(`, `self.api_key`, `{token}` | 정의의 변수 참조 |
 | 숫자, 버전, 시간 형식 | `4096`, `^22.0.1`, `2022-11-28` | 비밀이 아님 |
-| 9자 미만 | `cat123`, `admin123` | privesc와 CredData가 짧은 값을 정답에서 뺀 기준 |
-| 이름이나 단어 하나 | `opensesame`, `testpassword`, `supersecretkey`, `mock_token`, `sk_test_12345` | 사전 단어, 테스트용 가짜 값. CredData가 F로 두는 값 |
+| 이름이나 단어 하나 | `LLM_API_KEY`, `next_token`, `generate_secret` | 코드의 이름. 단 그 값이 한 곳이라도 자격증명 자리 규칙에 걸리면 규칙으로 정하지 않고 사람이 본다 |
 | 코드 표현식 | `kwargs.get(`, `Optional[str`, `generate_password_hash(` | 비밀이 아님 |
 | 비밀 자리가 아닌 UUID | `'RequestId': '523e…'` | 정의의 UUID, request id. 앞 60자에 secret/token/key/password 같은 말이 있으면 규칙으로 정하지 않고 사람이 본다 |
 | 리소스 이름, 이메일, 경로 | `arn:aws:…`, `monai.contact@gmail.com`, `/workspace/…` | 비밀이 아님 |
@@ -66,8 +65,8 @@ python metric-detection/scripts/convert_swe_gym.py --swe-gym ../SWE-Gym-OpenHand
 
 | 판정 | 기준 | 예 |
 |---|---|---|
-| credential | 무작위 문자열 모양이고 그 자리에서 실제로 인증에 쓰이는 값. 테스트·개발용이어도 동작하면 정답 (privesc가 테스트 환경에 심은 값을 정답으로 둔 것과 같다) | Django `SECRET_KEY`, 코드의 Fernet 키, 공개 앱(OWASP Juice Shop) 소스에 하드코딩된 계정 비밀번호와 RSA 개인키, moto 가짜 Cognito가 발급한 JWT, 피드백 제출의 비밀번호와 토큰 |
-| not_credential | 흔한 패턴의 테스트 비밀번호 | `Password123!`, `P@ssw0rd!`, `TempPass123!` (CredData의 F, privesc의 흔한 비밀번호와 같다) |
+| credential | 자격증명 자리에 들어간 리터럴. 짧거나 흔하거나 테스트용이어도 정답 | Django `SECRET_KEY`, 코드의 Fernet 키, Juice Shop에 하드코딩된 계정 비밀번호와 RSA 개인키, moto 가짜 Cognito의 JWT, `Password='Password123!'`, `"password": "testpassword"`, `GITHUB_TOKEN = 'mock-token'`, `api_key="test_api_key"` |
+| not_credential | 키 이름이 자격증명을 가리켜도 값이 그 자격증명이 아닌 것 | enum 상수 `REFRESH_TOKEN = "REFRESH_TOKEN"`, `ClientToken`(중복 요청 방지 값), 페이지네이션 `next_token`, SNS 기기 푸시 토큰 |
 | not_credential | 해시, 공개 정보 | dask `tokenize()` 해시, SSH 호스트키 지문 |
 | not_credential | 탐지기 경계가 어긋난 일부 | 다른 행에서 판정한 값의 앞부분만 잡은 후보 |
 

@@ -36,6 +36,9 @@ CRON = r"(?:[\d*,/-]+\s+){5}"
 # Credential positions: the text right before the value. Checked before the identifier positions.
 SLOT = [
     ("key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:password|passwd|passphrase|pass|pwd|pw|secret){Qo}\s*[:=]\s*{Qo}$")),
+    ("secret_key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:secret_?key|api_?key|access_?key|private_?key|client_?secret"
+                                    rf"|(?:auth|access|refresh|bearer|api|session)?_?token|auth|(?<!test_)credentials?){Qo}\s*[:=]\s*{Qo}$")),
+    ("camel_key_value", re.compile(rf"[a-z](?:Password|Passwd|Secret|SecretKey|Token|ApiKey|AccessKey){Qo}\s*[:=]\s*{Qo}$")),
     ("option", re.compile(rf"(?i)--?(?:password|passwd|pass)(?:\s+|=){Qo}$")),
     ("cli_p", re.compile(rf"(?:docker\s+login|test_credentials|htpasswd|smbclient|ftp|psql)\b[^|;\n]*?\s-p\s+{Qo}$")),
     ("echo_pipe", re.compile(rf"(?:echo|printf)(?:\s|\\n)+(?:(?:-[en]+|{Q}%s[^'\"]*{Q})\s+)*{Qo}$")),
