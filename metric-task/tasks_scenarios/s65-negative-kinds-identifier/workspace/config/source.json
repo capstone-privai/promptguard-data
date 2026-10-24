@@ -1,0 +1,6 @@
+{
+  "request_id": "{{decoy:redaction}}",
+  "google_client_id": "{{decoy:client_id}}",
+  "support_url": "https://support.internal/help",
+  "backend_password": "{{secret:password}}"
+}

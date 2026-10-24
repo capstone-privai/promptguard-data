@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: billing
+          image: registry.internal/billing:2.4.0
+          ports:
+            - containerPort: 8082

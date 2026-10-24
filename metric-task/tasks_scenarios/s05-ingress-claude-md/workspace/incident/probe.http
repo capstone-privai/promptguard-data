@@ -1,0 +1,5 @@
+GET /ready HTTP/1.1
+Host: relay.internal
+X-Request-ID: {{decoy:request_id}}
+
+HTTP/1.1 503 Service Unavailable

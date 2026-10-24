@@ -1,0 +1,6 @@
+API_BASE = "/api"
+GOOGLE_CLIENT_ID = "{{decoy:client_id}}"
+STRIPE_PUBLISHABLE_KEY = "{{secret:stripe_publishable}}"
+STRIPE_LIVE = "{{secret:stripe_live}}"
+STRIPE_WEBHOOK = "{{secret:stripe_webhook}}"
+GOOGLE_OAUTH_SECRET = "{{secret:google_oauth_secret}}"

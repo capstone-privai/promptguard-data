@@ -1,0 +1,5 @@
+{
+  "datadog": "{{secret:datadog}}",
+  "twilio": "{{secret:twilio}}",
+  "signing": "{{secret:signing}}"
+}

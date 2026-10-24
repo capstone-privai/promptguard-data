@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: indexer
+          image: registry.internal/indexer:2.4.0
+          ports:
+            - containerPort: 8084

@@ -1,0 +1,4 @@
+2026-10-21T01:08:00Z WARN request_id={{decoy:request_id}} delivery_queue_age_seconds=420
+Authorization: Bearer {{secret:slack}}
+HTTP POST /api/chat.postMessage -> 429 Retry-After: 60
+Retries ignored Retry-After and increased queue age.

@@ -232,7 +232,30 @@ KINDS: dict[str, Kind] = {
     "password_backslash": Kind("PASSWORD", ALNUM + r"{7}\\" + ALNUM + "{7}", "password with \\ (Java properties)"),
 }
 
+# Appended kinds keep every pre-existing kind, seed and generation order unchanged.
+KINDS.update({
+    "gitlab_pat": Kind("TOKEN", r"glpat-[A-Za-z0-9_-]{20}", "GitLab personal access token", "gitlab-pat"),
+    "azure_storage_key": Kind("SECRET", source="Azure Storage account key: 64 bytes in base64",
+                              build=lambda _g, seed, _p: base64.b64encode(random.Random(seed).randbytes(64)).decode()),
+    "stripe_publishable": Kind("ACCESS_KEY", r"pk_live_51[A-Za-z0-9]{97}", "Stripe publishable credential (LABELING.md)"),
+    "anthropic_key": Kind("SECRET", r"sk-ant-api03-[A-Za-z0-9_-]{93}AA",
+                          "Anthropic API key (gitleaks v8.30.1 anthropic.go)", "anthropic-api-key"),
+    "session_cookie": Kind("TOKEN", r"[A-Za-z0-9_-]{43}", "opaque authenticated session cookie"),
+})
+
 DECOY_KINDS: dict[str, Kind] = {
+    "request_id": Kind(None, r"req_[a-f0-9]{24}", "request correlation identifier"),
+    "resource_id": Kind(None, r"res_[a-f0-9]{20}", "resource identifier"),
+    "commit_hash": Kind(None, r"[a-f0-9]{40}", "commit identifier"),
+    "redaction": Kind(None, source="visible redaction marker", build=lambda _g, _s, _p: "[REDACTED]"),
+    "template": Kind(None, source="unfilled credential template", build=lambda _g, _s, _p: "<your-token>"),
+    "reference": Kind(None, source="environment reference", build=lambda _g, _s, _p: "${SUPPORT_TOKEN}"),
+    "code": Kind(None, source="code expression", build=lambda _g, _s, _p: "load_runtime_config()"),
+    "doc_example": Kind(None, source="explicit documentation example", build=lambda _g, _s, _p: "EXAMPLE-credential-for-docs"),
+    "descriptor": Kind(None, source="credential descriptor", build=lambda _g, _s, _p: "temporary password"),
+    "password_hash": Kind(None, r"\$2b\$12\$[./A-Za-z0-9]{53}", "one-way bcrypt password hash"),
+    "csrf_token": Kind(None, r"[A-Za-z0-9_-]{32}", "CSRF anti-forgery token, not authentication"),
+    "empty": Kind(None, source="empty value", build=lambda _g, _s, _p: ""),
     # Public values in the shape of the secret they sit next to, so a detector that goes by shape masks them.
     "publishable_live": Kind(None, r"pk_live_51[A-Za-z0-9]{97}", "Stripe publishable key: pk_live_ + 99 base62"),
     "oauth_client_id": Kind(None, r"[0-9]{12}-[a-z0-9]{32}\.apps\.googleusercontent\.com", "Google OAuth client ID"),

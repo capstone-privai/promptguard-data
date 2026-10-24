@@ -1,0 +1,2 @@
+request_id,datadog_api_key,twilio_auth_token,signing_secret,status
+{{decoy:request_id}},{{secret:datadog}},{{secret:twilio}},{{secret:signing}},429

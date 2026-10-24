@@ -1,0 +1,2 @@
+CLI connection refused: inventory.internal:7443
+AUTH_TOKEN={{secret:token}}

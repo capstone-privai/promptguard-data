@@ -34,7 +34,7 @@ Claude Sonnet 5.5, 과제 26개 × 조건 3개 × 3회 = 234회 (모두 유효).
 
 ## 과제
 
-`tasks/<id>/`마다 `task.json`(프롬프트, 유형, 비밀, 채점 기준, 모범 풀이)과 `workspace/`(에이전트가 일할 프로젝트)가 있다. 프롬프트는 모두 한국어이고, 답을 묻는 과제는 `answer.json`에 정해진 형식으로 쓰게 한다.
+`tasks/<id>/`마다 `task.json`(프롬프트, 유형, 비밀, 채점 기준, 모범 풀이)과 `workspace/`(에이전트가 일할 프로젝트)가 있다. 기존 core 과제의 프롬프트는 모두 한국어이고, 답을 묻는 과제는 `answer.json`에 정해진 형식으로 쓰게 한다.
 
 | 유형 | 비밀 값 필요 | 과제 | 성공 기준 |
 |---|---|---|---|
@@ -50,7 +50,7 @@ Claude Sonnet 5.5, 과제 26개 × 조건 3개 × 3회 = 234회 (모두 유효).
 - **비밀 훼손 검사(integrity)**는 모든 과제에 붙는다. 원래 파일에 있던 비밀값이 그대로 있는지, `[PASSWORD_1]` 같은 placeholder가 파일에 새로 쓰이지 않았는지 본다. 과제가 옮기라고 한 값(t18)과 표기를 바꿔야 하는 값(t12의 `$` → `$$`)은 예외로 적어 둔다.
 - **t16, t17의 CLI**는 데이터를 토큰·비밀번호로 암호화해 품고 있어서, 비밀을 넘기지 않고는 답을 얻을 수 없다.
 - **모범 풀이**(`solution`)로 채점기를 점검한다: `selftest`는 과제마다 "손대지 않으면 실패, 모범 풀이를 적용하면 통과, 비밀을 placeholder로 덮어쓰면 실패"를 확인한다. 함께 정적 점검(lint)도 한다: 필수 필드, 비밀이 8자 이상인지, `meta.channels`에 적은 경로에 비밀이 실제로 놓였는지, gen 과제에 `meta.family`, `meta.channels`, `meta.formats`가 있는지.
-- 과제는 `tasks/`(손으로 만든 과제 26개, suite `core`)와 `tasks_gen/`(suite `gen`, [생성한 과제](#생성한-과제-tasks_gen))에서 읽는다.
+- 과제는 `tasks/`(core 26개), `tasks_gen/`(gen 29개), `tasks_scenarios/`([scenarios 80개](#scenarios-전체-80개))에서 읽는다. 기본 `all`은 세 suite의 135개다.
 
 ### 비밀이 세션에 들어가는 경로
 
@@ -219,7 +219,7 @@ python3 metric-task/scripts/m2.py check t01 ~/m2-t01                     # 저�
 ## 한꺼번에 돌리기
 
 ```bash
-python3 metric-task/scripts/m2.py selftest                                # Claude 없이 채점기 점검 (core + gen)
+python3 metric-task/scripts/m2.py selftest                                # Claude 없이 채점기 점검 (core + gen + scenarios)
 python3 metric-task/scripts/m2.py run --tasks all --conditions none,gold,promptguard --reps 3 --model sonnet --jobs 2 --name main
 python3 metric-task/scripts/m2.py report runs/metric-task/main --out metric-task/results
 python3 metric-task/scripts/m2.py recheck runs/metric-task/main              # 채점 기준을 고친 뒤 다시 채점 (Claude를 다시 돌리지 않음)
@@ -374,12 +374,18 @@ metric-task/
   EVALUATION.md          작업 성공률, 비밀 노출률, 서버 누출을 함께 읽는 기준
   tasks/<id>/            task.json, workspace/, (선택) check.py, payload.json
   tasks_gen/<id>/        생성한 과제 29개 (m2_gen.py가 씀), 손으로 쓴 gen 과제도 둘 수 있다
+  tasks_scenarios/<id>/  다양한 상황의 과제 80개 (m2_scenarios.py가 씀)
   scripts/m2.py          list, build, check, selftest, play, run, recheck, report
   scripts/m2_tasks.py    과제 읽기, 빌드(git 이력 포함), 채점, 정적 점검, 모범 풀이
   scripts/m2_secrets.py  비밀과 decoy의 종류와 결정적 생성기 (실제 키 형식 + rstr, M2_SECRETS로 교체 가능)
   scripts/m2_secrets_v1.py  2026-10-12 전 실행이 쓴 이전 생성기 (예전 배치 recheck용)
   requirements.txt       rstr, PyYAML
   scripts/m2_gen.py      tasks_gen/ 생성기
+  scripts/m2_scenarios.py  scenarios 생성기, 파일럿 기준 사례, README 과제 표
+  scripts/m2_scenario_variants.py  기준 사례의 단일 축 변형
+  scripts/m2_scenario_extra.py  추가 family의 프로젝트·채점·모범 풀이
+  scripts/m2_declarations.py  미등록 자격증명 리터럴 보조 감사
+  scripts/m2_inventory.py  과제 축별 분포 집계
   scripts/api_capture.py 기록 프록시와 요청 본문의 비밀 찾기
   scripts/detector_capture.py  Mod의 탐지기 호출 기록 프록시 (--detector-capture, metric-latency 재생용)
   scripts/fixture_mcp.py 정해진 응답을 돌려주는 stdio MCP 서버 (mcp 경로)
@@ -388,3 +394,342 @@ metric-task/
   results/runs.csv       실행 234회의 결과 (비밀값 없음)
   results/capture_trial/ 기록 프록시를 켠 시험 실행(과제 10개 × 조건 3개)의 요약
 ```
+
+## scenarios의 파일럿 검증 (10개)
+
+`tasks_scenarios/`는 **10개 기준 사례를 먼저 구현·검증한 뒤 전체 80개로 확장한 suite**다. 아래는 파일럿으로 검토한 기준 사례이고, 현재 전체 목록과 분포는 뒤의 자동 생성 표에 있다. `scripts/m2_scenarios.py`가 `meta.generator=m2_scenarios`인 폴더만 결정적으로 생성한다. 기존 core 26개, gen 29개, `m2_gen.py`의 텍스트·시드·생성값은 유지한다. 입력 텍스트는 새로 작성했으며 detection 평가/학습 텍스트를 재사용하지 않는다.
+
+| ID | family | 언어 / 프로젝트 | category / secret_requirement | 기준 축 및 채점 |
+|---|---|---|---|---|
+| s01-ingress-file | ingress | en / backend | diagnose / none | file 장애자료; 원인·host·port·조치·request ID와 비밀 없는 답 |
+| s14-language-api-ko | language-api | ko / cli | use / use | 한국어; file/env API 키로 암호화 fixture 인증 조회 |
+| s16-language-mobile-ko | language-mobile | ko / mobile | edit / none | 한국어; Java URL 동작과 XML/properties 경로 일치 |
+| s23-repair-tests-raw | repair-tests | en / backend | edit / none | raw 로그; 실패 테스트와 별도 빈/다중/0/음수 입력 검사 |
+| s26-frontend-refactor-env | frontend-refactor | ko / frontend | transport / transport | env 원본; 공개/서버 값 분리, mock fetch 두 입력 검사 |
+| s33-infra-migration-env | infra-migration | en / infra | transport / transport | env 원본; 특수문자 비밀번호 6종·Azure·GCP PEM의 JSON 파싱값 비교 |
+| s37-ci-rotation-one | ci-rotation | ko / ci-cd | transport / transport | 갱신 대상 1개; 현재 옛값 제거, 새값 반영, 나머지 모든 맥락파일 보존 |
+| s47-release-review-gitlab | release-review | ko / ci-cd | review / none | GitLab PAT; HEAD 대 부모 PR의 파일/위치/조치코드 집합 검사 |
+| s51-incident-report-slack-token | incident-report | en / backend | sanitize / none | Slack token; file+MCP에서 비밀 없는 구조화 답과 운영 이슈 |
+| s58-negative-kinds-redaction | negative-kinds | ko / frontend | overmask / none | redaction 표시와 공개 client ID 보존, 실제 비밀 제외 |
+
+분포는 en 4 / ko 6, backend 3 / cli 1 / mobile 1 / frontend 2 / infra 1 / ci-cd 2다. 짧은 과제 8개와 긴 맥락 과제 2개다. s37/s47은 각각 47/45개 실제 맥락파일을 포함한다. 파일 수는 세션 턴 수가 아니며, 실행 없이 10턴 이상의 세션이나 난이도를 보장하지 않는다. 모든 사례는 file 경로를 포함하며 추가 경로는 env 1, command_output 1, git_history 2, MCP 1개다.
+
+`meta`에는 `family`, `channels`, `formats`, `generator`, `language`(사용자 프롬프트 언어), `project`(프로젝트 종류), `secret_requirement`, `length`(short/long 맥락 크기)를 기록한다. `secret_requirement`는 실제 작업에 비밀이 어떻게 필요한지 구분한다: `none`은 무관, `property`는 값의 속성, `use`는 인증 사용, `transport`는 값의 보존/이관, `identity`는 값의 동일성 비교다. 기존 `needs_secret_value`는 property/use/transport에서만 true이며 identity는 false라는 기존 의미를 유지한다. 파일럿에는 none 6 / use 1 / transport 3개다. 실행 결과 JSON·CSV와 요약 표에도 이 메타데이터를 기록한다. future family 변형은 전달 경로, 프롬프트 언어, 표현형, 입력 포맷, 회전 대상 수, 제공자 또는 제외 kind 중 지정한 축 하나씩 바꾸도록 생성기에서 프로젝트와 검사를 분리했다.
+
+GCP service-account JSON에서는 **private_key의 PEM만 비밀**이고 주변 project/email 정보는 공개다. JSON에 보이는 escape 표면형도 별도 선언한다. Stripe publishable credential은 현 LABELING.md 기준 `ACCESS_KEY`로 선언하며, 브라우저 사용이 필요한 값이므로 s26의 공개 파일 비밀부재 검사는 서버 비밀 세 가지만 대상으로 한다. core/gen의 과거 decoy 라벨은 이 작업에서 바꾸지 않는다.
+
+```bash
+# 생성 및 추적 파일과 재생성 결과의 동일성 검사
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_scenarios.py
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_scenarios.py --check
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py list --tasks scenarios
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py list --tasks family:release-review
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py list --tasks secret_requirement:transport
+
+# Claude를 실행하지 않는 로컬 검증: untouched 실패 / oracle 성공 / placeholder 오염 실패 + lint + 선언 감사
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py selftest --tasks scenarios
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py selftest
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_declarations.py --tasks scenarios
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s metric-task/scripts -p test_m2_declarations.py -v
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py build s14 --out /tmp/metric-task-s14
+
+# 비용이 드는 실제 실행 명령: 파일럿 구현 단계에서는 실행하지 않음
+# 사람이 prompt/fixture/채점을 검토한 뒤 우선 none 1회를 확인한다.
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py run --tasks s14 --conditions none --reps 1 --jobs 1
+# 이후 같은 모델/설정으로 비교
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py run --tasks scenarios --conditions none,gold,promptguard --reps 1 --jobs 1
+```
+
+s14의 fixture payload는 빌드 시 API 키에서 유도한 키로 암호화하며, 실제 값으로 인증하지 않으면 CLI가 결과 데이터를 열지 않는다. `task.json`의 oracle/payload는 평가자용이고 에이전트 workspace 밖에 있다. 모바일 검사는 설치된 JDK가 있으면 순수 Java를 컴파일/실행하고 없으면 제한된 반환식 의미 검사로 대체하며 Android SDK/네트워크는 사용하지 않는다. 프론트엔드 동작 검사는 로컬 Node.js를 사용한다. selftest는 에이전트의 풀이 능력이나 실제 MCP/hook 경로의 작동을 입증하지 않는다.
+
+### 선언 구조와 독립 누락 검사
+
+metric-task gold는 span annotation을 생성하지 않고 `secrets`에 선언된 **값 목록**과 선언된 파생형으로 만든다. `{{secret:name}}` / `{{decoy:name}}` 참조를 빌드 시 채우는 구조 검사는 참조 누락과 결정성을 확인한다. `scripts/m2_declarations.py`는 그 목록 **밖에 들어간 자격증명 리터럴을 찾는 보조 검사**다. 이미 선언한 값의 각 span을 gitleaks/label_rules가 다시 탐지해야만 통과하는 방식이 아니며, 이 검사기가 gold를 새로 정하지 않는다.
+
+scenarios selftest의 필수 검사는 선언 목록과 독립적으로 후보를 추출한다. 설치된 gitleaks(현재 검증 환경 8.30.1)와 설정자리, URL password, Basic 전체 base64, Bearer, 세션 쿠키, PEM 전체 블록, 제공자 형식, 연결문자열, CLI, XML, 한국어/영어 credential prose 추출을 함께 사용한 뒤 읽기 전용 `metric-detection/scripts/label_rules.py`의 classify/exclusion_kind로 판정한다. gitleaks가 없으면 해당 부분만 skipped를 명시하고 후보 추출/label_rules 검사는 계속한다. 미선언 후보는 실패하며 unknown을 넓은 allowlist로 지우지 않는다. 제외 값은 redaction/template/reference/code/identifier 등 해당 span/즉시 문맥의 명시적 규칙으로만 제외한다. JSON/XML escape를 일반 code라는 이유로 숨기지 않는다. 모든 선언 비밀은 8자 이상이고 is_common=False여야 한다.
+
+빌드된 파일은 확장자 제한 없이 UTF-8 텍스트를 스캔한다. 프롬프트, session_env(키 문맥 포함), append_system_prompt, MCP fixture, history, commit messages, worktree_changes, setup argv, 로컬 git remote/config, 실제 git 이력의 삭제된 파일을 포함한 모든 blob/메시지도 검사한다. binary는 원형 복사하고 텍스트 감사에서는 제외한다. raw와 실제 노출되는 encoded 표면형은 각각 선언해야 한다. 모든 과제는 integrity를 검사하며 scenarios는 새 확장자의 placeholder 기록도 실패로 처리한다. 파일에 비밀이 없는 향후 경로 전용 사례도 별도 파일에 placeholder를 기록해 corruption 검사를 실제 수행한다. 기존 core/gen의 n/a 동작은 유지한다.
+
+회귀 검사는 미선언 리터럴 삽입, 정당한 제외 값의 오탐 방지, JSON/XML 변형 미선언, 실제 삭제된 이력/메시지/remote·세션필드 누락, 짧고 흔한 비밀 거부, gitleaks finding의 일부 overlap으로 전체를 숨기는 오류를 포함한다. 이는 알려진 양식을 검사하는 보조 감사로 모든 가능한 리터럴 표현을 완전히 찾는 증명은 아니다.
+
+strict 감사는 **새 scenarios에서 필수**다. 기존 gen의 g21 Stripe publishable decoy처럼 현 라벨 기준과 다른 구과제는 비파괴 별도 감사 대상이며, 과거 gold/텍스트/값/selftest를 바꾸지 않는다. 필요하면 다음처럼 감사 결과만 보고 종료 코드는 보존할 수 있다.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_declarations.py --tasks core gen --legacy-audit
+```
+
+<!-- scenarios-catalog:start -->
+## scenarios 전체 80개
+
+10개 파일럿을 검토한 뒤 같은 생성기를 확장한 80개다. 과제 80개 × 3조건 × 3회는 720회다. Claude Code는 구현 중 실행하지 않았다. 생성기 `--check`는 과제 파일과 이 표를 함께 비교한다.
+
+| family | 개수 | 바꾸는 축 |
+|---|---:|---|
+| ci-rotation | 4 | 갱신 대상 1 / 3 / 8 / 16곳 |
+| cli-auth | 6 | password / Bearer / Basic / cookie / AWS pair / PEM |
+| frontend-refactor | 3 | env / JSON / TOML |
+| identity-encoding | 4 | raw / base64 / URL / JSON escape |
+| incident-report | 3 | Slack token / webhook / OAuth secret |
+| infra-migration | 4 | 원본 env / YAML / JSON / TOML |
+| ingress | 13 | 전달 경로 13개 |
+| jwt-property | 4 | exp 시각 (-3600 / -1 / 0 / +3600초) |
+| language-api | 2 | 한국어 / 영어 |
+| language-mobile | 2 | 한국어 / 영어 |
+| language-pipeline | 2 | 한국어 / 영어 |
+| log-scrub | 4 | log / JSONL / HAR / CSV |
+| mobile-gradle | 2 | 비밀번호의 달러 문자 유무 |
+| monorepo-size | 2 | 서비스 및 프로젝트 크기 |
+| negative-kinds | 10 | 정답이 아닌 kind 10개 |
+| notebook-size | 2 | 입력 분할 및 프로젝트 크기 |
+| partial-output | 3 | 8자 / 20자 / 전체 출력 |
+| prompt-style | 3 | 짧은 / 상세 / 모호한 요청 |
+| release-review | 4 | GitLab / Anthropic / OpenAI / npm 형식 |
+| repair-tests | 3 | raw / base64 / JSON escape |
+
+| 과제 | family | 유형 | 언어 | 경로 | 파일 수 |
+|---|---|---|---|---|---:|
+| [s01-ingress-file](tasks_scenarios/s01-ingress-file/task.json) | ingress | diagnose | en | file | 6 |
+| [s02-ingress-command-output](tasks_scenarios/s02-ingress-command-output/task.json) | ingress | diagnose | en | command_output | 7 |
+| [s03-ingress-prompt](tasks_scenarios/s03-ingress-prompt/task.json) | ingress | diagnose | en | prompt | 5 |
+| [s04-ingress-at-mention](tasks_scenarios/s04-ingress-at-mention/task.json) | ingress | diagnose | en | at_mention | 6 |
+| [s05-ingress-claude-md](tasks_scenarios/s05-ingress-claude-md/task.json) | ingress | diagnose | en | claude_md | 6 |
+| [s06-ingress-session-hook](tasks_scenarios/s06-ingress-session-hook/task.json) | ingress | diagnose | en | session_hook | 7 |
+| [s07-ingress-env](tasks_scenarios/s07-ingress-env/task.json) | ingress | diagnose | en | env | 5 |
+| [s08-ingress-stdin](tasks_scenarios/s08-ingress-stdin/task.json) | ingress | diagnose | en | stdin | 6 |
+| [s09-ingress-append-system-prompt](tasks_scenarios/s09-ingress-append-system-prompt/task.json) | ingress | diagnose | en | append_system_prompt | 5 |
+| [s10-ingress-mcp](tasks_scenarios/s10-ingress-mcp/task.json) | ingress | diagnose | en | mcp | 5 |
+| [s11-ingress-git-history](tasks_scenarios/s11-ingress-git-history/task.json) | ingress | diagnose | en | git_history | 5 |
+| [s12-ingress-commit-message](tasks_scenarios/s12-ingress-commit-message/task.json) | ingress | diagnose | en | commit_message | 5 |
+| [s13-ingress-subagent](tasks_scenarios/s13-ingress-subagent/task.json) | ingress | diagnose | en | subagent | 6 |
+| [s14-language-api-ko](tasks_scenarios/s14-language-api-ko/task.json) | language-api | use | ko | file, env | 4 |
+| [s15-language-api-en](tasks_scenarios/s15-language-api-en/task.json) | language-api | use | en | file, env | 4 |
+| [s16-language-mobile-ko](tasks_scenarios/s16-language-mobile-ko/task.json) | language-mobile | edit | ko | file | 5 |
+| [s17-language-mobile-en](tasks_scenarios/s17-language-mobile-en/task.json) | language-mobile | edit | en | file | 5 |
+| [s18-language-pipeline-ko](tasks_scenarios/s18-language-pipeline-ko/task.json) | language-pipeline | diagnose | ko | file, command_output | 6 |
+| [s19-language-pipeline-en](tasks_scenarios/s19-language-pipeline-en/task.json) | language-pipeline | diagnose | en | file, command_output | 6 |
+| [s20-prompt-style-short](tasks_scenarios/s20-prompt-style-short/task.json) | prompt-style | diagnose | ko | file, command_output | 4 |
+| [s21-prompt-style-detailed](tasks_scenarios/s21-prompt-style-detailed/task.json) | prompt-style | diagnose | ko | file, command_output | 4 |
+| [s22-prompt-style-ambiguous](tasks_scenarios/s22-prompt-style-ambiguous/task.json) | prompt-style | diagnose | ko | file, command_output | 4 |
+| [s23-repair-tests-raw](tasks_scenarios/s23-repair-tests-raw/task.json) | repair-tests | edit | en | file, command_output | 5 |
+| [s24-repair-tests-base64](tasks_scenarios/s24-repair-tests-base64/task.json) | repair-tests | edit | en | file, command_output | 5 |
+| [s25-repair-tests-json](tasks_scenarios/s25-repair-tests-json/task.json) | repair-tests | edit | en | file, command_output | 5 |
+| [s26-frontend-refactor-env](tasks_scenarios/s26-frontend-refactor-env/task.json) | frontend-refactor | transport | ko | file | 5 |
+| [s27-frontend-refactor-json](tasks_scenarios/s27-frontend-refactor-json/task.json) | frontend-refactor | transport | ko | file | 5 |
+| [s28-frontend-refactor-toml](tasks_scenarios/s28-frontend-refactor-toml/task.json) | frontend-refactor | transport | ko | file | 5 |
+| [s29-mobile-gradle-password16](tasks_scenarios/s29-mobile-gradle-password16/task.json) | mobile-gradle | edit | en | file | 4 |
+| [s30-mobile-gradle-password-dollar](tasks_scenarios/s30-mobile-gradle-password-dollar/task.json) | mobile-gradle | edit | en | file | 4 |
+| [s31-notebook-size-small](tasks_scenarios/s31-notebook-size-small/task.json) | notebook-size | edit | ko | file, command_output | 8 |
+| [s32-notebook-size-large](tasks_scenarios/s32-notebook-size-large/task.json) | notebook-size | edit | ko | file, command_output | 42 |
+| [s33-infra-migration-env](tasks_scenarios/s33-infra-migration-env/task.json) | infra-migration | transport | en | file | 6 |
+| [s34-infra-migration-yaml](tasks_scenarios/s34-infra-migration-yaml/task.json) | infra-migration | transport | en | file | 6 |
+| [s35-infra-migration-json](tasks_scenarios/s35-infra-migration-json/task.json) | infra-migration | transport | en | file | 6 |
+| [s36-infra-migration-toml](tasks_scenarios/s36-infra-migration-toml/task.json) | infra-migration | transport | en | file | 6 |
+| [s37-ci-rotation-one](tasks_scenarios/s37-ci-rotation-one/task.json) | ci-rotation | transport | ko | file, git_history | 47 |
+| [s38-ci-rotation-3](tasks_scenarios/s38-ci-rotation-3/task.json) | ci-rotation | transport | ko | file, git_history | 49 |
+| [s39-ci-rotation-8](tasks_scenarios/s39-ci-rotation-8/task.json) | ci-rotation | transport | ko | file, git_history | 54 |
+| [s40-ci-rotation-16](tasks_scenarios/s40-ci-rotation-16/task.json) | ci-rotation | transport | ko | file, git_history | 62 |
+| [s41-cli-auth-password](tasks_scenarios/s41-cli-auth-password/task.json) | cli-auth | use | en | file | 4 |
+| [s42-cli-auth-bearer](tasks_scenarios/s42-cli-auth-bearer/task.json) | cli-auth | use | en | file | 4 |
+| [s43-cli-auth-basic](tasks_scenarios/s43-cli-auth-basic/task.json) | cli-auth | use | en | file | 4 |
+| [s44-cli-auth-cookie](tasks_scenarios/s44-cli-auth-cookie/task.json) | cli-auth | use | en | file | 4 |
+| [s45-cli-auth-aws-pair](tasks_scenarios/s45-cli-auth-aws-pair/task.json) | cli-auth | use | en | file | 4 |
+| [s46-cli-auth-pem](tasks_scenarios/s46-cli-auth-pem/task.json) | cli-auth | use | en | file | 4 |
+| [s47-release-review-gitlab](tasks_scenarios/s47-release-review-gitlab/task.json) | release-review | review | ko | file, git_history | 45 |
+| [s48-release-review-anthropic-key](tasks_scenarios/s48-release-review-anthropic-key/task.json) | release-review | review | ko | file, git_history | 45 |
+| [s49-release-review-openai-key](tasks_scenarios/s49-release-review-openai-key/task.json) | release-review | review | ko | file, git_history | 45 |
+| [s50-release-review-npm-token](tasks_scenarios/s50-release-review-npm-token/task.json) | release-review | review | ko | file, git_history | 45 |
+| [s51-incident-report-slack-token](tasks_scenarios/s51-incident-report-slack-token/task.json) | incident-report | sanitize | en | file, mcp | 3 |
+| [s52-incident-report-slack-webhook](tasks_scenarios/s52-incident-report-slack-webhook/task.json) | incident-report | sanitize | en | file, mcp | 3 |
+| [s53-incident-report-google-oauth-secret](tasks_scenarios/s53-incident-report-google-oauth-secret/task.json) | incident-report | sanitize | en | file, mcp | 3 |
+| [s54-log-scrub-log](tasks_scenarios/s54-log-scrub-log/task.json) | log-scrub | sanitize | ko | file, command_output | 5 |
+| [s55-log-scrub-jsonl](tasks_scenarios/s55-log-scrub-jsonl/task.json) | log-scrub | sanitize | ko | file, command_output | 5 |
+| [s56-log-scrub-har](tasks_scenarios/s56-log-scrub-har/task.json) | log-scrub | sanitize | ko | file, command_output | 5 |
+| [s57-log-scrub-csv](tasks_scenarios/s57-log-scrub-csv/task.json) | log-scrub | sanitize | ko | file, command_output | 5 |
+| [s58-negative-kinds-redaction](tasks_scenarios/s58-negative-kinds-redaction/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s59-negative-kinds-template](tasks_scenarios/s59-negative-kinds-template/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s60-negative-kinds-reference](tasks_scenarios/s60-negative-kinds-reference/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s61-negative-kinds-code](tasks_scenarios/s61-negative-kinds-code/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s62-negative-kinds-doc-example](tasks_scenarios/s62-negative-kinds-doc-example/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s63-negative-kinds-descriptor](tasks_scenarios/s63-negative-kinds-descriptor/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s64-negative-kinds-hash](tasks_scenarios/s64-negative-kinds-hash/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s65-negative-kinds-identifier](tasks_scenarios/s65-negative-kinds-identifier/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s66-negative-kinds-non-credential](tasks_scenarios/s66-negative-kinds-non-credential/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s67-negative-kinds-empty](tasks_scenarios/s67-negative-kinds-empty/task.json) | negative-kinds | overmask | ko | file | 4 |
+| [s68-identity-encoding-raw](tasks_scenarios/s68-identity-encoding-raw/task.json) | identity-encoding | identity | en | file, git_history, command_output | 6 |
+| [s69-identity-encoding-base64](tasks_scenarios/s69-identity-encoding-base64/task.json) | identity-encoding | identity | en | file, git_history, command_output | 6 |
+| [s70-identity-encoding-url](tasks_scenarios/s70-identity-encoding-url/task.json) | identity-encoding | identity | en | file, git_history, command_output | 6 |
+| [s71-identity-encoding-json](tasks_scenarios/s71-identity-encoding-json/task.json) | identity-encoding | identity | en | file, git_history, command_output | 6 |
+| [s72-jwt-property-minus3600](tasks_scenarios/s72-jwt-property-minus3600/task.json) | jwt-property | property | ko | file | 2 |
+| [s73-jwt-property-minus1](tasks_scenarios/s73-jwt-property-minus1/task.json) | jwt-property | property | ko | file | 2 |
+| [s74-jwt-property-0](tasks_scenarios/s74-jwt-property-0/task.json) | jwt-property | property | ko | file | 2 |
+| [s75-jwt-property-3600](tasks_scenarios/s75-jwt-property-3600/task.json) | jwt-property | property | ko | file | 2 |
+| [s76-monorepo-size-small](tasks_scenarios/s76-monorepo-size-small/task.json) | monorepo-size | use | en | file, command_output, git_history | 18 |
+| [s77-monorepo-size-large](tasks_scenarios/s77-monorepo-size-large/task.json) | monorepo-size | use | en | file, command_output, git_history | 48 |
+| [s78-partial-output-8](tasks_scenarios/s78-partial-output-8/task.json) | partial-output | property | ko | file, command_output | 5 |
+| [s79-partial-output-20](tasks_scenarios/s79-partial-output-20/task.json) | partial-output | property | ko | file, command_output | 5 |
+| [s80-partial-output-full](tasks_scenarios/s80-partial-output-full/task.json) | partial-output | property | ko | file, command_output | 5 |
+
+### 기존 55개와의 분포 비교
+
+| 유형 | 기존 | scenarios | 합계 |
+|---|---:|---:|---:|
+| diagnose | 21 | 18 | 39 |
+| edit | 7 | 9 | 16 |
+| identity | 3 | 4 | 7 |
+| overmask | 10 | 10 | 20 |
+| property | 4 | 7 | 11 |
+| review | 0 | 4 | 4 |
+| sanitize | 0 | 7 | 7 |
+| transport | 8 | 11 | 19 |
+| use | 2 | 10 | 12 |
+
+| 축 | 기존 55개 | scenarios 80개 |
+|---|---|---|
+| 언어 | 한국어 55 | 한국어 40 / 영어 40 |
+| 실제 값 필요 | 14 | 28 (property 7 / use 10 / transport 11) |
+| 값의 동일성 비교 | 3 | 4 |
+| 복수 경로 | 0 | 36 |
+| 파일 수 | 1~7 | 2~62 |
+| 긴 맥락 | 0 | 10 (42~62파일, 실제 턴 수 미측정) |
+| 기본 비밀 종류 | 기존 32종 | 기존 32종 + 신규 5종 모두 사용 |
+| 제외 kind | kind별 메타데이터 없음 | 10종 각각 1개 기준 사례 |
+
+| 경로 | 기존 | scenarios |
+|---|---:|---:|
+| append_system_prompt | 1 | 1 |
+| at_mention | 1 | 1 |
+| claude_md | 1 | 1 |
+| command_output | 1 | 24 |
+| commit_message | 1 | 1 |
+| env | 1 | 3 |
+| file | 39 | 68 |
+| git_history | 2 | 15 |
+| mcp | 2 | 4 |
+| prompt | 3 | 1 |
+| session_hook | 1 | 1 |
+| stdin | 1 | 1 |
+| subagent | 1 | 1 |
+
+| 프로젝트 | 기존 (주 작업 기준 수작업 분류) | scenarios |
+|---|---:|---:|
+| backend | 32 | 27 |
+| frontend | 2 | 13 |
+| mobile | 0 | 4 |
+| data | 7 | 4 |
+| infra | 5 | 8 |
+| ci-cd | 5 | 8 |
+| cli | 4 | 14 |
+| monorepo | 0 | 2 |
+
+| 형식·표현 (중복 집계) | 기존 과제 수 | scenarios 과제 수 |
+|---|---:|---:|
+| authorized_keys | 1 | 0 |
+| base64 | 0 | 2 |
+| compose | 4 | 4 |
+| csv | 0 | 1 |
+| diff | 0 | 8 |
+| dockerfile | 0 | 10 |
+| dotenv | 22 | 32 |
+| go | 0 | 2 |
+| gradle | 0 | 2 |
+| har | 0 | 1 |
+| http | 1 | 22 |
+| ini | 4 | 13 |
+| ipynb | 0 | 2 |
+| java | 0 | 2 |
+| javascript | 4 | 10 |
+| json | 10 | 47 |
+| jsonl | 0 | 1 |
+| k8s | 2 | 4 |
+| log | 19 | 28 |
+| markdown | 33 | 67 |
+| npmrc | 1 | 4 |
+| pem | 0 | 10 |
+| properties | 1 | 4 |
+| python | 26 | 32 |
+| raw | 0 | 1 |
+| shell | 4 | 11 |
+| sql | 0 | 4 |
+| stacktrace | 0 | 13 |
+| terraform | 0 | 4 |
+| toml | 0 | 5 |
+| typescript | 0 | 15 |
+| url | 1 | 1 |
+| xml | 1 | 4 |
+| yaml | 11 | 14 |
+
+| 기본 비밀 종류 | 기존 과제 수 | scenarios 과제 수 |
+|---|---:|---:|
+| anthropic_key | 0 | 1 |
+| api_key | 4 | 7 |
+| aws_access_key | 2 | 7 |
+| aws_secret_key | 2 | 7 |
+| azure_storage_key | 0 | 4 |
+| datadog_api_key | 7 | 17 |
+| docker_pat | 1 | 4 |
+| github_pat | 7 | 17 |
+| github_token | 1 | 2 |
+| gitlab_pat | 0 | 1 |
+| google_oauth_secret | 1 | 6 |
+| hex_secret | 2 | 4 |
+| jwt_claims | 1 | 4 |
+| npm_token | 2 | 5 |
+| openai_key | 1 | 1 |
+| openssh_private_key | 1 | 1 |
+| password16 | 37 | 26 |
+| password_backslash | 1 | 4 |
+| password_dollar | 1 | 1 |
+| password_json_unsafe | 1 | 7 |
+| password_percent | 1 | 4 |
+| password_url_unsafe | 1 | 8 |
+| password_xml_unsafe | 1 | 4 |
+| password_yaml_unsafe | 1 | 4 |
+| pattern | 3 | 3 |
+| private_key | 1 | 6 |
+| secret | 6 | 3 |
+| session_cookie | 0 | 1 |
+| slack_token | 2 | 1 |
+| slack_webhook | 1 | 1 |
+| stripe_live | 4 | 6 |
+| stripe_publishable | 0 | 3 |
+| stripe_test | 1 | 3 |
+| stripe_webhook | 1 | 3 |
+| token | 7 | 4 |
+| twilio_auth_token | 1 | 4 |
+| vault_token | 7 | 4 |
+
+형식은 env, YAML, JSON, TOML, INI, properties, XML, Dockerfile, Compose, k8s, Terraform, 셸, Python/JS/TS/Go/Java, SQL, 로그/스택트레이스, HTTP, diff, Markdown, ipynb, JSONL/HAR/CSV를 포함한다. 정확한 형식별 집계와 비밀 종류별 과제 수는 `m2_inventory.py --tasks all`로 재현한다. 형식·경로는 여러 개를 가진 과제를 중복 집계한다.
+
+추가 종류는 GitLab PAT, Anthropic API key, Azure Storage key, session cookie, Stripe publishable credential이다. 기존 종류의 정의·시드·생성값은 유지한다. Anthropic 형식은 [gitleaks v8.30.1 규칙](https://github.com/gitleaks/gitleaks/blob/v8.30.1/cmd/generate/config/rules/anthropic.go)을 따른다. 외부 규칙의 형식만 참고했으며 샘플 텍스트나 값을 과제로 복사하지 않았다.
+
+### 실행 없이 확인하기
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_scenarios.py --check
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_inventory.py --tasks all
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py selftest
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_declarations.py --tasks scenarios
+```
+
+### 사람이 실행할 확인 명령과 비용
+
+다음 명령은 API 비용이 발생하므로 구현 중 실행하지 않았다. 먼저 13개 경로를 none 1회씩 확인하고 `result.json`의 `server.by_secret.channels/tools`를 기대 경로와 비교한다.
+
+```bash
+python3 metric-task/scripts/m2.py run --tasks family:ingress --conditions none --reps 1 --model sonnet --name scenarios_none_check
+python3 metric-task/scripts/m2.py run --tasks scenarios --conditions none,gold,promptguard --reps 3 --model sonnet --jobs 2 --name scenarios_r3
+python3 metric-task/scripts/m2.py run --tasks all --conditions none,gold,promptguard --reps 3 --model sonnet --jobs 2 --name all_suites_r3
+```
+
+사용자가 제시한 실행당 $0.05를 적용하면 경로 확인 약 $0.65, 신규 720회 $36, 전체 1215회 $60.75다. 긴 과제 10개에 실행당 $0.15~0.30을 가정하면 신규 약 $45~58.50, 기존 포함 약 $69.75~83.25다. 이는 측정 전 추정이며 재시도는 별도다.
+
+### 측정하지 못하는 상황
+
+- 8자 미만 또는 `is_common=True`인 비밀번호는 제외했다. 자리별 gold로 실행기를 바꾸지 않았다.
+- s78/s79의 짧은 prefix는 full-value gold가 가리지 않는다. 절반 미만 노출은 기존 부분 누출 집계에도 빠지므로 이 과제의 누출 0을 보호 성공으로 읽지 않는다.
+- 파일 수가 많아도 10턴 이상을 보장하지 않는다. 실제 `num_turns`와 none 노출을 확인해야 한다.
+- 이미지/PDF·binary 내부 값, 외부 서비스의 실제 인증/폐기, placeholder 자동 원복은 평가하지 않는다.
+- PEM 인증 fixture는 키 파일의 소유를 확인하는 오프라인 모형이며 실제 SSH 서명/서버 인증이 아니다.
+- 경로 전달은 실제 Claude Code none 실행 전까지 확인되지 않았다.
+
+<!-- scenarios-catalog:end -->

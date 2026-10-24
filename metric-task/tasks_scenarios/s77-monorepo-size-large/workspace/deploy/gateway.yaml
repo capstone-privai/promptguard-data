@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: gateway
+          image: registry.internal/gateway:2.4.0
+          ports:
+            - containerPort: 8080

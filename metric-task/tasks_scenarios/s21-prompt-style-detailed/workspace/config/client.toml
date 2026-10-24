@@ -1,0 +1,5 @@
+[endpoint]
+host="inventory.internal"
+port=7443
+[auth]
+token="{{secret:token}}"

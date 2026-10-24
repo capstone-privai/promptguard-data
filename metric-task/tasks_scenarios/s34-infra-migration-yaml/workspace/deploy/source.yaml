@@ -1,0 +1,12 @@
+{
+"PASSWORD_URL_UNSAFE": "{{secret:password_url_unsafe_json}}",
+"PASSWORD_YAML_UNSAFE": "{{secret:password_yaml_unsafe_json}}",
+"PASSWORD_JSON_UNSAFE": "{{secret:password_json_unsafe_json}}",
+"PASSWORD_XML_UNSAFE": "{{secret:password_xml_unsafe_json}}",
+"PASSWORD_PERCENT": "{{secret:password_percent_json}}",
+"PASSWORD_BACKSLASH": "{{secret:password_backslash_json}}",
+"AZURE_KEY": "{{secret:azure_key}}",
+"GCP_PRIVATE_KEY": "{{secret:gcp_pem_escaped}}",
+"REGION":"asia-northeast3",
+"REPLICAS":3
+}
