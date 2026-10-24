@@ -225,6 +225,100 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(self.service.retry)
         self.assertTrue(self.service.wake.is_set())
 
+    def alerts_of(self, action):
+        with patch("pipeline.service.notify.send") as send, contextlib.redirect_stdout(io.StringIO()):
+            action()
+        return [call.args[1] for call in send.call_args_list]
+
+    def run_job_alerts(self, evaluate):
+        self.plan["datasets"] = []
+        job = self.service.jobs(self.plan)[0]
+        with patch("pipeline.service.repo.export"), patch("pipeline.service.repo.python_for", return_value="python"), \
+                patch("pipeline.service.runner.evaluate", side_effect=evaluate):
+            return self.alerts_of(lambda: self.service.run_job(self.plan, *job, [job, job]))
+
+    def test_a_failed_job_alerts_its_start_and_the_failure(self):
+        self.service.config.notify_url = "https://discord.test/hook"
+        alerts = self.run_job_alerts(RuntimeError("shard 3 exited 1"))
+        self.assertEqual(len(alerts), 2)  # latency of d is still to run: no report yet
+        self.assertEqual(alerts[0], "▶️ 탐지 성능 평가 시작 · ddddddd title d\n뒤에 1개 대기")
+        self.assertIn("탐지 성능 평가 실패 · ddddddd title d", alerts[1])
+        self.assertIn("shard 3 exited 1", alerts[1])
+
+    def test_no_webhook_no_alert(self):
+        self.assertEqual(self.run_job_alerts(RuntimeError("boom")), [])
+
+    def test_a_job_running_too_long_alerts_once(self):
+        self.service.config.notify_url = "https://discord.test/hook"
+        self.service.config.overdue_hours = 0.01 / 3600
+        alerts = self.run_job_alerts(lambda *_a, **_k: time.sleep(0.2))
+        self.assertEqual(len(alerts), 2)
+        self.assertIn("탐지 성능 평가가", alerts[1])
+        self.assertIn("ddddddd", alerts[1])
+
+    def test_a_commit_is_reported_once_every_track_is_done(self):
+        self.service.config.notify_url = "https://discord.test/hook"
+        self.fake_result("detection", "2", "bench2", {"precision": 0.9, "recall": 0.8, "f1": 0.847})
+        self.fake_result("latency", "3", "env1", {"single_1k_p50": 12.34, "single_64k_p50": 340.6,
+                                                  "ms_per_string": 0.812, "over_timeout": 0})
+        alerts = self.run_job_alerts(lambda *_a, **_k: self.fake_result(
+            "detection", "3", "bench2", {"precision": 0.912, "recall": 0.834, "f1": 0.871}))
+        self.assertEqual(alerts[-1], "✅ 평가 완료 · ddddddd title d\n"
+                                     "탐지 성능: Precision 91.2% · Recall 83.4% · F1 87.1%\n"
+                                     "  이전 탐지기 변경(ccccccc) 대비: P +1.2%p · R +3.4%p · F1 +2.4%p\n"
+                                     "탐지 지연: 1KB 12ms · 64KB 341ms (p50) · 문자열당 +0.81ms · timeout 초과 0회")
+
+    def test_a_commit_with_a_failed_track_is_reported_as_such(self):
+        self.service.config.notify_url = "https://discord.test/hook"
+        failed = result_key("latency", "3" * 64, "env1")
+        self.service.failures[f"latency:{failed}"] = {"error": "boom", "at": "x", "commit": "d" * 40}
+        alerts = self.run_job_alerts(lambda *_a, **_k: self.fake_result(
+            "detection", "3", "bench2", {"precision": 0.5, "recall": None, "f1": None}))
+        self.assertEqual(alerts[-1], "⚠️ 평가 끝 (일부 실패) · ddddddd title d\n"
+                                     "탐지 성능: Precision 50.0% · Recall — · F1 —\n"
+                                     "탐지 지연: 실패")
+
+    def test_new_commits_are_announced_once(self):
+        self.service.config.notify_url = "https://discord.test/hook"
+        self.assertEqual(self.alerts_of(lambda: self.service.announce(self.plan)), [])  # a new data directory
+        self.fake_result("detection", "3", "bench2", {})
+        self.fake_result("latency", "3", "env1", {})
+        self.plan["commits"] = [*self.commits, commit("e", "4"), commit("f", "3")]
+        alerts = self.alerts_of(lambda: self.service.announce(self.plan))
+        self.assertEqual(alerts, ["🆕 main에 새 커밋 2개\n"
+                                  "• eeeeeee title e · 평가 대기 (탐지 성능, 탐지 지연)\n"
+                                  "• fffffff title f · 탐지기가 같아 이전 결과를 씀"])
+        self.assertEqual(self.alerts_of(lambda: self.service.announce(self.plan)), [])
+
+    def test_a_restarted_service_announces_what_was_merged_meanwhile(self):
+        self.service.write_index(self.plan, [], running=None)
+        restarted = Service(Config(data_dir=self.data, repo_url="x", notify_url="https://discord.test/hook"))
+        self.plan["commits"] = [*self.commits, commit("e", "4")]
+        alerts = self.alerts_of(lambda: restarted.announce(self.plan))
+        self.assertEqual(len(alerts), 1)
+        self.assertIn("새 커밋 1개\n• eeeeeee", alerts[0])
+
+    def test_an_outage_alerts_once_and_again_on_recovery(self):
+        self.service.config.notify_url = "https://discord.test/hook"
+        self.plan["commits"] = []
+        outcomes = iter([RuntimeError("fetch failed"), RuntimeError("fetch failed"), None, None])
+
+        def plan():
+            outcome = next(outcomes)
+            if outcome:
+                raise outcome
+            return self.plan
+
+        rounds = iter(range(3))
+        self.service.plan = plan
+        self.service.wake.wait = lambda timeout: next(rounds, None) is None and self.service.stop()
+        with patch("pipeline.service.notify.send") as send, contextlib.redirect_stdout(io.StringIO()):
+            self.service.run_forever(600)
+        alerts = [call.args[1] for call in send.call_args_list]
+        self.assertEqual(len(alerts), 2)
+        self.assertIn("평가 서비스 오류: fetch failed", alerts[0])
+        self.assertIn("평가 서비스 복구", alerts[1])
+
 
 if __name__ == "__main__":
     unittest.main()

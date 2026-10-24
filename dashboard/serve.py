@@ -168,6 +168,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-task", action="store_true", help="hide metric-task")
     parser.add_argument("--auth", default=os.environ.get("DASHBOARD_AUTH"),
                         help="USER:PASSWORD for HTTP Basic authentication (default $DASHBOARD_AUTH)")
+    parser.add_argument("--notify-url", default=os.environ.get("DASHBOARD_NOTIFY_URL"),
+                        help="Discord webhook for failure alerts (default $DASHBOARD_NOTIFY_URL; prefer the variable, "
+                             "the URL is a secret)")
+    parser.add_argument("--dashboard-url", default=os.environ.get("DASHBOARD_URL"),
+                        help="link put under each alert (default $DASHBOARD_URL)")
+    parser.add_argument("--overdue-hours", type=float, default=24.0,
+                        help="alert once when a job runs this long (default 24; 0 never)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--once", action="store_true", help="evaluate what is missing, then exit")
     mode.add_argument("--serve-only", action="store_true", help="serve without fetching or evaluating")
@@ -188,7 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         config = Config(data_dir=data_dir, repo_url=args.repo, branch=args.branch, jobs=args.jobs,
                         python=args.python, auto_venv=not args.no_auto_venv, latency=not args.no_latency,
                         latency_adapters=args.latency_adapters, latency_guard=args.latency_guard,
-                        task=not args.no_task)
+                        task=not args.no_task, notify_url=args.notify_url, dashboard_url=args.dashboard_url,
+                        overdue_hours=args.overdue_hours)
         if args.task_runs:
             config.task_runs = args.task_runs
         service = Service(config)
