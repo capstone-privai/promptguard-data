@@ -58,8 +58,6 @@ python3 dashboard/serve.py --host 0.0.0.0 --port 8765 --auth team:비밀번호
 [Service]
 WorkingDirectory=/srv/promptguard-data
 Environment=DASHBOARD_AUTH=team:비밀번호
-Environment=DASHBOARD_NOTIFY_URL=https://discord.com/api/webhooks/…
-Environment=DASHBOARD_URL=http://서버:8765/
 ExecStart=/usr/bin/python3 dashboard/serve.py --host 0.0.0.0 --port 8765
 Restart=on-failure
 
@@ -83,6 +81,19 @@ cron으로 돌리고 정적 서버에 올리는 방법도 된다: `python3 dashb
 | ⏳ 오래 걸림 | 평가 하나가 `--overdue-hours`(기본 24시간)를 넘겼을 때 한 번 |
 
 데이터셋이나 채점기가 바뀌어 모든 커밋을 다시 평가하면 커밋마다 시작·완료 알림이 간다.
+
+systemd로 띄웠다면 서비스 파일을 고치지 않고 덧붙이는 파일(drop-in)로 켠다. 웹훅이 비밀이므로 파일은 root만 읽게 둔다.
+
+```ini
+# /etc/systemd/system/pg-dashboard.service.d/notify.conf  (chmod 600)
+[Service]
+Environment=DASHBOARD_NOTIFY_URL=https://discord.com/api/webhooks/…
+Environment=DASHBOARD_URL=http://서버:8765/
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart pg-dashboard
+```
 
 웹훅 주소를 가진 사람은 누구나 그 채널에 글을 쓸 수 있으므로 명령줄 대신 환경 변수로 넘기고(`ps`에 보이지 않게), 로그와 오류 메시지에도 남기지 않는다. 알림에 오류를 옮길 때는 URL의 인증 정보(`user:token@`)를 지운다. 알림 전송이 실패해도 평가는 계속하고, 표준 출력에 `alert not sent`만 남긴다. 프로세스 자체가 죽는 경우는 systemd가 다시 띄우며, 이 알림으로는 알 수 없다.
 
