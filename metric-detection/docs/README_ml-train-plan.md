@@ -111,7 +111,7 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 
 | 축 | 목표 |
 |---|---|
-| 정답의 채널 | tool_output 65%, prompt 15%, instructions 8%, tool_input 12% (tool_input은 채점에서 빼지만 정답은 같은 기준으로 만든다) |
+| 정답의 채널 | 비밀이 처음 나오는 채널은 tool_output 74%, prompt 17%, instructions 9%다. tool_input에는 정답을 두지 않는다(2026-10-25 결정): 배포 환경에서 에이전트는 PromptGuard가 가린 표시만 보므로, tool_input에는 비밀값 대신 그 표시(`[PASSWORD_1]`)가 들어간다. 비밀의 30%는 나중에 tool_input에서 이 표시로 다시 쓰인다(`{{mask:NAME}}`) |
 | 언어 | 영어 70%, 한국어 25%, 혼합 5%. 한국어는 자연어, 문서, 로그 메시지, 코드 주석에 둔다 |
 | tool_output 형식 | 날 텍스트 셸 출력 40%, 줄 번호 붙은 파일 보기(Read, `cat -n`) 25%, grep 결과(`경로:줄:`) 10%, JSON으로 감싼 결과 15%, 잘린 출력(앞뒤 생략 표시) 10% |
 | tool_input 형식 | 셸 명령 60%, JSON 인자 30%, 파일 편집 인자 10% |
@@ -189,7 +189,7 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 - **group_id = 템플릿 하나**. 한 템플릿에서 나온 세션(값 시드 변형)은 모두 같은 split에 간다. 같은 카드에서 나온 양성·음성 대조 쌍도 같은 group으로 묶는다.
 - **값도 나눈다**: 값 시드에 split 이름을 넣고, 빌드 후 split 사이에 같은 값이 없는지 검사한다. 흔한 값 목록은 공유해도 된다.
 - **중복 검사**: 값과 숫자를 가린 텍스트로 MinHash를 만들어, split 사이에 유사도 0.8 이상인 item이 있으면 그 group을 옮긴다.
-- **privesc**: 정답 수는 많지만 한 분야라서 train 정답의 30% 이하로 묶는다(세션 표본 추출). test-OOD에는 `password_reuse`, `ssh_key_reuse`처럼 서로 다른 형식의 시나리오 2종을 둔다.
+- **privesc**: 정답 수는 많지만 한 분야라서 train 정답의 30% 이하로 묶는다(세션 표본 추출). privesc의 tool_input에는 진짜 비밀번호와 정답(6,324개)이 있다. 합성 데이터와 같은 규칙으로 학습에 섞을 때는 tool_input의 정답을 빼고, tool_input은 문맥으로만 쓴다. test-OOD에는 `password_reuse`, `ssh_key_reuse`처럼 서로 다른 형식의 시나리오 2종을 둔다.
 - **외부 데이터**(CredData, Nemotron-PII, openhands-feedback, SWE-Gym, Nosey Parker)는 평가에만 쓴다. 텍스트와 값은 쓰지 않았고, 이 계획에는 형식·채널·길이의 집계 통계만 참고했다. 그래도 커버리지 목표를 그 통계에 맞춰 정했으므로 외부 데이터 점수가 실제보다 낙관적으로 나올 수 있다. 그래서 외부 데이터 결과는 "목표 분포를 참고한 평가"라고 함께 적는다.
 
 ### 5.1 분포 이동 test (test-OOD)
@@ -229,7 +229,7 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 
 ### 저장소 규칙
 
-- **템플릿은 git에 올린다**: 비밀값이 없고, LLM 출력은 다시 만들 수 없으므로 템플릿이 원본이다. 예상 크기는 약 10MB다. 커밋 전에 gitleaks로 템플릿을 검사한다. 각 템플릿 meta에 카드 id, 모델 id, 프롬프트 버전, 응답 id를 남긴다. LLM 원문 응답은 올리지 않는다.
+- **템플릿은 이 저장소에 커밋한다**(2026-10-25 결정): 비밀값이 없고, LLM 출력은 다시 만들 수 없으므로 템플릿이 원본이다. 예상 크기는 약 10MB다. 커밋 전에 gitleaks로 템플릿을 검사한다. 각 템플릿 meta에 카드 id, 모델 id, 프롬프트 버전, 응답 id를 남긴다. LLM 원문 응답은 올리지 않는다.
 - **빌드 결과는 올리지 않는다**: `data_test/`, `data_answer/`는 이미 `.gitignore`에 있다. 실제 형식을 따르는 가짜 키(체크섬이 맞는 GitHub 토큰 등)는 GitHub push protection에 걸린다. 같은 템플릿과 VERSION이면 바이트 단위로 같은 결과가 나와야 한다.
 - 진짜 비밀값을 만들거나 가져오지 않는다. 값은 공개된 결정적 시드로 만들며, 실제 인증에 쓰면 안 된다.
 - VERSION은 그대로 두고 값 시드에 split과 템플릿 이름을 넣는다(2절). 기존 평가 데이터의 값은 바뀌지 않는다.
@@ -239,11 +239,11 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 
 1. (끝남) label-unify를 main에 합친다. 2026-10-25, `35066af`. 이후 정답은 `label_rules.py`가 기준이다.
 2. (끝남) 생성기: `ml_train_build.py`(build, verify, report)와 `value_gen.py`. 기존 템플릿 3종의 출력은 바이트 단위로 그대로다. 남은 것은 URI 스킴 추가와 1절 축별 집계의 저장소 이전이다.
-3. 카드 추첨기와 LLM 템플릿 작성 스크립트. 프롬프트와 카드 형식을 정한다.
-4. 파일럿: 템플릿 100개 → 300세션. 자동 검사, 사람 검토 100세션, 비용 실측. 결과를 보고 본 생성을 승인받는다.
+3. (끝남) 카드 추첨기와 LLM 템플릿 작성 스크립트: `ml_train_cards.py`, `ml_train_write.py`(Message Batches API), `templates/ml_train/`의 설정·프롬프트·[실행 절차](../templates/ml_train/README.md). 가짜 응답으로 검사와 빌드까지 확인했고, API는 아직 부르지 않았다.
+4. 파일럿(별도 세션): 템플릿 100개 → 약 290세션. 자동 검사, 사람 검토 100세션, 비용 실측. 결과를 보고 본 생성을 승인받는다.
 5. 본 생성: LLM 템플릿 2,240 + 손 템플릿 160 + 분포 이동 250.
 6. 분할, 중복 검사, 최종 리포트, 사람 검토 400세션.
 
 ## 9. 열린 질문
 
-정하지 않은 것(모델 입출력과 크기, 파일럿 승인, LABELING과 label_rules가 어긋나는 곳, 기존 v2 템플릿의 두 정답, 템플릿 저장 위치)은 [README_ml-train-open-questions.md](README_ml-train-open-questions.md)에 모았다.
+정하지 않은 것(모델 입출력과 크기, 파일럿 승인, LABELING과 label_rules가 어긋나는 곳, 기존 v2 템플릿의 두 정답)은 [README_ml-train-open-questions.md](README_ml-train-open-questions.md)에 모았다.
