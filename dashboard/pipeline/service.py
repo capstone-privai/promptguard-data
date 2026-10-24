@@ -19,6 +19,7 @@ Data directory:
   .lock                           held by the process that evaluates here (its pid inside)
   repo.git/                       bare clone of the PromptGuard repository
   checkouts/, venvs/, validated/  exported commits, Pythons with the pinned CredSweeper, dataset validation cache
+  gitleaks-cache.sqlite           gitleaks reports the detection shards share (gitleaks_cache.py; quotes secrets)
   results/detection/<key>/        runner.py output
   results/latency/<key>/          latency.py output
   index.json                      what the UI loads first
@@ -346,7 +347,7 @@ class Service:
                 runner.evaluate(checkout, plan["datasets"], self.result_dir(track, key), python=python,
                                 jobs=self.config.jobs, cache_dir=self.data / "validated", commit=commit.as_json(),
                                 system_fingerprint=commit.fingerprint, bench=plan["bench"], progress=progress,
-                                cancelled=self.stopping.is_set)
+                                cancelled=self.stopping.is_set, gitleaks_cache=self.data / "gitleaks-cache.sqlite")
             else:
                 latency.evaluate(checkout, self.result_dir(track, key), python=python,
                                  adapters=self.config.latency_adapters, guard=self.config.latency_guard,

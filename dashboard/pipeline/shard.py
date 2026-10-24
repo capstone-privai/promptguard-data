@@ -70,6 +70,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    if not args.gitleaks_cache:
+        return evaluate_range(args)
+    from pipeline.gitleaks_cache import install
+
+    cache = install(Path(args.gitleaks_cache))
+    try:
+        return evaluate_range(args)
+    finally:
+        cache.close()
+        print(f"gitleaks cache: {cache.hits} hits, {cache.misses} runs", file=sys.stderr)
+
+
+def evaluate_range(args: argparse.Namespace) -> int:
     started = time.perf_counter()
     low, high = (int(part) for part in args.lines.split(":"))
     sessions = load_range(Path(args.sessions), Path(args.gold), low, high)
@@ -110,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--dataset", required=True, help="sessions file stem, e.g. sessions_from_CredData")
     run.add_argument("--lines", required=True, help="session range low:high in file order")
     run.add_argument("--system-root", required=True, help="PromptGuard checkout (src/detector, the mod's register.mjs)")
+    run.add_argument("--gitleaks-cache", help="SQLite file caching gitleaks runs across shards and commits")
     args = parser.parse_args(argv)
     return cmd_validate(args) if args.command == "validate" else cmd_run(args)
 

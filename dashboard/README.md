@@ -123,6 +123,7 @@ sudo systemctl daemon-reload && sudo systemctl restart pg-dashboard
 - **평가가 끝나기 전**에는 그 앞 커밋의 결과를 보여 주고, 위쪽에 어느 커밋을 평가 중인지 적는다.
 - **실패**하면 그 작업을 `failures.json`에 남기고 다시 시도하지 않는다. 웹훅이 있으면 [알림](#알림)을 보낸다. 위쪽 커밋 버튼에서 이유를 보고 '실패한 평가 다시 돌리기'를 누르거나, `POST /api/refresh?retry=1`을 보낸다. 자세한 기록은 `runs/dashboard/logs/`에 있다.
 - **결과 파일 요청 실패**는 평가 실패나 빈 데이터와 구분해 표시한다. 서버에서는 index가 그대로여도 다음 상태 폴링 때 실패한 요청을 다시 보낸다. 각 오류 표시의 ‘다시 시도’ 버튼은 정적 사본에서도 사용할 수 있다. 예시는 요청에 성공한 경우만 캐시하므로 일시적인 오류가 ‘예시 없음’으로 남지 않는다.
+- **gitleaks 캐시**: PromptGuard의 gitleaks 어댑터는 텍스트마다 `gitleaks stdin` 프로세스를 새로 띄우고, 이 실행과 규칙 컴파일이 탐지 평가 시간의 약 90%를 차지한다(아이템당 약 22ms, 나머지 어댑터는 합쳐 1ms 안팎). 샤드는 그 호출 결과를 `gitleaks-cache.sqlite`에 남겨 모든 샤드와 커밋이 같이 쓴다. 키는 출력이 기대는 것 전부(바이너리 해시, 인자, 인자로 준 파일 내용, 작업 폴더의 `.gitleaks.toml`·`.gitleaksignore`, `GITLEAKS_*` 환경 변수, 입력 바이트)라서, gitleaks나 설정이 바뀌면 다시 실행한다. 어댑터 코드가 아니라 `subprocess.run`에서 가로채므로 커밋마다 어댑터가 달라도 결과는 같고, 알아보지 못한 호출은 그냥 실행한다. 캐시가 찬 뒤 privesc-llm-data 150세션은 59초에서 3초, CredData 1000세션은 61초에서 18초가 됐고 결과는 캐시 없이 돈 것과 같았다. 처음 한 번은 캐시를 채우느라 지금과 비슷하게 걸린다. 지연 측정에는 쓰지 않는다.
 - 평가는 PromptGuard 체크아웃을 쓰지 않는다. 서버가 bare clone(`repo.git`)에서 그 커밋의 `src/detector`, `register.mjs`, `requirements.txt`만 꺼내 평가하고 지운다.
 
 | 경로 (`runs/dashboard/` 아래) | 내용 |
@@ -133,6 +134,7 @@ sudo systemctl daemon-reload && sudo systemctl restart pg-dashboard
 | `results/latency/<키>/` | `latency.json`(요약), `m4/`(m4.py의 원래 표본. 텍스트 없음) |
 | `results/task/<키>/` | `task.json`(metric-task 배치 요약) |
 | `repo.git`, `checkouts/`, `venvs/`, `validated/`, `logs/` | 저장소 사본, 꺼낸 커밋, 고정 버전 CredSweeper 환경, 데이터셋 검증 캐시, 기록 |
+| `gitleaks-cache.sqlite` | 샤드가 같이 쓰는 gitleaks 결과. 찾은 비밀값이 들어 있으므로 내주지 않는다. 지워도 다음 평가가 다시 채운다 |
 
 Guard 재생 지연은 측정·실패·미측정 요청 수와 캐시 통과 수를 구분한다. 실패하거나 일부 호출의 시간이 없는 요청은 지연 백분위수에서 제외하고, 정상적인 캐시 통과는 0ms로 센다. 지연 결과 버전은 `LATENCY_VERSION=3`이며, 이전 결과는 다음 서비스 실행에서 재측정 대상이 된다.
 
@@ -180,6 +182,7 @@ dashboard/
     repo.py             PromptGuard 저장소: fetch, 평가할 커밋, 탐지기 지문, 필요한 파일만 꺼내기, 고정 CredSweeper
     runner.py           탐지 성능: 데이터셋 찾기·검증, 샤드 계획과 실행, 병합, summary.json
     shard.py            샤드 하나를 평가하는 프로세스 (metric-detection 채점기 사용)
+    gitleaks_cache.py   샤드의 gitleaks 실행 결과를 샤드·커밋끼리 나눠 쓰는 캐시
     collect.py          개수 칸과 예시 고르기, 채점기와의 일치 검사
     taxonomy.py         세는 축: 유형, 채널, 판정, placeholder 유형 → 정답 유형, 데이터셋별 하위 분류 기준
     catalog.py          화면에 보이는 이름과 설명 (바꿔도 다시 평가하지 않음)

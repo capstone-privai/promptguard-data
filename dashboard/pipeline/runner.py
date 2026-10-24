@@ -38,7 +38,8 @@ SHARD_SCRIPT = DASHBOARD_ROOT / "pipeline" / "shard.py"
 # Display names (catalog.py) are not here: index.json carries the current ones.
 SCORING_CODE = [*sorted((METRIC_DETECTION / "evaluation").rglob("*.py")),
                 *(DASHBOARD_ROOT / "pipeline" / name
-                  for name in ("__init__.py", "paths.py", "runner.py", "taxonomy.py", "collect.py", "shard.py"))]
+                  for name in ("__init__.py", "paths.py", "runner.py", "taxonomy.py", "collect.py", "shard.py",
+                              "gitleaks_cache.py"))]
 SUMMARY_VERSION = 2  # earlier results did not pin the evaluated inputs to their key
 
 
@@ -216,7 +217,8 @@ def plan(datasets: Sequence[Dataset], weights: dict[str, list[int]], jobs: int) 
 
 def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, python: str, jobs: int,
                progress: Callable[[int, int], None], cancelled: Callable[[], bool], *,
-               shard_script: Path = SHARD_SCRIPT) -> None:
+               shard_script: Path = SHARD_SCRIPT, gitleaks_cache: Path | None = None) -> None:
+    cache_args = ["--gitleaks-cache", str(gitleaks_cache)] if gitleaks_cache else []
     total = sum(shard.weight for shard in shards)
     done = 0
     pending = list(shards)
@@ -231,7 +233,7 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
                     [python, str(shard_script), "run", "--dataset", shard.dataset.stem,
                      "--sessions", str(shard.dataset.sessions), "--gold", str(shard.dataset.gold),
                      "--lines", f"{shard.low}:{shard.high}", "--system-root", str(system_root),
-                     "--out", str(work_dir / "shards" / f"{shard.name}.json")],
+                     "--out", str(work_dir / "shards" / f"{shard.name}.json"), *cache_args],
                     stdout=log, stderr=subprocess.STDOUT, env=child_env())
                 running.append((shard, process, log))
             time.sleep(0.5)
@@ -272,8 +274,10 @@ def prf(counts: dict[str, int]) -> dict[str, float | None]:
 def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, python: str, jobs: int,
              cache_dir: Path, commit: dict[str, Any], system_fingerprint: str, bench: dict[str, Any],
              progress: Callable[[int, int], None] = lambda done, total: None,
-             cancelled: Callable[[], bool] = lambda: False) -> dict[str, Any]:
-    """Evaluate, merge and write out_dir; return the headline numbers (overall and per dataset)."""
+             cancelled: Callable[[], bool] = lambda: False, gitleaks_cache: Path | None = None) -> dict[str, Any]:
+    """Evaluate, merge and write out_dir; return the headline numbers (overall and per dataset).
+
+    gitleaks_cache: SQLite file the shards share for gitleaks runs (gitleaks_cache.py); None runs gitleaks per text."""
     started = time.perf_counter()
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=out_dir.name + ".work-", dir=out_dir.parent) as temporary:
@@ -283,7 +287,8 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
         datasets, shard_script = snapshot_inputs(datasets, work_dir / "inputs", bench)
         weights = validate(datasets, cache_dir, python, work_dir / "logs", shard_script=shard_script)
         shards = plan(datasets, weights, jobs)
-        run_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, shard_script=shard_script)
+        run_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, shard_script=shard_script,
+                   gitleaks_cache=gitleaks_cache)
 
         merged, system = {}, None
         for dataset in datasets:
