@@ -62,10 +62,19 @@ def token(name: str, prefix: str = "") -> Slot:
     return Slot(prefix + value(name, 36), "TOKEN")
 
 
-def uri(name: str, scheme: str = "postgresql", encoded: bool = False) -> Slot:
-    # Full URI is the gold unit per the 2026-10-02 label guide. No query ambiguity.
-    text = f"{scheme}://service:{quote(password(name).value, safe='')}@db.example.invalid:5432/app"
-    return Slot(quote(text, safe="") if encoded else text, "SECRET")
+URI_HOST = "@db.example.invalid:5432/app"
+
+
+def uri_parts(secret: str, scheme: str = "postgresql", encoded: bool = False) -> tuple[str, Slot, str]:
+    """A connection URI as (prefix, password, suffix). Only the password is gold (LABELING.md 경계: URL 속 자격증명)."""
+    pieces = [f"{scheme}://service:", quote(secret, safe=""), URI_HOST]
+    if encoded:
+        pieces = [quote(p, safe="") for p in pieces]
+    return pieces[0], Slot(pieces[1], "PASSWORD"), pieces[2]
+
+
+def uri(name: str, scheme: str = "postgresql", encoded: bool = False) -> tuple[str, Slot, str]:
+    return uri_parts(password(name).value, scheme, encoded)
 
 
 class Corpus:
@@ -86,10 +95,10 @@ class Corpus:
         self.current = {"session_id": session_id, "items": [], "meta": meta}
         self.sessions.append(self.current)
 
-    def item(self, channel: str, *parts: str | Slot, turn: str = "t0"):
+    def item(self, channel: str, *parts: str | Slot | tuple, turn: str = "t0"):
         session_id, item_id = self.current["session_id"], len(self.current["items"])
         text, spans = "", []
-        for part in parts:
+        for part in (p for part in parts for p in (part if isinstance(part, tuple) else (part,))):
             if isinstance(part, str):
                 text += part
                 continue
@@ -259,7 +268,7 @@ GENERATORS = {
     "aws_access_key": ("ACCESS_KEY", lambda s: "AKIA" + value(s, 16, AWS_ACCESS_ID)),
     "aws_secret_key": ("SECRET", lambda s: value(s, 40, AWS_SECRET)),
     "publishable_key": ("ACCESS_KEY", lambda s: "pk_test_" + value(s, 24)),
-    "db_uri": ("SECRET", lambda s: f"postgresql://service:{quote(strong_password(s), safe='')}@db.example.invalid:5432/app"),
+    "db_uri": ("PASSWORD", strong_password),  # wrapped in a connection URI by parse_text; only the password is gold
     "private_key": ("PRIVATE_KEY", ed25519_pem),
 }
 
@@ -310,7 +319,13 @@ def parse_text(text: str, seed: str, unnamed: list[int]) -> list[str | Slot]:
                 unnamed[0] += 1
                 name = f"#{unnamed[0]}"
             out = generate(f"{seed}:{kind}:{name}")
-            for t in filter(None, m.group("transforms").split("|")):
+            transforms = list(filter(None, m.group("transforms").split("|")))
+            if kind == "db_uri":
+                if any(t != "url" for t in transforms):
+                    raise ValueError(f"{m.group(0)!r}: db_uri supports only the url transform")
+                parts.extend(uri_parts(out, encoded=bool(transforms)))
+                continue
+            for t in transforms:
                 t_name, _, t_arg = t.partition("=")
                 out, new_type = transform(out, t_name, t_arg or None)
                 kind_type = new_type or kind_type

@@ -54,7 +54,7 @@ CredData가 T로 둔 행 중 일부가 음성이 됐다. 대부분(2,299행)은 
 | `gold_from_CredData.jsonl` | 정답 span. `gold.jsonl`과 같은 형식 |
 | `labels_from_CredData.jsonl` | CredData 전체 행을 item 좌표로 옮기고 우리 판정(`gold`, `kind`, `rule`)을 붙인 분석용 파일. Category와 Id를 함께 남긴다 |
 
-세션 11,030개, item 25,345개, gold span 17,500개(SECRET 7,301 / PASSWORD 5,520 / TOKEN 3,028 / PRIVATE_KEY 1,459 / ACCESS_KEY 192). 정답인 행과 그 값의 다른 등장(아래)에서 겹치는 것을 정리한 수다(변환 규칙 참고).
+세션 11,030개, item 25,345개, gold span 17,500개(SECRET 6,761 / PASSWORD 6,060 / TOKEN 3,028 / PRIVATE_KEY 1,459 / ACCESS_KEY 192). 정답인 행과 그 값의 다른 등장(아래)에서 겹치는 것을 정리한 수다(변환 규칙 참고).
 gold가 있는 item은 6,432개다. 나머지 item은 스캐너가 후보로 잡았지만 비밀이 아닌 값만 있어서 어려운 음성 데이터로 쓸 수 있다.
 
 ## 변환 규칙
@@ -62,7 +62,7 @@ gold가 있는 item은 6,432개다. 나머지 item은 스캐너가 후보로 잡
 - 줄 나누기는 CredData와 같다: `\r\n`과 `\r`을 `\n`으로 바꾼 뒤 `\n`으로 나눈다. offset은 item text의 Python 코드 포인트 기준이다.
 - 값 위치: LineStart 줄의 ValueStart부터 LineEnd 줄의 ValueEnd까지. ValueEnd가 없으면 줄 끝까지, ValueStart가 없으면(PEM 전체 줄 라벨) 줄 전체. 앞뒤 공백은 잘라낸다. CredData의 값 범위가 값 뒤까지 넘어간 경우, 줄 이음 `\\`, 뒤따르는 주석(` # …`), 다음 쿼리 인자(`&k=v`)도 잘라낸다(`tidy()`).
 - 겹치는 정답: 구성 요소와 겹치는 `… Multi` 조합 규칙 행 96개는 버렸다. 나머지 겹침 115건은 합집합으로 합쳤고, type은 가장 긴 행을 따른다.
-- Category → type: 개인키 계열(PEM/BASE64 Private Key, JWK, PASERK, NKEY Seed 또는 CryptographyKey=Private)은 PRIVATE_KEY, `URL Credentials`는 SECRET, 이름에 Password가 있으면 PASSWORD, AWS Client ID 같은 식별자형은 ACCESS_KEY, Token/Authorization/Auth는 TOKEN, 나머지(Key, Secret, UUID, Salt, Nonce …)는 SECRET이다. 구현은 `convert_creddata.py`의 `gold_type()`에 있다.
+- Category → type: 개인키 계열(PEM/BASE64 Private Key, JWK, PASERK, NKEY Seed 또는 CryptographyKey=Private)은 PRIVATE_KEY, `URL Credentials`는 PASSWORD(URL 속 비밀번호 부분), 이름에 Password가 있으면 PASSWORD, AWS Client ID 같은 식별자형은 ACCESS_KEY, Token/Authorization/Auth는 TOKEN, 나머지(Key, Secret, UUID, Salt, Nonce …)는 SECRET이다. 구현은 `convert_creddata.py`의 `gold_type()`에 있다.
 
 ## 점수를 읽을 때 유의할 점
 

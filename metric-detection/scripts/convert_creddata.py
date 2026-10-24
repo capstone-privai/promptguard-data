@@ -65,7 +65,7 @@ def gold_type(category: str, crypto: str) -> str:
     if crypto == "Private" or any(c in PRIVATE_KEY_CATEGORIES for c in cats):
         return "PRIVATE_KEY"
     if "URL Credentials" in cats:
-        return "SECRET"  # full connection string, same as the built-in corpus
+        return "PASSWORD"  # the password part of scheme://user:pw@host (LABELING.md 유형)
     if any("Password" in c for c in cats):
         return "PASSWORD"
     if any(c in ACCESS_KEY_CATEGORIES for c in cats):
