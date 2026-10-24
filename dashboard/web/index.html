@@ -19,50 +19,72 @@
     </header>
 
     <main id="app">
-      <section class="hero">
-        <div class="card" id="hero">
-          <div class="eyebrow">탐지 성능 <span class="tag-mono">metric-detection</span></div>
+      <div id="hero-note"></div>
+
+      <section class="overview">
+        <article class="card ov" id="hero">
+          <div class="card-head">
+            <h2><i class="key f1"></i>탐지 성능 <span class="tag-mono">metric-detection</span></h2>
+            <button class="link" type="button" data-view="detection">세부 보기</button>
+          </div>
           <div class="kpis" id="kpis"></div>
           <div id="kpi-more"></div>
-          <div id="hero-note"></div>
-        </div>
-        <div class="card" id="trend">
+          <div id="gold-outcomes"></div>
+        </article>
+
+        <article class="card ov" id="latency">
           <div class="card-head">
-            <h2>커밋별 변화</h2>
-            <div class="tools">
-              <div class="select"><select id="trend-dataset" aria-label="추이를 볼 데이터셋"></select></div>
-              <button class="ghost" id="trend-table-toggle" type="button" aria-pressed="false">표</button>
-            </div>
+            <h2><i class="key lat"></i>탐지 지연 <span class="tag-mono">metric-latency</span></h2>
+            <div class="tools" id="latency-tools"></div>
+            <button class="link" type="button" data-view="latency">세부 보기</button>
           </div>
-          <div id="trend-body"></div>
-        </div>
+          <div id="latency-body"></div>
+        </article>
+
+        <article class="card ov" id="task" hidden>
+          <div class="card-head">
+            <h2><i class="key task"></i>작업 성공 <span class="tag-mono">metric-task</span></h2>
+            <div class="tools" id="task-tools"></div>
+            <button class="link" type="button" data-view="task">세부 보기</button>
+          </div>
+          <div id="task-body"></div>
+        </article>
       </section>
 
       <section class="card" id="details">
         <div class="card-head">
-          <h2>세부 사항</h2>
-          <button class="link" id="reset" type="button" hidden>필터 초기화</button>
+          <div class="seg view-tabs" id="view-tabs" role="tablist" aria-label="세부 사항"></div>
         </div>
-        <div class="filters" id="filters"></div>
-        <div class="slice" id="slice"></div>
-        <div id="breakdown"></div>
-        <div class="outcomes" id="outcomes"></div>
-      </section>
 
-      <section class="card" id="latency">
-        <div class="card-head">
-          <h2>탐지 지연 <span class="tag-mono">metric-latency</span></h2>
-          <div class="tools" id="latency-tools"></div>
+        <div id="view-detection">
+          <div class="empty" id="detection-empty" hidden>탐지 성능 결과가 생기면 여기에서 나눠 볼 수 있어요.</div>
+          <div id="detection-detail">
+            <div class="filters-bar">
+              <div class="filters" id="filters"></div>
+              <button class="link" id="reset" type="button" hidden>필터 초기화</button>
+              <div class="slice" id="slice"></div>
+            </div>
+            <div class="cols">
+              <div id="breakdown"></div>
+              <div>
+                <div id="trend">
+                  <div class="section-title">
+                    <span>커밋별 변화</span>
+                    <div class="tools">
+                      <div class="select"><select id="trend-dataset" aria-label="추이를 볼 데이터셋"></select></div>
+                      <button class="ghost" id="trend-table-toggle" type="button" aria-pressed="false">표</button>
+                    </div>
+                  </div>
+                  <div id="trend-body"></div>
+                </div>
+                <div class="outcomes" id="outcomes"></div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div id="latency-body"></div>
-      </section>
 
-      <section class="card" id="task" hidden>
-        <div class="card-head">
-          <h2>작업 성공 <span class="tag-mono">metric-task</span></h2>
-          <div class="tools" id="task-tools"></div>
-        </div>
-        <div id="task-body"></div>
+        <div id="view-latency" hidden><div id="latency-detail"></div></div>
+        <div id="view-task" hidden><div id="task-detail"></div></div>
       </section>
     </main>
   </div>
