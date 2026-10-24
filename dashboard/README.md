@@ -40,6 +40,9 @@ python3 dashboard/serve.py --host 0.0.0.0 --port 8765 --auth team:비밀번호
 | `--latency-guard PATH…` | | metric-task 요청 기록을 Final Guard 호출로 재생한다([metric-latency](../metric-latency/README.md#워크로드)) |
 | `--task-runs DIR…` | `runs/metric-task` | metric-task 배치 폴더를 찾을 곳 |
 | `--no-task` | | 작업 성공 패널을 숨긴다 |
+| `--notify-url URL` | `$DASHBOARD_NOTIFY_URL` | 실패 알림을 보낼 Discord 웹훅([알림](#알림)). 비밀이므로 환경 변수로 넘긴다 |
+| `--dashboard-url URL` | `$DASHBOARD_URL` | 알림 아래에 붙일 대시보드 주소 |
+| `--overdue-hours` | `24` | 평가 하나가 이 시간을 넘기면 한 번 알린다. `0`이면 알리지 않는다 |
 | `--once` | | 빠진 평가만 돌리고 끝낸다(cron용) |
 | `--serve-only` | | 평가 없이 데이터 폴더의 결과만 보여 준다 |
 | `--export DIR` | | 화면과 결과를 정적 파일로 써서 아무 웹 서버로나 띄울 수 있게 한다 |
@@ -55,6 +58,8 @@ python3 dashboard/serve.py --host 0.0.0.0 --port 8765 --auth team:비밀번호
 [Service]
 WorkingDirectory=/srv/promptguard-data
 Environment=DASHBOARD_AUTH=team:비밀번호
+Environment=DASHBOARD_NOTIFY_URL=https://discord.com/api/webhooks/…
+Environment=DASHBOARD_URL=http://서버:8765/
 ExecStart=/usr/bin/python3 dashboard/serve.py --host 0.0.0.0 --port 8765
 Restart=on-failure
 
@@ -63,6 +68,23 @@ WantedBy=multi-user.target
 ```
 
 cron으로 돌리고 정적 서버에 올리는 방법도 된다: `python3 dashboard/serve.py --once && python3 dashboard/serve.py --export /var/www/pg-dashboard`. 이때 위쪽 상태 표시는 `index.json`을 쓴 시점에 멈춰 있다.
+
+### 알림
+
+`--notify-url`(또는 `$DASHBOARD_NOTIFY_URL`)에 Discord 웹훅을 주면 대시보드를 열지 않아도 평가 진행과 결과, 문제를 알 수 있다. 웹훅은 Discord 채널 설정 > 연동 > 웹후크에서 만든다.
+
+| 알림 | 언제 |
+|---|---|
+| 🆕 새 커밋 | 브랜치에서 처음 본 커밋이 생겼을 때(평가 중 확인 포함). 커밋마다 평가 대기에 올랐는지, 탐지기가 같아 이전 결과를 쓰는지 적는다. 새 데이터 폴더의 첫 확인은 전체 이력이라 알리지 않고, 다시 띄우면 마지막 `index.json`에 없던 커밋만 알린다 |
+| ▶️ 평가 시작 | 탐지 성능 또는 탐지 지연 평가를 시작할 때. 뒤에 남은 작업 수를 붙인다 |
+| ✅ 평가 완료 | 한 커밋의 모든 평가가 끝났을 때 한 번. Precision, Recall, F1과 이전 탐지기 변경 대비 변화(%p), 지연(1KB·64KB 텍스트 p50, 문자열당 증가, timeout 초과 횟수). 일부가 실패했으면 ⚠️로 바꾸고 그 평가를 '실패'로 적는다 |
+| ❌ 평가 실패 | 평가 하나가 실패해 `failures.json`에 남았을 때. 오류 첫 500자와 다시 돌리는 방법을 붙인다 |
+| ⚠️ 서비스 오류 / ✅ 복구 | 저장소 받기나 계획 같은 평가 루프 자체가 실패했을 때 한 번, 다시 성공했을 때 한 번. 주기마다 반복해 보내지 않는다 |
+| ⏳ 오래 걸림 | 평가 하나가 `--overdue-hours`(기본 24시간)를 넘겼을 때 한 번 |
+
+데이터셋이나 채점기가 바뀌어 모든 커밋을 다시 평가하면 커밋마다 시작·완료 알림이 간다.
+
+웹훅 주소를 가진 사람은 누구나 그 채널에 글을 쓸 수 있으므로 명령줄 대신 환경 변수로 넘기고(`ps`에 보이지 않게), 로그와 오류 메시지에도 남기지 않는다. 알림에 오류를 옮길 때는 URL의 인증 정보(`user:token@`)를 지운다. 알림 전송이 실패해도 평가는 계속하고, 표준 출력에 `alert not sent`만 남긴다. 프로세스 자체가 죽는 경우는 systemd가 다시 띄우며, 이 알림으로는 알 수 없다.
 
 ## 숫자를 어떻게 셌나
 
@@ -86,7 +108,7 @@ cron으로 돌리고 정적 서버에 올리는 방법도 된다: `python3 dashb
 - **결과 재사용**: 결과는 커밋의 탐지기 지문(`src/detector` 트리와 `requirements.txt`)과, 숫자가 기대는 나머지(탐지 성능: 데이터셋 파일, 채점기 `metric-detection/evaluation/`, 이 폴더의 `taxonomy.py`·`collect.py`·`shard.py`, gitleaks 버전 / 지연: `m4.py`와 옵션, 기기, gitleaks 버전, `latency.py`의 `LATENCY_VERSION`, 커밋의 `detectorTimeoutMs`)로 키를 만든다. timeout만 바꾸면 지연 키만 달라지고 탐지 성능은 다시 돌리지 않는다. 문서만 바꾼 커밋은 앞 커밋의 결과를 그대로 쓴다. 데이터셋이나 채점기가 바뀌면 모든 커밋이 다시 평가 대상이 되고, 다시 돌 때까지는 이전 결과를 '이전 기준' 표시와 함께 보여 준다.
 - **이름과 설명**(`catalog.py`)은 키에 들어가지 않는다. 서비스가 확인할 때마다 `index.json`에 지금 값을 써서 화면이 결과 위에 덮어 쓰므로, 고쳐도 다시 평가하지 않는다. 유형을 세는 규칙이나 데이터셋의 하위 분류 기준(`taxonomy.py`)을 바꾸면 개수가 달라지므로 다시 평가한다.
 - **평가가 끝나기 전**에는 그 앞 커밋의 결과를 보여 주고, 위쪽에 어느 커밋을 평가 중인지 적는다.
-- **실패**하면 그 작업을 `failures.json`에 남기고 다시 시도하지 않는다. 위쪽 커밋 버튼에서 이유를 보고 '실패한 평가 다시 돌리기'를 누르거나, `POST /api/refresh?retry=1`을 보낸다. 자세한 기록은 `runs/dashboard/logs/`에 있다.
+- **실패**하면 그 작업을 `failures.json`에 남기고 다시 시도하지 않는다. 웹훅이 있으면 [알림](#알림)을 보낸다. 위쪽 커밋 버튼에서 이유를 보고 '실패한 평가 다시 돌리기'를 누르거나, `POST /api/refresh?retry=1`을 보낸다. 자세한 기록은 `runs/dashboard/logs/`에 있다.
 - **결과 파일 요청 실패**는 평가 실패나 빈 데이터와 구분해 표시한다. 서버에서는 index가 그대로여도 다음 상태 폴링 때 실패한 요청을 다시 보낸다. 각 오류 표시의 ‘다시 시도’ 버튼은 정적 사본에서도 사용할 수 있다. 예시는 요청에 성공한 경우만 캐시하므로 일시적인 오류가 ‘예시 없음’으로 남지 않는다.
 - 평가는 PromptGuard 체크아웃을 쓰지 않는다. 서버가 bare clone(`repo.git`)에서 그 커밋의 `src/detector`, `register.mjs`, `requirements.txt`만 꺼내 평가하고 지운다.
 
@@ -150,6 +172,7 @@ dashboard/
     catalog.py          화면에 보이는 이름과 설명 (바꿔도 다시 평가하지 않음)
     latency.py          탐지 지연: m4.py 실행과 요약
     task.py             metric-task 배치 읽기 (실행하지 않음)
+    notify.py           Discord 웹훅 전송 (무엇을 언제 알릴지는 service.py)
     paths.py            경로
   web/                  index.html, app.js, style.css (빌드 없이 그대로 쓴다)
   tests/

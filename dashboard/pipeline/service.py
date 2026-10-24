@@ -23,6 +23,10 @@ Data directory:
   results/latency/<key>/          latency.py output
   index.json                      what the UI loads first
   failures.json                   jobs that failed, not retried until a refresh asks for it
+
+With a Discord webhook (Config.notify_url) the service alerts on new commits, on each job's start, once a commit's
+every track is done (its numbers), on a failed job, on the loop breaking and recovering (once per outage), and once
+when a job runs longer than overdue_hours.
 """
 
 from __future__ import annotations
@@ -46,11 +50,12 @@ try:
 except ImportError:  # Windows: no lock; run one evaluator per data directory by hand
     fcntl = None
 
-from pipeline import catalog, latency, repo, runner, task
+from pipeline import catalog, latency, notify, repo, runner, task
 from pipeline.paths import DASHBOARD_ROOT, DATA_TEST, METRIC_DETECTION, REPO_ROOT
 
 TRACKS = ("detection", "latency")
 KEY = re.compile(r"[0-9a-f]{16}")
+TRACK_LABELS = {"detection": "탐지 성능", "latency": "탐지 지연"}
 
 
 class DataDirBusy(Exception):
@@ -75,6 +80,22 @@ def result_key(track: str, system_fingerprint: str, context_fingerprint: str, *,
     if track == "latency":
         identity += f"|timeout_ms={timeout_ms}"
     return hashlib.sha256(identity.encode()).hexdigest()[:16]
+
+
+def pct(value: float | None) -> str:
+    return "—" if value is None else f"{value * 100:.1f}%"
+
+
+def points(value: float | None, before: float | None) -> str:
+    return "—" if value is None or before is None else f"{(value - before) * 100:+.1f}%p"
+
+
+def ms(value: float | None) -> str:
+    """Rounded like the dashboard's ms()."""
+    if value is None:
+        return "—"
+    digits = 0 if value >= 10 else 1 if value >= 1 else 2
+    return f"{value:,.{digits}f}ms"
 
 
 def code_hash() -> str:
@@ -111,6 +132,9 @@ class Config:
     latency_warmup: int = 3
     task: bool = True  # read metric-task batches people ran; never run it (it costs API money)
     task_runs: list[str] = field(default_factory=lambda: [str(REPO_ROOT / "runs" / "metric-task")])
+    notify_url: str | None = None  # Discord webhook for alerts; none are sent without it
+    dashboard_url: str | None = None  # linked under each alert
+    overdue_hours: float = 24.0  # alert once when a job runs this long (0: never)
 
 
 class Service:
@@ -128,6 +152,11 @@ class Service:
         self.code_changed = False
         self.poll_seconds: float | None = None  # set by run_forever; also how often a running job fetches
         self._lock_file = None  # open while this process holds the data directory
+        # Commits already announced: those the last index.json listed, so a restart announces only what was merged
+        # meanwhile. None on a new data directory: its first fetch lists the whole history, which is not news.
+        index = self._read("index.json")
+        self.announced: set[str] | None = (
+            {entry["sha"] for entry in index.get("commits", [])} if isinstance(index, dict) else None)
 
     # ------------------------------------------------------------------ data directory lock
 
@@ -178,6 +207,14 @@ class Service:
             return json.loads((self.data / name).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
+
+    def alert(self, text: str) -> None:
+        if not self.config.notify_url:
+            return
+        try:
+            notify.send(self.config.notify_url, text, link=self.config.dashboard_url)
+        except notify.NotifyError as exc:
+            log(f"alert not sent: {exc}")
 
     def request_refresh(self, retry: bool = False) -> None:
         self.retry = self.retry or retry
@@ -258,6 +295,7 @@ class Service:
         if not self.acquire():
             raise DataDirBusy(self.lock_holder())
         plan = self.plan()
+        self.announce(plan)
         pending = self.jobs(plan)
         self.write_index(plan, pending, running=None)
         if not pending:
@@ -269,7 +307,7 @@ class Service:
 
     def run_job(self, plan: dict[str, Any], track: str, commit: repo.Commit, key: str,
                 pending: list[tuple[str, repo.Commit, str]]) -> None:
-        label = {"detection": "탐지 성능", "latency": "탐지 지연"}[track]
+        label = TRACK_LABELS[track]
         started = now()
 
         def progress(done: int, total: int) -> None:
@@ -282,12 +320,20 @@ class Service:
         checkout = self.data / "checkouts" / commit.fingerprint[:12]
         name = f"{track} {commit.short} ({key})"
         log(f"{name}: started, {len(pending) - 1} more queued")
+        self.alert(f"▶️ {label} 평가 시작 · {commit.short} {commit.title}"
+                   + (f"\n뒤에 {len(pending) - 1}개 대기" if len(pending) > 1 else ""))
         began = time.monotonic()
         finished = threading.Event()
         watcher = None
         if self.poll_seconds:
             watcher = threading.Thread(target=self.watch, args=(plan, (track, key), finished), daemon=True)
             watcher.start()
+        hours = self.config.overdue_hours
+        overdue = threading.Timer(hours * 3600, self.alert,
+                                  args=(f"⏳ {label} 평가가 {hours:g}시간째 끝나지 않음 · {commit.short} {commit.title}",))
+        overdue.daemon = True
+        if hours > 0 and self.config.notify_url:
+            overdue.start()
         try:
             repo.export(self.data / "repo.git", commit.sha, checkout)
             python = repo.python_for(checkout, self.config.python, self.data / "venvs", self.config.auto_venv)
@@ -318,14 +364,18 @@ class Service:
             (self.data / "logs").mkdir(parents=True, exist_ok=True)
             with (self.data / "logs" / "failures.log").open("a", encoding="utf-8") as out:
                 out.write(f"{now()} {track} {commit.sha} {key}\n{traceback.format_exc()}\n")
+            self.alert(f"❌ {label} 평가 실패 · {commit.short} {commit.title}\n{str(exc)[:500]}\n"
+                       "다시 돌리려면 대시보드 위쪽 커밋 버튼에서 '실패한 평가 다시 돌리기'를 누른다.")
         else:
             log(f"{name}: done in {time.monotonic() - began:.0f} s")
         finally:
             finished.set()
             if watcher:
                 watcher.join()  # the caller writes index.json next; the watcher must not write over it
+            overdue.cancel()
             shutil.rmtree(checkout, ignore_errors=True)
             self.set_status(state="idle", message="")
+            self.report(plan, commit)  # sends only once every track of the commit is done or failed
 
     def watch(self, plan: dict[str, Any], running: tuple[str, str], finished: threading.Event) -> None:
         """While a job runs, fetch the branch every poll interval and index the commits merged meanwhile as queued.
@@ -341,9 +391,74 @@ class Service:
                     self.status["last_sync"] = now()
                 if merged:
                     log(f"fetched during the running job: {', '.join(merged)} queued")
+                self.announce(plan)
                 self.write_index(plan, self.jobs(plan), running=running)
             except Exception as exc:  # noqa: BLE001 - the running job goes on; the next cycle fetches again
                 log(f"fetch during the running job failed: {str(exc)[:200]}")
+
+    # ------------------------------------------------------------------ alerts
+
+    def keys(self, plan: dict[str, Any], commit: repo.Commit) -> dict[str, str]:
+        return {track: result_key(track, commit.fingerprint, context, timeout_ms=commit.timeout_ms)
+                for track, context in plan["contexts"].items()}
+
+    def announce(self, plan: dict[str, Any]) -> None:
+        """Alert the commits fetched for the first time, and whether each was queued or shares earlier results."""
+        shas = {item.sha for item in plan["commits"]}
+        if self.announced is None:
+            self.announced = shas
+            return
+        new = [item for item in plan["commits"] if item.sha not in self.announced]
+        self.announced |= shas
+        if not new:
+            return
+        queued = {(track, key) for track, _commit, key in self.jobs(plan)}
+        lines = []
+        for item in new:
+            due = [TRACK_LABELS[track] for track, key in self.keys(plan, item).items() if (track, key) in queued]
+            lines.append(f"• {item.short} {item.title} · "
+                         + (f"평가 대기 ({', '.join(due)})" if due else "탐지기가 같아 이전 결과를 씀"))
+        self.alert(f"🆕 {self.config.branch}에 새 커밋 {len(new)}개\n" + "\n".join(lines))
+
+    def report(self, plan: dict[str, Any], commit: repo.Commit) -> None:
+        """Alert the commit's numbers once no track of it is left to run."""
+        if not self.config.notify_url:
+            return
+        keys = self.keys(plan, commit)
+        metas = {track: self.meta(track, key) for track, key in keys.items()}
+        if any(meta is None and f"{track}:{keys[track]}" not in self.failures for track, meta in metas.items()):
+            return
+        lines = []
+        for track, meta in metas.items():
+            if meta is None:
+                lines.append(f"{TRACK_LABELS[track]}: 실패")
+                continue
+            numbers = meta["headline"]
+            if track == "detection":
+                lines.append(f"탐지 성능: Precision {pct(numbers.get('precision'))} · Recall "
+                             f"{pct(numbers.get('recall'))} · F1 {pct(numbers.get('f1'))}")
+                if before := self.previous(plan, track, commit, keys[track]):
+                    item, old = before[0], before[1]["headline"]
+                    lines.append(f"  이전 탐지기 변경({item.short}) 대비: " + " · ".join(
+                        f"{name} {points(numbers.get(field), old.get(field))}"
+                        for name, field in (("P", "precision"), ("R", "recall"), ("F1", "f1"))))
+            else:
+                lines.append(f"탐지 지연: 1KB {ms(numbers.get('single_1k_p50'))} · 64KB "
+                             f"{ms(numbers.get('single_64k_p50'))} (p50) · 문자열당 +{ms(numbers.get('ms_per_string'))}"
+                             f" · timeout 초과 {numbers.get('over_timeout', '—')}회")
+        head = "✅ 평가 완료" if all(metas.values()) else "⚠️ 평가 끝 (일부 실패)"
+        self.alert(f"{head} · {commit.short} {commit.title}\n" + "\n".join(lines))
+
+    def previous(self, plan: dict[str, Any], track: str, commit: repo.Commit,
+                 key: str) -> tuple[repo.Commit, dict[str, Any]] | None:
+        """The nearest earlier commit with a different result for track, as the dashboard compares."""
+        commits = plan["commits"]
+        at = next((index for index, item in enumerate(commits) if item.sha == commit.sha), 0)
+        for item in reversed(commits[:at]):
+            other = self.keys(plan, item)[track]
+            if other != key and (meta := self.meta(track, other)):
+                return item, meta
+        return None
 
     def _save_failures(self) -> None:
         runner.write_json(self.data / "failures.json", self.failures, pretty=True)
@@ -406,13 +521,16 @@ class Service:
 
     def run_forever(self, poll_seconds: float) -> None:
         self.poll_seconds = poll_seconds
-        waiting = False
+        waiting = failing = False
         try:
             while not self.stopping.is_set():
                 ran, pause = False, poll_seconds
                 try:
                     ran = self.cycle()
                     waiting = False
+                    if failing:
+                        self.alert("✅ 평가 서비스 복구: 저장소 확인과 평가를 다시 하고 있다.")
+                        failing = False
                 except DataDirBusy as busy:  # keep serving; evaluate once the other process is done
                     if not waiting:
                         log(f"{busy}; waiting for it")
@@ -425,6 +543,10 @@ class Service:
                     (self.data / "logs").mkdir(parents=True, exist_ok=True)
                     with (self.data / "logs" / "service.log").open("a", encoding="utf-8") as out:
                         out.write(f"{now()}\n{traceback.format_exc()}\n")
+                    if not failing:  # once per outage, not every poll
+                        self.alert(f"⚠️ 평가 서비스 오류: {str(exc)[:500]}\n"
+                                   "다음 주기마다 다시 시도하고, 복구되면 알린다.")
+                        failing = True
                 if not ran and not self.stopping.is_set():
                     self.wake.wait(pause)
                     self.wake.clear()
