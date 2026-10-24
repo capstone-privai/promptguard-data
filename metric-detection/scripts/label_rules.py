@@ -39,6 +39,7 @@ SLOT = [
     ("secret_key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:secret_?key|api_?key|access_?key|private_?key|client_?secret"
                                     rf"|(?:auth|access|refresh|bearer|api|session)?_?token|auth|(?<!test_)credentials?){Qo}\s*[:=]\s*{Qo}$")),
     ("camel_key_value", re.compile(rf"[a-z](?:Password|Passwd|Secret|SecretKey|Token|ApiKey|AccessKey){Qo}\s*[:=]\s*{Qo}$")),
+    ("url_userinfo", re.compile(r"[a-z][\w+.-]*://[^\s/:@'\"]*:$")),  # scheme://user:⟦pw⟧@host
     ("option", re.compile(rf"(?i)--?(?:password|passwd|pass)(?:\s+|=){Qo}$")),
     ("cli_p", re.compile(rf"(?:docker\s+login|test_credentials|htpasswd|smbclient|ftp|psql)\b[^|;\n]*?\s-p\s+{Qo}$")),
     ("echo_pipe", re.compile(rf"(?:echo|printf)(?:\s|\\n)+(?:(?:-[en]+|{Q}%s[^'\"]*{Q})\s+)*{Qo}$")),
@@ -61,7 +62,7 @@ SLOT = [
 ]
 # Some left contexts are credential positions only when the right side feeds an authentication command.
 # A value followed by @ after "Password:" is the shell prompt (root@host) printed once su succeeds.
-SLOT_RIGHT = {"key_value": re.compile(r"^(?!@)"),
+SLOT_RIGHT = {"key_value": re.compile(r"^(?!@)"), "url_userinfo": re.compile(r"^@"),
               "echo_pipe": re.compile(rf"^(?!:)[^'\"|\n]{{0,40}}?{Qo}\s*\|\s*{AUTH_CMD}"),
               "here_string": re.compile(r"^(?!:)")}
 # A credential named in a sentence. Checked after the identifier positions.
@@ -115,6 +116,32 @@ BEFORE, AFTER = 160, 60
 EXAMPLE_BEFORE = re.compile(r"(?i)(?:\bsuch as|\be\.g\.,?|\bfor (?:example|instance),?|\bexamples?:|\blike|\bsample:)"
                             r"\s*[\"'`*]*$")
 
+# LABELING.md "정답이 아닌 것": (kind, pattern on the value). The first match decides.
+EXCLUDED_VALUE = [
+    ("empty", re.compile(r"^\s*$")),
+    ("redaction", re.compile(r"\*{3}|x{4}|X{4}|#{4}|redacted|_removed\b|\.\.\.|…", re.I)),
+    ("template", re.compile(r"<[^<>\n]*(?:pass|token|key|secret|your|user|name|value|here|id)[^<>\n]*>|\{\{|\byour[_-]?"
+                            r"|_here\b|placeholder|change[_-]?this"
+                            r"|^(?:my|some|the|a)[_-]?(?:password|passwd|pass|secret|token|key|api[_-]?key)$", re.I)),
+    ("doc_example", re.compile(r"example", re.I)),
+    # ${TOKEN}, %PASS%, {token}, or the NAME of an environment variable (GITHUB_PASSWORD)
+    ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|os\.environ|process\.env|getenv"
+                             r"|^(?:[A-Z0-9]+_)*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|KEY|APIKEY|AUTH|USER)(?:_[A-Z0-9]+)*$")),
+    ("code", re.compile(r"\w\(|\w\[|[{}]$|^[A-Za-z_]{1,16}=$|\bself\.|\bthis\.|^\w+(?:\.\w+)+,?$"
+                        r"|^(?:true|false|null|none|nil|undefined)$"
+                        r"|^[\^~>=<]*v?\d+(?:\.\d+)+(?:[-+.]\w+)*$", re.I)),  # also version numbers
+]
+# (kind, pattern on the text right before the value)
+EXCLUDED_BEFORE = [
+    ("identifier", re.compile(r"(?i)(?:PublicKeyToken|ClientToken|ChangeToken|ClientRequestToken|client_request_token"
+                              r"|next_?token|page_?token|idempotency_?key)\W{0,4}$")),
+    ("descriptor", re.compile(r"\s--?[\w-]+\s{2,}$")),  # --password   help text column
+    ("code", re.compile(r"\b(?:artisan|rake|rails)\s+[\w-]*:$")),  # php artisan credentials:edit
+]
+UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+SECRET_WORD = re.compile(r"(?i)secret|token|passw|pwd|api_?key|apikey|access_?key|private|auth|credential")
+UNQUOTED_CODE_AFTER = re.compile(r"^[,)}]")  # PrivateKey: priv, / Credentials: creds}
+
 
 @lru_cache(maxsize=4096)
 def occurrence_pattern(value: str) -> re.Pattern:
@@ -159,6 +186,44 @@ def classify(text: str, start: int, end: int, negative_context: re.Pattern | Non
         if (b is None or b.search(before)) and (a is None or a.search(after)):
             return "negative", name
     return "residual", None
+
+
+def exclusion_kind(text: str, start: int, end: int) -> str | None:
+    """The LABELING.md "정답이 아닌 것" kind of the value text[start:end] in a credential position, or None."""
+    value = text[start:end]
+    for kind, pattern in EXCLUDED_VALUE:
+        if pattern.search(value):
+            return kind
+    if is_phrase(value):
+        return "descriptor"
+    before = text[max(0, start - BEFORE):start]
+    for kind, pattern in EXCLUDED_BEFORE:
+        if pattern.search(before) and not (kind == "identifier" and value.startswith("akab-")):  # Akamai client token
+            return kind
+    if is_example(text, start):
+        return "doc_example"
+    if UUID.fullmatch(value) and not SECRET_WORD.search(before[-60:]):
+        return "identifier"  # "id": "…", RequestId: a UUID outside a secret's place
+    quoted = before[-1:] in ("'", '"', "`")
+    if not quoted and re.fullmatch(r"[A-Za-z_]+", value) and UNQUOTED_CODE_AFTER.match(text[end:end + 5]):
+        return "code"  # an unquoted variable: PrivateKey: priv,
+    if not quoted and value.isdigit() and re.match(r"\s*,", text[end:end + 5]) and re.search(
+            r"\b[A-Z]\w*_[A-Z]\w*\s*=\s*$", before):
+        return "code"  # an enum member: IoErr_Auth = 7178,
+    key = re.search(r"([A-Za-z_][\w.-]*)\W{0,4}$", before)
+    if key and len(value) > 3 and re.sub(r"[-.]", "_", value.lower()) in key.group(1).lower():
+        return "code"  # REFRESH_TOKEN = "REFRESH_TOKEN": the value names its own key
+    return None
+
+
+def is_phrase(value: str) -> bool:
+    """Words rather than a value: "Authentication token", "force password prompt", a translated screen string.
+    One line of two or more words, most of them English words or non-ASCII words."""
+    if "\n" in value or not re.search(r"\S\s+\S", value):
+        return False
+    words = re.findall(r"[^\W\d_]{3,}", value)
+    wordish = sum(1 for w in words if not w.isascii() or w.lower() in common_words())
+    return len(words) >= 2 and wordish * 2 >= len(words) + 1
 
 
 def is_example(text: str, start: int) -> bool:

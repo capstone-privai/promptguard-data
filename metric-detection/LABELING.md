@@ -114,7 +114,7 @@ span은 **비밀값 문자열 그 자체**다. 탐지기가 값만 가리면 `ex
 
 ## 검증
 
-`dataset_verify.py`는 모든 데이터셋의 정답에 대해 다음을 검사하고, 하나라도 어기면 실패한다.
+`dataset_verify.py`는 모든 데이터셋의 정답에 대해 다음을 검사하고, 하나라도 어기면 실패한다. 지금 구현된 것은 3번(privesc처럼 우리가 정답을 만든 데이터의 누락 검사)이고, 1, 2, 4번은 아직 검사기에 넣지 않았다. `label_rules.exclusion_kind`는 CredData 변환에서 쓴다.
 
 1. 정답 값이 위 "정답이 아닌 것"의 규칙(`label_rules.exclusion_kind`)에 걸리지 않는다.
 2. span 경계가 정규화되어 있다: 앞뒤 공백, 감싼 따옴표, 인증 스킴, 뒤따르는 문장 부호가 없다(`label_rules.normalize_span`을 다시 적용해도 그대로다).

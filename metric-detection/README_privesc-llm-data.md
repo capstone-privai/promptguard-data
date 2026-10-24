@@ -26,16 +26,16 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_privesc-llm-data.jsonl` | 자동으로 만든 정답 span. `gold.jsonl`과 같은 형식 |
 | `labels_from_privesc-llm-data.jsonl` | 정답 span과 정답에서 뺀 후보(아래)를 item 좌표로 남긴 분석용 파일. 값 자체는 들어 있지 않다 |
 
-세션 2,200개, item 122,286개, gold span 15,669개(PASSWORD 15,510 / PRIVATE_KEY 159).
+세션 2,200개, item 122,286개, gold span 15,719개(PASSWORD 15,560 / PRIVATE_KEY 159).
 
 | channel | item | gold span |
 |---|---|---|
 | `instructions` | 2,200 | 2,200 |
 | `prompt` | 2,200 | 0 |
-| `tool_input` | 58,943 | 6,309 |
-| `tool_output` | 58,943 | 7,160 |
+| `tool_input` | 58,943 | 6,325 |
+| `tool_output` | 58,943 | 7,194 |
 
-`tool_input`의 정답 6,309개는 데이터에 그대로 두지만 채점하지 않는다. 에이전트가 직접 쓴 명령이라 가릴 대상이 아니라, 실행 직전에 placeholder를 원래 값으로 되돌리는 자리이기 때문이다([채점 기준](README.md#단위)). 채점하는 정답은 `instructions`와 `tool_output`의 9,360개(PASSWORD 9,201 / PRIVATE_KEY 159)다.
+`tool_input`의 정답 6,325개는 데이터에 그대로 두지만 채점하지 않는다. 에이전트가 직접 쓴 명령이라 가릴 대상이 아니라, 실행 직전에 placeholder를 원래 값으로 되돌리는 자리이기 때문이다([채점 기준](README.md#단위)). 채점하는 정답은 `instructions`와 `tool_output`의 9,394개(PASSWORD 9,235 / PRIVATE_KEY 159)다.
 
 시나리오 10종(`meta.scenario`)이 각각 220개씩이다: `capabilities_gtfobins`, `cron_wildcard`, `cron_writable_script`, `password_file`, `password_history`, `password_reuse`, `ssh_key_reuse`, `sudo_gtfobins`, `suid_gtfobins`, `weak_password`. `meta.split`은 원본의 training/validation이고, `meta.upstream_file`과 `meta.upstream_line`으로 원본 줄을 찾을 수 있다.
 
@@ -60,7 +60,7 @@ assistant의 본문과 reasoning은 채널이 없어 뺐다. `turn_id`는 assist
 
 - **PASSWORD 후보**: `metadata`에 심은 값(`prompt_vars.password`, `root_password`, `user_password`, `credential_candidates[].password`)과 에이전트가 시도한 비밀번호(`test_credentials(…)`, `echo '…' | su`, `sudo -S`, `sshpass -p …`)다. 길이는 보지 않는다. 심은 값인지, 실제로 동작하는지도 판정에 쓰지 않는다.
 - 후보가 나온 **모든 위치**를 앞뒤 문맥으로 판정한다(`label_rules.classify`).
-  - **자격증명 자리**(`"password": …`, `echo '…' | sudo -S`, `sshpass -p`, `chpasswd`, `mysql -p…`, `os.write(fd, b'…')`, "Set root password to …" 등)에 있으면 정답이다(labels의 `credential_slot`).
+  - **자격증명 자리**(`"password": …`, `echo '…' | sudo -S`, `sshpass -p`, `chpasswd`, `mysql -p…`, `os.write(fd, b'…')`, `postgresql://root:…@localhost`, "Set root password to …" 등)에 있으면 정답이다(labels의 `credential_slot`).
   - 그 밖의 위치는 **고유한 값**이면 정답이고(`propagated`), **흔한 값**이면 정답이 아니다(`not_propagated`). 흔한 값은 `label_rules.is_common`(SCOWL 영어 단어, SWE-Gym·openhands에 흔한 토큰, 숫자만)에 걸리거나, 그 궤적의 사용자명, 컨테이너 호스트 이름, 경로 일부와 같은 값이다. `weak_password` 시나리오가 사용자명을 그대로 비밀번호로 쓰는 경우가 여기에 든다.
   - **식별자 자리**(사용자명, 경로, 호스트 이름, `ls -l`·`ps` 소유자 칸, `/etc/passwd` 사용자명 필드)는 값이 고유해도 정답이 아니다(`identifier`).
 - 규칙은 이 데이터의 후보 등장 80,289곳으로 다듬었고, 판정 유형별로 층을 나눈 표본 100곳을 사람이 검수해 모두 맞았다.
@@ -74,7 +74,7 @@ assistant의 본문과 reasoning은 채널이 없어 뺐다. `turn_id`는 assist
 | kind | 수 | 내용 |
 |---|---|---|
 | `password_hash` | 374 | `/etc/shadow`의 crypt 해시(`$y$…`, `$6$…`). 인증에 직접 쓰는 값이 아니다 |
-| `identifier` | 56,745 | 후보 값이 식별자 자리에 나온 것. 대부분 `ls -l` 소유자 칸의 `root` |
+| `identifier` | 56,695 | 후보 값이 식별자 자리에 나온 것. 대부분 `ls -l` 소유자 칸의 `root` |
 | `not_propagated` | 9,649 | 흔한 값이 자격증명 자리 밖에 나온 것. JSON 키 `"password"`, 시스템 프롬프트의 "root shell", 검색어, cron 사용자 칸 등 |
 
 후보 등장 행에는 판정한 규칙(`rule`)과 값의 분류(`value_class`: `common`/`distinct`)가 같이 있다.

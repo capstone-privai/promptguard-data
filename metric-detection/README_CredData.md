@@ -30,47 +30,47 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 ## 정답
 
-**CredData의 T 행만 gold로 쓴다.** X(템플릿·placeholder)와 F는 전부 CredData 판정대로 음성이다. 따로 다시 판정하지 않는다.
+[LABELING.md](LABELING.md)의 기준으로 다시 판정한다(`convert_creddata.py`의 `judge()`, `label_rules.py`). CredData의 행은 후보로만 쓰고 T/F/X 판정은 남기지 않는다. CredData는 "저장소에 있는 이 문자열이 실제로 살아 있는 자격증명인가"를 판정한 데이터라, 테스트 값과 약한 비밀번호를 X나 F로 둔다. 우리는 "에이전트 트래픽에서 가려야 하나"를 보므로 자격증명 자리에 있으면 이런 값도 정답이다.
 
-metric-detection의 정답 정의([metric-detection/README.md](README.md#정답의-정의))와는 조금 어긋난다. 동작하는 테스트 값과 설정된 기본·약한 비밀번호는 우리 기준으로 자격증명이지만, CredData는 이런 값을 X나 F로 둔다. 예를 들어 `x-pack-test-password`는 X로 63번, F로 51번 라벨되어 있다. 이 데이터에서는 이런 값도 음성이다. 점수를 읽을 때의 영향은 [아래](#xf를-음성으로-쓸-때-유의할-점)에 정리했다.
+| 판정 | 행 | 기준 |
+|---|---|---|
+| 정답: 개인키 | 1,224 | BEGIN 줄 뒤 본문이 16자 이상인 개인키 블록. 형식만으로 정답 |
+| 정답: 자격증명 자리 | 8,375 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). CredData F 1,102행, X 2,276행이 여기서 정답이 됐다 |
+| 정답: 형식 | 6,883 | 자격증명 자리 규칙에는 안 걸리지만 CredData가 T로 둔 값(토큰, 키 형식) |
+| 음성: 제외 규칙 | 37,289 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`), 코드(`code`, 버전 번호와 enum 상수 포함), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자(비밀 자리가 아닌 UUID, `ChangeToken`, `PublicKeyToken`), 문서 예시, 변수 참조 |
+| 음성: 자격증명 자리 아님 | 14,118 | F나 X로 둔 값이 자격증명 자리 밖에 있는 경우 |
+
+CredData가 T로 둔 행 중 2,696행이 음성이 됐다. 대부분(2,299행)은 `"id": "…"`, `collectionId`, `X-Correlation-Id` 자리의 UUID와 URL 속 버킷 호스트 이름이다. LABELING.md는 이들을 `identifier`로 정한다.
+
+규칙은 F/X에서 정답으로 바뀌는 행 중 층화 표본 40개(X 20, F 20)를 사람이 검수해 다듬었다. X는 20개 모두 맞았고, F는 20개 중 3개가 틀렸다. 틀린 형태(enum 숫자 상수, `php artisan credentials:edit`, CredData가 잘못 잡은 URL 비밀번호 범위)는 규칙에 반영했다.
 
 ## 결과 (`--context-lines 10`)
 
 | 파일 | 내용 |
 |---|---|
 | `sessions_from_CredData.jsonl` | 라벨된 파일 하나가 세션 하나. item은 라벨된 줄 ±10줄 창이고, 겹치는 창은 합친다. channel은 `tool_output` (에이전트가 파일을 읽어 받은 도구 결과로 본다) |
-| `gold_from_CredData.jsonl` | CredData T 행. `gold.jsonl`과 같은 형식 |
-| `labels_from_CredData.jsonl` | CredData 전체 행(T/F/X)을 item 좌표로 옮긴 분석용 파일. 원래 Category와 Id를 함께 남긴다 |
+| `gold_from_CredData.jsonl` | 정답 span. `gold.jsonl`과 같은 형식 |
+| `labels_from_CredData.jsonl` | CredData 전체 행을 item 좌표로 옮기고 우리 판정(`gold`, `kind`, `rule`)을 붙인 분석용 파일. Category와 Id를 함께 남긴다 |
 
-세션 11,030개, item 25,345개, gold span 15,596개(SECRET 8,403 / PASSWORD 2,833 / TOKEN 2,601 / PRIVATE_KEY 1,424 / ACCESS_KEY 335). CredData T 15,753행에서 겹치는 행을 정리한 수다(변환 규칙 참고).
-gold가 있는 item은 5,457개다. gold가 없는 item 19,888개 중 18,591개는 CredData F 행(스캐너가 잡았지만 사람이 비밀이 아니라고 본 줄)을, 1,294개는 X 행을 포함한다. 그래서 어려운 음성 데이터로 쓸 수 있다.
+세션 11,030개, item 25,345개, gold span 16,271개(SECRET 7,040 / PASSWORD 4,823 / TOKEN 2,765 / PRIVATE_KEY 1,452 / ACCESS_KEY 191). 정답인 행에서 겹치는 행을 정리한 수다(변환 규칙 참고).
+gold가 있는 item은 6,118개다. 나머지 item은 스캐너가 후보로 잡았지만 비밀이 아닌 값만 있어서 어려운 음성 데이터로 쓸 수 있다.
 
 ## 변환 규칙
 
 - 줄 나누기는 CredData와 같다: `\r\n`과 `\r`을 `\n`으로 바꾼 뒤 `\n`으로 나눈다. offset은 item text의 Python 코드 포인트 기준이다.
-- 값 위치: LineStart 줄의 ValueStart부터 LineEnd 줄의 ValueEnd까지. ValueEnd가 없으면 줄 끝까지, ValueStart가 없으면(PEM 전체 줄 라벨) 줄 전체. 앞뒤 공백은 잘라낸다.
-- 겹치는 T: 구성 요소와 겹치는 `… Multi` 조합 규칙 행 45개는 버렸다. 나머지 겹침 112건은 합집합으로 합쳤고, type은 가장 긴 행을 따른다.
+- 값 위치: LineStart 줄의 ValueStart부터 LineEnd 줄의 ValueEnd까지. ValueEnd가 없으면 줄 끝까지, ValueStart가 없으면(PEM 전체 줄 라벨) 줄 전체. 앞뒤 공백은 잘라낸다. CredData의 값 범위가 값 뒤까지 넘어간 경우, 줄 이음 `\\`, 뒤따르는 주석(` # …`), 다음 쿼리 인자(`&k=v`)도 잘라낸다(`tidy()`).
+- 겹치는 정답: 구성 요소와 겹치는 `… Multi` 조합 규칙 행 96개는 버렸다. 나머지 겹침 115건은 합집합으로 합쳤고, type은 가장 긴 행을 따른다.
 - Category → type: 개인키 계열(PEM/BASE64 Private Key, JWK, PASERK, NKEY Seed 또는 CryptographyKey=Private)은 PRIVATE_KEY, `URL Credentials`는 SECRET, 이름에 Password가 있으면 PASSWORD, AWS Client ID 같은 식별자형은 ACCESS_KEY, Token/Authorization/Auth는 TOKEN, 나머지(Key, Secret, UUID, Salt, Nonce …)는 SECRET이다. 구현은 `convert_creddata.py`의 `gold_type()`에 있다.
 
-## X/F를 음성으로 쓸 때 유의할 점
+## 점수를 읽을 때 유의할 점
 
-점수를 해석할 때 주의한다.
-
-- **precision은 하한값이다.** X/F에는 우리 기준으로는 자격증명인 값(동작하는 테스트 값, 설정된 약한 비밀번호)이 섞여 있다. 탐지기가 이런 값을 가리면 과잉 마스킹으로 센다.
-- **약한 비밀번호를 놓쳐도 recall이 떨어지지 않는다.** 이런 값은 gold에 없기 때문이다. 약한·테스트 비밀번호 탐지는 합성 데이터(`sessions_2.jsonl`의 약한·테스트 비밀번호 범주)로 본다.
-- **음성은 일부러 어렵게 고른 표본이다.** F는 스캐너가 후보로 잡았지만 사람이 비밀이 아니라고 본 줄이다. 그래서 이 데이터의 precision과 1,000줄당 과잉 마스킹은 실제 에이전트 트래픽의 오탐률이 아니다. 합성 데이터의 precision과 나란히 비교하지 않는다.
-- **CredSweeper와 비교할 때 편향이 있을 수 있다.** CredData의 라벨 후보는 스캐너 결과에서 나왔고, CredData와 CredSweeper는 둘 다 Samsung이 만들었다. 그래서 이 데이터에서는 CredSweeper가 유리할 수 있다.
+- **음성은 일부러 어렵게 고른 표본이다.** 스캐너가 후보로 잡았지만 비밀이 아닌 값이 많다. 그래서 이 데이터의 precision과 1,000줄당 과잉 마스킹은 실제 에이전트 트래픽의 오탐률이 아니다. 합성 데이터의 precision과 나란히 비교하지 않는다.
+- **CredSweeper와 비교할 때 편향이 있을 수 있다.** CredData의 후보는 스캐너 결과에서 나왔고, CredData와 CredSweeper는 둘 다 Samsung이 만들었다.
 - **라벨 없는 주변 줄도 음성이다.** item은 라벨된 줄의 ±10줄 창이다. 라벨 없는 줄에 실제 자격증명이 있으면 그것을 가린 것도 과잉 마스킹이 된다.
-- 과잉 마스킹이 X, F, 라벨 없는 줄 중 어디서 나왔는지는 `per_edit.jsonl`의 좌표를 `labels_from_CredData.jsonl`과 맞춰 나눠 볼 수 있다.
-
-## 우리 라벨 기준과 다른 점
-
-- 동작하는 테스트 값과 설정된 기본·약한 비밀번호: CredData는 X나 F로 두지만 우리 기준에서는 자격증명이다. 이 데이터에서는 CredData를 따라 음성으로 둔다.
-- placeholder·지운 흔적(`login_and_password_removed`, `<password>` 등), 변수 참조, 문서의 예시 값: CredData와 우리 기준 모두 자격증명이 아니다. 규칙 기반 탐지기가 자격증명 자리라서 가리면 과잉 마스킹으로 센다.
-- CredData는 맥락상 자격증명이면 UUID도 T로 본다(예: 일부 `x-github-request-id`). 우리 합성 데이터에서는 request id를 정답에 넣지 않는다.
-- T 값은 CredData가 원본 비밀을 같은 모양의 임의 문자열로 바꾼 난독화 값이다. 실제 비밀은 들어 있지 않고, X/F 값과 문자열로 대조할 수도 없다.
+- **값은 난독화되어 있다.** CredData가 원본 비밀을 같은 모양의 임의 문자열로 바꿨다. 그래서 공백이 든 무작위 비밀번호처럼 보이는 값도 있다.
 - 에이전트 세션이 아니라 저장소 파일 조각이다. 프롬프트나 명령 출력 맥락이 없으므로 채널별 성능은 이 데이터로 판단하지 않는다.
+- 과잉 마스킹이 어디서 나왔는지는 `per_edit.jsonl`의 좌표를 `labels_from_CredData.jsonl`의 `kind`와 맞춰 나눠 볼 수 있다.
 
 ## 나중에 ML 학습에 쓰게 되면
 
-지금은 평가 전용이지만, 학습에 쓰게 되면 **앞뒤 창(±10줄)에 자격증명이 끼어 있는 item은 학습 데이터에서 빼야 할 수 있다.** 창 안의 X/F 행이나 라벨 없는 줄에 있는 자격증명은 gold가 없으므로 음성으로 학습된다. 라벨된 줄 하나를 주변 줄과 함께 판정하는 모델이라면, 창 안의 다른 T 값도 그 줄의 라벨과 상관없는 신호가 된다. 학습에 쓰려면 [dataset_policy.py](scripts/dataset_policy.py)의 `external` 용도도 함께 바꿔야 한다.
+지금은 평가 전용이지만, 학습에 쓰게 되면 **앞뒤 창(±10줄)에 자격증명이 끼어 있는 item은 학습 데이터에서 빼야 할 수 있다.** 창 안의 라벨 없는 줄에 있는 자격증명은 gold가 없으므로 음성으로 학습된다. 라벨된 줄 하나를 주변 줄과 함께 판정하는 모델이라면, 창 안의 다른 T 값도 그 줄의 라벨과 상관없는 신호가 된다. 학습에 쓰려면 [dataset_policy.py](scripts/dataset_policy.py)의 `external` 용도도 함께 바꿔야 한다.

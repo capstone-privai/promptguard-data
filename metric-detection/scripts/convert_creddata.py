@@ -8,16 +8,25 @@ EVALUATION ONLY. origin=external, allowed_use=[rule_eval, ml_eval]: never train 
 Writes, under --out (default metric-detection/):
   data_test/sessions_from_CredData.jsonl  one session per labeled file; each item is a window of the file
                                 (labeled lines +- --context-lines, overlapping windows merged), channel tool_output
-  data_answer/gold_from_CredData.jsonl  CredData T rows as gold spans (same schema as gold.jsonl)
-  labels_from_CredData.jsonl    every CredData row (T/F/X) mapped to item offsets, for analysis
+  data_answer/gold_from_CredData.jsonl  gold spans (same schema as gold.jsonl)
+  labels_from_CredData.jsonl    every CredData row mapped to item offsets with our verdict, for analysis
 
-Gold is CredData's own verdict: T rows only. X and F rows stay in the sessions as negatives.
+Gold, by the rules of metric-detection/LABELING.md (label_rules.py). CredData's rows are the candidates; its
+T/F/X verdict answers a different question (is this a real, live credential in a repository) and is not kept:
+  - A private key block with at least PEM_MIN_BODY characters of body is gold by its format.
+  - A value that label_rules.exclusion_kind names (redaction, template, doc_example, reference, code, descriptor,
+    identifier, e.g. a UUID outside a secret's place) is not gold.
+  - Otherwise a T row is gold, and an F or X row is gold only in a credential position (label_rules.classify:
+    "password": "test", aws_secret_access_key='dummy'); weak and test values count, as everywhere else.
+  - A T row in an identifier position (a bucket host name in a URL) is not gold.
 
 Conversion rules:
   - Lines are split the way CredData does: \\r\\n and \\r become \\n, then split on \\n.
     Offsets are Python code points into item text, like the rest of metric-detection.
   - Value position: ValueStart on LineStart to ValueEnd on LineEnd. No ValueEnd means end of LineEnd;
-    no ValueStart (whole-line PEM markup) means LineStart..LineEnd. Surrounding whitespace is trimmed.
+    no ValueStart (whole-line PEM markup) means LineStart..LineEnd. Surrounding whitespace is trimmed, and so
+    are a trailing line continuation (\\), a trailing comment (" # ...") and further query parameters ("&k=v")
+    that CredData's value range runs into.
   - Overlapping T spans: composite "... Multi" rows that overlap their component rows are dropped,
     any remaining overlaps are merged into their union, typed after the longest row.
 """
@@ -29,16 +38,20 @@ import csv
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
 import subprocess
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
+from label_rules import classify, exclusion_kind
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "CredData"
 
 PRIVATE_KEY_CATEGORIES = {"PEM Private Key", "BASE64 Private Key", "BASE64 encoded PEM Private Key",
                           "JWK", "PASERK Keys", "NKEY Seed"}
+PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
+PEM_MIN_BODY = 16  # base64 characters after the BEGIN line, header lines (Proc-Type: ...) aside; as in privesc
 ACCESS_KEY_CATEGORIES = {"AWS Client ID", "Alibaba Access Key ID", "Tencent WeChat API App ID",
                          "AWS S3 Bucket", "Firebase Domain"}
 
@@ -112,6 +125,34 @@ def trim(text: str, start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
+def tidy(text: str, start: int, end: int) -> tuple[int, int]:
+    """Cut what CredData's value range runs into past the value: a line continuation, a comment, more parameters."""
+    value = text[start:end]
+    m = re.search(r"\s+#\s", value) or (re.search(r"&\w+=", value) if "=" not in value.split("&")[0] else None)
+    if m and m.start() > 0:
+        end = start + m.start()
+    while end > start and (text[end - 1].isspace() or text[end - 1] == "\\"):
+        end -= 1
+    return start, end
+
+
+def judge(truth: str, kind_type: str, text: str, start: int, end: int) -> tuple[bool, str, str | None]:
+    """(gold, kind, rule) of one CredData row by LABELING.md."""
+    if kind_type == "PRIVATE_KEY" and (m := PEM_BEGIN.search(text[start:end])):
+        body = "".join(line for line in text[start + m.end():end].split("\n") if ":" not in line)
+        if len(re.findall(r"[A-Za-z0-9+/=]", body)) >= PEM_MIN_BODY:
+            return True, "private_key", None
+    excluded = exclusion_kind(text, start, end)
+    if excluded:
+        return False, excluded, None
+    verdict, rule = classify(text, start, end)
+    if verdict == "slot":
+        return True, "credential_slot", rule
+    if truth == "T" and verdict != "ident":
+        return True, "credential_format", rule
+    return False, "identifier" if verdict == "ident" else "not_credential_position", rule
+
+
 def resolve_overlaps(spans: list[dict], stats: Counter) -> list[dict]:
     """spans: {start, end, type, category}. Returns non-overlapping spans sorted by start."""
     def overlaps(a, b):
@@ -165,16 +206,17 @@ def convert(creddata: Path, context: int):
                 pos += len(line) + 1
             spans = []
             for row in (r for r in rows if a <= r.first and r.last <= b):
-                start, end = trim(text, *locate(row, lines, line_offset))
+                start, end = tidy(text, *trim(text, *locate(row, lines, line_offset)))
                 if start >= end:
-                    stats[f"empty_{row.truth}"] += 1
+                    stats["empty"] += 1
                     continue
                 kind = gold_type(row.raw["Category"], row.raw["CryptographyKey"])
+                is_gold, verdict, rule = judge(row.truth, kind, text, start, end)
                 labels.append({"session_id": session_id, "item_id": item_id, "start": start, "end": end,
-                               "ground_truth": row.truth, "category": row.raw["Category"],
-                               "mapped_type": kind, "creddata_id": row.raw["Id"]})
-                stats[f"rows_{row.truth}"] += 1
-                if row.truth == "T":
+                               "gold": is_gold, "kind": verdict, "rule": rule, "category": row.raw["Category"],
+                               "type": kind, "creddata_id": row.raw["Id"]})
+                stats[f"{'gold' if is_gold else 'excluded'}_{verdict}"] += 1
+                if is_gold:
                     spans.append({"start": start, "end": end, "type": kind, "category": row.raw["Category"]})
             for span_id, s in enumerate(resolve_overlaps(spans, stats)):
                 gold.append({"session_id": session_id, "item_id": item_id, "span_id": span_id,

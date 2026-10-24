@@ -122,12 +122,12 @@ python metric-detection/scripts/dataset_verify.py <sessions 파일> [--gold <gol
 
 ## 정답의 정의
 
-metric-detection의 정답 span은 **실제로 인증에 쓰이는 자격증명 값**이다. 과제에 필요한 값인지는 보지 않는다. 정답이 과제와 상관없이 정해지므로 탐지기가 규칙 기반이든 ML이든 같은 정답으로 채점하고, ML을 붙여도 정답을 다시 매기지 않는다.
+metric-detection의 정답 span은 **텍스트를 읽는 사람이 자격증명 자리에 들어간 값이라고 판정할 수 있는 리터럴 값**이다. 기준 전체는 [LABELING.md](LABELING.md)에 있다. 과제에 필요한 값인지는 보지 않는다. 정답이 과제와 상관없이 정해지므로 탐지기가 규칙 기반이든 ML이든 같은 정답으로 채점하고, ML을 붙여도 정답을 다시 매기지 않는다.
 
 | 경우 | 정답 | 예 |
 |---|---|---|
-| 실제 값, 또는 실제 값을 같은 모양으로 바꾼 합성·난독화 값 | 자격증명 | API 키, 토큰, CredData T |
-| 테스트·개발용이지만 실제로 동작하는 값 | 자격증명 | `x-pack-test-password` |
+| 실제 값, 또는 실제 값을 같은 모양으로 바꾼 합성·난독화 값 | 자격증명 | API 키, 토큰, CredData의 난독화 값 |
+| 테스트·개발용 값 | 자격증명 | `x-pack-test-password`, `mock_token` |
 | 설정에 들어간 기본·약한 비밀번호 | 자격증명 | `DB_PASSWORD=admin` |
 | 공개용 키 | 자격증명 | 클라이언트에 넣는 publishable key |
 | placeholder, 지운 흔적 | 아님 | `<your-token>`, `YOUR_API_KEY`, `login_and_password_removed`, `***`, `xxxx` |
@@ -136,8 +136,7 @@ metric-detection의 정답 span은 **실제로 인증에 쓰이는 자격증명 
 | 해시, UUID, request id, 이름 | 아님 | 커밋 해시, `x-request-id` |
 
 - 값이 자격증명 자리(예: `Authorization: Basic …`)에 있어도, 값 자체가 placeholder면 정답이 아니다. 규칙 기반 탐지기가 이런 값을 가리면 과잉 마스킹으로 센다. recall은 줄지 않고 precision만 내려간다. ML 검증이 이 과잉 마스킹을 얼마나 줄이는지는 CredSweeper `--ml off`와 `--ml on`을 비교해 본다.
-- CredData 변환본은 CredData의 T만 정답으로 쓴다. 테스트 값과 약한 비밀번호처럼 이 정의와 어긋나는 부분은 [README_CredData.md](README_CredData.md#정답)에 있다.
-- 2026-10-08에 더한 외부 소스 4개(Nemotron-PII, openhands-feedback, SWE-Gym, Nosey Parker)도 CredData, privesc와 같은 기준으로 맞췄다: 9자 미만과 흔한 비밀번호, placeholder, 문서 예시 값, 해시, 식별자는 정답이 아니고, 무작위 모양으로 실제 동작하는 값은 테스트용이어도 정답이며, 같은 값의 모든 등장 위치가 정답이다. 소스별로 정한 것은 각 `README_<소스>.md`의 "기존 두 데이터와 같은 기준으로 맞춘 점"에 있다.
+- 모든 데이터셋의 정답은 [LABELING.md](LABELING.md) 한 기준으로 매긴다(2026-10-24 통일). 짧거나 약하거나 테스트용인 값도 자격증명 자리에 있으면 정답이다. 원본 데이터의 라벨(CredData의 T/F/X, Nemotron의 span)은 후보를 찾는 데만 쓴다. 소스별 적용은 각 `README_<소스>.md`의 "LABELING.md를 이 데이터에 적용한 점"에 있다.
 
 ## 채점 기준
 
