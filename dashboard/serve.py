@@ -101,7 +101,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path == "/api/status":
-            status = self.service.snapshot() if self.service else {"state": "serve-only"}
+            status = self.service.snapshot() if self.service else {"state": "serve-only", "ensemble_writable": False}
             return self._json(200, status)
         if path in ("/", "/index.html"):
             return self._file(WEB_ROOT / "index.html")
@@ -118,6 +118,24 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             return
         parts = urlsplit(self.path)
+        if parts.path == "/api/ensemble":
+            if not self.service:
+                return self._json(409, {"error": "결과 보기 전용 서버에서는 새 평가를 요청할 수 없어요."})
+            origin = self.headers.get("Origin")
+            if origin and urlsplit(origin).netloc != self.headers.get("Host"):
+                return self._json(403, {"error": "같은 대시보드에서 평가를 요청해 주세요."})
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 4096:
+                    raise ValueError("평가 요청 크기가 올바르지 않아요.")
+                payload = json.loads(self.rfile.read(length))
+                if not isinstance(payload, dict):
+                    raise ValueError("평가 요청 형식이 올바르지 않아요.")
+                config = self.service.request_ensemble(payload.get("sha"), payload.get("detectors"),
+                                                       payload.get("consensus"))
+            except (ValueError, UnicodeDecodeError) as exc:
+                return self._json(400, {"error": str(exc)})
+            return self._json(202, config)
         if parts.path == "/api/refresh" and self.service:
             retry = parse_qs(parts.query).get("retry") == ["1"]
             self.service.request_refresh(retry=retry)

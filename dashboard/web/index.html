@@ -25,8 +25,12 @@
         <article class="card ov" id="hero">
           <div class="card-head">
             <h2><i class="key f1"></i>탐지 성능 <span class="tag-mono">metric-detection</span></h2>
-            <button class="link" type="button" data-view="detection">세부 보기</button>
+            <div class="tools">
+              <button class="ghost" id="ensemble-open" type="button" aria-haspopup="dialog">앙상블 설정</button>
+              <button class="link" type="button" data-view="detection">세부 보기</button>
+            </div>
           </div>
+          <div id="ensemble-active" class="ensemble-active" aria-live="polite"></div>
           <div class="kpis" id="kpis"></div>
           <div id="kpi-more"></div>
           <div id="gold-outcomes"></div>
@@ -88,5 +92,6 @@
       </section>
     </main>
   </div>
+  <dialog id="ensemble-dialog" class="ensemble-dialog" aria-labelledby="ensemble-title"></dialog>
 </body>
 </html>

@@ -26,6 +26,8 @@ class Element {
   }
   setAttribute(key, value) { this.attributes[key] = value; }
   addEventListener(name, handler) { this.listeners.set(name, handler); }
+  showModal() { this.open = true; }
+  close() { this.open = false; }
   get isConnected() { return this.connected || Boolean(this.parentNode?.isConnected); }
   cloneNode(deep) {
     const copy = new Element(this.text, this.tag);
@@ -34,6 +36,7 @@ class Element {
     return copy;
   }
   get textContent() { return this.text + this.children.map((child) => child.textContent).join(""); }
+  set textContent(value) { this.replaceChildren(); this.text = String(value); }
 }
 
 function app(globals = {}) {
@@ -376,3 +379,99 @@ for (const [name, guard, value] of [
     }
   });
 }
+
+const ensembleFixture = (variants = []) => ({
+  tracks: ["detection", "latency"], latest: "a", generated_at: "same",
+  commits: [{ sha: "a", short: "a", title: "Detector", ensembles: variants,
+    detection: { key: "default", state: "done", headline: { f1: 0.5 } },
+    latency: { key: "latency", state: "done" } }],
+});
+
+test("selected ensembles never fall back to default metrics and compare the same configuration", () => {
+  const { context } = app();
+  context.fixture = ensembleFixture([{ id: "choice", key: "variant", state: "queued" }]);
+  vm.runInContext("state.index = fixture; state.ensemble = 'choice'", context);
+  assert.equal(vm.runInContext("pick('detection').key", context), null);
+  assert.equal(vm.runInContext("pick('latency').key", context), "latency");
+  assert.equal(vm.runInContext("doneCommits('detection').length", context), 0);
+  vm.runInContext("state.index.commits[0].ensembles[0].state = 'done'", context);
+  assert.equal(vm.runInContext("pick('detection').key", context), "variant");
+  assert.equal(vm.runInContext("doneCommits('detection')[0].detection.key", context), "variant");
+  vm.runInContext("state.ensemble = 'unknown'", context);
+  assert.equal(vm.runInContext("pick('detection').key", context), null);
+  vm.runInContext("state.ensemble = null", context);
+  assert.equal(vm.runInContext("pick('detection').key", context), "default");
+});
+
+test("ensemble panel computes the vote count and rejects zero selected modules", () => {
+  const { context, elements } = app();
+  context.fixture = ensembleFixture();
+  vm.runInContext("state.index = fixture; state.status = { ensemble_writable: true }; openEnsemblePanel()", context);
+  const dialog = elements.get("#ensemble-dialog");
+  assert.equal(dialog.open, true);
+  assert.ok(dialog.textContent.includes("3개 모듈 중 2개"));
+  const inputs = descendants(dialog).filter((node) => node.tag === "input");
+  const submit = descendants(dialog).find((node) => node.attributes.type === "submit");
+  inputs[0].listeners.get("change")({ target: { checked: false } });
+  assert.ok(dialog.textContent.includes("2개 모듈 중 2개"));
+  const policy = descendants(dialog).find((node) => node.tag === "select");
+  policy.listeners.get("change")({ target: { value: "any" } });
+  assert.ok(dialog.textContent.includes("2개 모듈 중 1개"));
+  for (const input of inputs.slice(1)) input.listeners.get("change")({ target: { checked: false } });
+  assert.equal(submit.disabled, true);
+  assert.ok(dialog.textContent.includes("한 개 이상"));
+});
+
+test("ensemble request pins its commit and shows the accepted request before the worker indexes it", async () => {
+  const calls = [];
+  const fixture = ensembleFixture();
+  const { context, elements } = app({
+    URLSearchParams, location: { pathname: "/", search: "" }, history: { replaceState() {} },
+    fetch: async (url, options) => {
+      calls.push([url, options]);
+      return response(url === "api/ensemble" ? { id: "choice", detectors: ["credsweeper", "gitleaks", "promptguard-rules"], consensus: "majority" }
+        : JSON.parse(JSON.stringify(fixture)));
+    },
+  });
+  context.fixture = fixture;
+  vm.runInContext("state.index = fixture; state.status = { ensemble_writable: true }; showSelected = async () => {}; openEnsemblePanel()", context);
+  const dialog = elements.get("#ensemble-dialog");
+  const form = descendants(dialog).find((node) => node.tag === "form");
+  await form.listeners.get("submit")({ preventDefault() {} });
+  assert.equal(dialog.open, false);
+  assert.equal(JSON.parse(calls[0][1].body).sha, "a");
+  assert.equal(vm.runInContext("state.sha", context), "a");
+  assert.equal(vm.runInContext("state.ensemble", context), "choice");
+  assert.equal(vm.runInContext("detectionRecord(selectedCommit()).state", context), "queued");
+  assert.equal(vm.runInContext("pick('detection').key", context), null);
+});
+
+test("failed ensemble requests stay in the panel and allow retry", async () => {
+  const { context, elements } = app({ fetch: async () => response({ error: "server unavailable" }, 503) });
+  context.fixture = ensembleFixture();
+  vm.runInContext("state.index = fixture; state.status = { ensemble_writable: true }; openEnsemblePanel()", context);
+  const dialog = elements.get("#ensemble-dialog");
+  const form = descendants(dialog).find((node) => node.tag === "form");
+  await form.listeners.get("submit")({ preventDefault() {} });
+  assert.equal(dialog.open, true);
+  assert.ok(dialog.textContent.includes("server unavailable"));
+  assert.equal(descendants(dialog).find((node) => node.attributes.type === "submit").disabled, false);
+});
+
+test("read-only exports can open completed combinations without requesting evaluations", async () => {
+  const variant = { id: "choice", key: "variant", state: "done", detectors: ["gitleaks"], consensus: "any" };
+  const { context, elements } = app({
+    URLSearchParams, location: { pathname: "/", search: "" }, history: { replaceState() {} },
+    fetch: () => { throw new Error("should not request an evaluation"); },
+  });
+  context.fixture = ensembleFixture([variant]);
+  vm.runInContext("state.index = fixture; state.ensemble = 'choice'; showSelected = async () => {}; openEnsemblePanel()", context);
+  const dialog = elements.get("#ensemble-dialog");
+  const form = descendants(dialog).find((node) => node.tag === "form");
+  assert.equal(descendants(dialog).find((node) => node.attributes.type === "submit").disabled, false);
+  await form.listeners.get("submit")({ preventDefault() {} });
+  assert.equal(dialog.open, false);
+  assert.equal(vm.runInContext("state.ensemble", context), "choice");
+  vm.runInContext("state.ensemble = null; openEnsemblePanel()", context);
+  assert.equal(descendants(dialog).find((node) => node.attributes.type === "submit").disabled, true);
+});

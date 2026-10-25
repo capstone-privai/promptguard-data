@@ -217,8 +217,11 @@ def plan(datasets: Sequence[Dataset], weights: dict[str, list[int]], jobs: int) 
 
 def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, python: str, jobs: int,
                progress: Callable[[int, int], None], cancelled: Callable[[], bool], *,
-               shard_script: Path = SHARD_SCRIPT, gitleaks_cache: Path | None = None) -> None:
+               shard_script: Path = SHARD_SCRIPT, gitleaks_cache: Path | None = None,
+               ensemble: dict[str, Any] | None = None) -> None:
     cache_args = ["--gitleaks-cache", str(gitleaks_cache)] if gitleaks_cache else []
+    if ensemble:
+        cache_args += ["--detectors", ",".join(ensemble["detectors"]), "--consensus", ensemble["consensus"]]
     total = sum(shard.weight for shard in shards)
     done = 0
     pending = list(shards)
@@ -274,7 +277,8 @@ def prf(counts: dict[str, int]) -> dict[str, float | None]:
 def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, python: str, jobs: int,
              cache_dir: Path, commit: dict[str, Any], system_fingerprint: str, bench: dict[str, Any],
              progress: Callable[[int, int], None] = lambda done, total: None,
-             cancelled: Callable[[], bool] = lambda: False, gitleaks_cache: Path | None = None) -> dict[str, Any]:
+             cancelled: Callable[[], bool] = lambda: False, gitleaks_cache: Path | None = None,
+             ensemble: dict[str, Any] | None = None) -> dict[str, Any]:
     """Evaluate, merge and write out_dir; return the headline numbers (overall and per dataset).
 
     gitleaks_cache: SQLite file the shards share for gitleaks runs (gitleaks_cache.py); None runs gitleaks per text."""
@@ -288,7 +292,7 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
         weights = validate(datasets, cache_dir, python, work_dir / "logs", shard_script=shard_script)
         shards = plan(datasets, weights, jobs)
         run_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, shard_script=shard_script,
-                   gitleaks_cache=gitleaks_cache)
+                   gitleaks_cache=gitleaks_cache, **({"ensemble": ensemble} if ensemble else {}))
 
         merged, system = {}, None
         for dataset in datasets:
@@ -306,6 +310,8 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
 
         tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
         shutil.rmtree(tmp_dir, ignore_errors=True)
+        if ensemble:
+            system = {**(system or {}), "ensemble": ensemble}
         headline = write_result(tmp_dir, datasets, merged, system or {}, commit=commit,
                                 system_fingerprint=system_fingerprint, bench=bench,
                                 wall_seconds=time.perf_counter() - started)
@@ -367,6 +373,7 @@ def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, d
         "totals": {**headline, "counts": totals},
     })
     write_json(out_dir / "meta.json", {"commit": commit, "system_fingerprint": system_fingerprint,
+                                       "ensemble": system.get("ensemble"),
                                        "benchmark_fingerprint": bench["fingerprint"], "evaluated_at": evaluated_at,
                                        "wall_seconds": round(wall_seconds, 1), "headline": headline,
                                        "python": sys.version.split()[0]}, pretty=True)

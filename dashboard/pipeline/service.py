@@ -57,6 +57,25 @@ from pipeline.paths import DASHBOARD_ROOT, DATA_TEST, METRIC_DETECTION, REPO_ROO
 TRACKS = ("detection", "latency")
 KEY = re.compile(r"[0-9a-f]{16}")
 TRACK_LABELS = {"detection": "탐지 성능", "latency": "탐지 지연"}
+DETECTORS = ("credsweeper", "gitleaks", "promptguard-rules")
+
+
+def ensemble_config(detectors: Any, consensus: Any) -> dict[str, Any]:
+    if (not isinstance(detectors, list) or not detectors
+            or any(not isinstance(name, str) or name not in DETECTORS for name in detectors)
+            or len(set(detectors)) != len(detectors)):
+        raise ValueError("탐지 모듈을 한 개 이상 선택해 주세요. 지원하지 않거나 중복된 모듈은 사용할 수 없어요.")
+    if consensus not in ("any", "majority", "unanimous"):
+        raise ValueError("투표 방식은 any, majority, unanimous 중에서 골라 주세요.")
+    return {"detectors": [name for name in DETECTORS if name in detectors], "consensus": consensus}
+
+
+def ensemble_id(config: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def ensemble_key(commit: repo.Commit, context: str, config: dict[str, Any]) -> str:
+    return result_key("detection", commit.fingerprint, f"{context}|ensemble={ensemble_id(config)}")
 
 
 class DataDirBusy(Exception):
@@ -148,9 +167,10 @@ class Service:
         self.data = config.data_dir
         self.wake = threading.Event()
         self.stopping = threading.Event()
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.status: dict[str, Any] = {"state": "starting", "updated_at": now()}
         self.failures: dict[str, dict[str, Any]] = self._read("failures.json") or {}
+        self.ensemble_requests: dict[str, dict[str, Any]] = self._read("ensemble_requests.json") or {}
         self.retry = False
         self._meta_cache: dict[Path, dict[str, Any]] = {}
         self.code = code_hash()
@@ -205,7 +225,7 @@ class Service:
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
-            return dict(self.status)
+            return {**self.status, "ensemble_writable": True, "ensemble_requests": list(self.ensemble_requests.values())}
 
     def _read(self, name: str) -> Any:
         try:
@@ -224,6 +244,38 @@ class Service:
     def request_refresh(self, retry: bool = False) -> None:
         self.retry = self.retry or retry
         self.wake.set()
+
+    def request_ensemble(self, sha: Any, detectors: Any, consensus: Any) -> dict[str, Any]:
+        config = ensemble_config(detectors, consensus)
+        index = self._read("index.json") or {}
+        if not isinstance(sha, str) or not any(item["sha"] == sha for item in index.get("commits", [])):
+            raise ValueError("평가할 커밋을 찾을 수 없어요. 화면을 새로고침해 주세요.")
+        identity = ensemble_id(config)
+        with self.lock:
+            self.ensemble_requests[f"{sha}:{identity}"] = {"sha": sha, "id": identity, **config}
+            runner.write_json(self.data / "ensemble_requests.json", self.ensemble_requests, pretty=True)
+            # Retrying a requested combination only clears its own failure, never another evaluation's.
+            for entry in index.get("commits", []):
+                if entry["sha"] == sha:
+                    for variant in entry.get("ensembles", []):
+                        if variant["id"] == identity:
+                            self.failures.pop(f"detection:{variant['key']}", None)
+            self._save_failures()
+        self.wake.set()
+        return {"id": identity, **config}
+
+    def requested_ensembles(self) -> list[dict[str, Any]]:
+        with self.lock:
+            return list(self.ensemble_requests.values())
+
+    def ensemble_for(self, plan: dict[str, Any], commit: repo.Commit, key: str) -> dict[str, Any] | None:
+        for request in self.requested_ensembles():
+            if request["sha"] != commit.sha:
+                continue
+            config = ensemble_config(request["detectors"], request["consensus"])
+            if ensemble_key(commit, plan["contexts"]["detection"], config) == key:
+                return config
+        return None
 
     # ------------------------------------------------------------------ results
 
@@ -244,7 +296,7 @@ class Service:
         found: dict[str, tuple[str, str]] = {}
         root = self.data / "results" / track
         for folder in root.iterdir() if root.is_dir() else []:
-            if KEY.fullmatch(folder.name) and (meta := self.meta(track, folder.name)):
+            if KEY.fullmatch(folder.name) and (meta := self.meta(track, folder.name)) and not meta.get("ensemble"):
                 entry = (meta["evaluated_at"], folder.name)
                 found[meta["system_fingerprint"]] = max(found.get(meta["system_fingerprint"], entry), entry)
         return found
@@ -280,6 +332,18 @@ class Service:
     def jobs(self, plan: dict[str, Any]) -> list[tuple[str, repo.Commit, str]]:
         """Missing results, most urgent first, one per (track, key)."""
         seen, out = set(), []
+        # Explicit UI requests run next, after any currently running job finishes.
+        by_sha = {commit.sha: commit for commit in plan["commits"]}
+        for request in reversed(self.requested_ensembles()):
+            if request["sha"] not in by_sha:
+                continue
+            commit = by_sha[request["sha"]]
+            config = ensemble_config(request["detectors"], request["consensus"])
+            key = ensemble_key(commit, plan["contexts"]["detection"], config)
+            if ("detection", key) not in seen:
+                seen.add(("detection", key))
+                if not self.meta("detection", key) and f"detection:{key}" not in self.failures:
+                    out.append(("detection", commit, key))
         for commit in reversed(plan["commits"]):
             for track, context in plan["contexts"].items():
                 key = result_key(track, commit.fingerprint, context, timeout_ms=commit.timeout_ms)
@@ -313,6 +377,9 @@ class Service:
     def run_job(self, plan: dict[str, Any], track: str, commit: repo.Commit, key: str,
                 pending: list[tuple[str, repo.Commit, str]]) -> None:
         label = TRACK_LABELS[track]
+        ensemble = self.ensemble_for(plan, commit, key) if track == "detection" else None
+        if ensemble:
+            label += f" ({' + '.join(ensemble['detectors'])} · {ensemble['consensus']})"
         started = now()
 
         def progress(done: int, total: int) -> None:
@@ -325,8 +392,9 @@ class Service:
         checkout = self.data / "checkouts" / commit.fingerprint[:12]
         name = f"{track} {commit.short} ({key})"
         log(f"{name}: started, {len(pending) - 1} more queued")
-        self.alert(f"{named(commit)} 커밋 {label} 평가 돌려 볼게요."
-                   + (f" 뒤에 {len(pending) - 1}개 더 기다리고 있어요." if len(pending) > 1 else ""))
+        if not ensemble:
+            self.alert(f"{named(commit)} 커밋 {label} 평가 돌려 볼게요."
+                       + (f" 뒤에 {len(pending) - 1}개 더 기다리고 있어요." if len(pending) > 1 else ""))
         began = time.monotonic()
         finished = threading.Event()
         watcher = None
@@ -338,7 +406,7 @@ class Service:
                                   args=(f"{named(commit)} 커밋 {label} 평가가 {hours:g}시간째 안 끝나네요. "
                                         "한번 확인해 줄래요?",))
         overdue.daemon = True
-        if hours > 0 and self.config.notify_url:
+        if hours > 0 and self.config.notify_url and not ensemble:
             overdue.start()
         try:
             repo.export(self.data / "repo.git", commit.sha, checkout)
@@ -347,7 +415,8 @@ class Service:
                 runner.evaluate(checkout, plan["datasets"], self.result_dir(track, key), python=python,
                                 jobs=self.config.jobs, cache_dir=self.data / "validated", commit=commit.as_json(),
                                 system_fingerprint=commit.fingerprint, bench=plan["bench"], progress=progress,
-                                cancelled=self.stopping.is_set, gitleaks_cache=self.data / "gitleaks-cache.sqlite")
+                                cancelled=self.stopping.is_set, gitleaks_cache=self.data / "gitleaks-cache.sqlite",
+                                **({"ensemble": ensemble} if ensemble else {}))
             else:
                 latency.evaluate(checkout, self.result_dir(track, key), python=python,
                                  adapters=self.config.latency_adapters, guard=self.config.latency_guard,
@@ -370,8 +439,9 @@ class Service:
             (self.data / "logs").mkdir(parents=True, exist_ok=True)
             with (self.data / "logs" / "failures.log").open("a", encoding="utf-8") as out:
                 out.write(f"{now()} {track} {commit.sha} {key}\n{traceback.format_exc()}\n")
-            self.alert(f"{named(commit)} 커밋 {label} 평가가 실패했네요.\n{str(exc)[:500]}\n"
-                       "확인해 보고 대시보드 위쪽 커밋 버튼에서 '실패한 평가 다시 돌리기' 눌러 주세요.")
+            if not ensemble:
+                self.alert(f"{named(commit)} 커밋 {label} 평가가 실패했네요.\n{str(exc)[:500]}\n"
+                           "확인해 보고 대시보드 위쪽 커밋 버튼에서 '실패한 평가 다시 돌리기' 눌러 주세요.")
         else:
             log(f"{name}: done in {time.monotonic() - began:.0f} s")
         finally:
@@ -381,7 +451,8 @@ class Service:
             overdue.cancel()
             shutil.rmtree(checkout, ignore_errors=True)
             self.set_status(state="idle", message="")
-            self.report(plan, commit)  # sends only once every track of the commit is done or failed
+            if not ensemble:
+                self.report(plan, commit)  # sends only once every track of the commit is done or failed
 
     def watch(self, plan: dict[str, Any], running: tuple[str, str], finished: threading.Event) -> None:
         """While a job runs, fetch the branch every poll interval and index the commits merged meanwhile as queued.
@@ -471,7 +542,8 @@ class Service:
         return None
 
     def _save_failures(self) -> None:
-        runner.write_json(self.data / "failures.json", self.failures, pretty=True)
+        with self.lock:
+            runner.write_json(self.data / "failures.json", self.failures, pretty=True)
 
     # ------------------------------------------------------------------ index
 
@@ -483,6 +555,22 @@ class Service:
         for commit in plan["commits"]:
             entry = commit.as_json()
             entry["fingerprint"] = commit.fingerprint[:12]
+            entry["ensembles"] = []
+            for request in self.requested_ensembles():
+                if request["sha"] != commit.sha:
+                    continue
+                config = ensemble_config(request["detectors"], request["consensus"])
+                key = ensemble_key(commit, plan["contexts"]["detection"], config)
+                meta = self.meta("detection", key)
+                failure = self.failures.get(f"detection:{key}")
+                state = ("done" if meta else "running" if running == ("detection", key)
+                         else "failed" if failure else "queued")
+                record = {"id": request["id"], **config, "key": key, "state": state}
+                if meta:
+                    record["headline"] = meta["headline"]
+                if failure and not meta:
+                    record["error"] = failure["error"]
+                entry["ensembles"].append(record)
             for track, context in plan["contexts"].items():
                 key = result_key(track, commit.fingerprint, context, timeout_ms=commit.timeout_ms)
                 meta = self.meta(track, key)

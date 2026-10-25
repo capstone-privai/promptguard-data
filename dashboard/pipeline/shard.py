@@ -89,7 +89,9 @@ def evaluate_range(args: argparse.Namespace) -> int:
     try:
         from evaluation.adapters.promptguard_adapter import PromptGuardAdapter
 
-        adapter = PromptGuardAdapter(load_worker(args.system_root))
+        adapter = PromptGuardAdapter(load_worker(args.system_root),
+                                    detectors=args.detectors.split(",") if args.detectors else None,
+                                    consensus=args.consensus)
     except (SystemRootError, ValueError) as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return EXIT_CONFIG
@@ -124,6 +126,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--lines", required=True, help="session range low:high in file order")
     run.add_argument("--system-root", required=True, help="PromptGuard checkout (src/detector, the mod's register.mjs)")
     run.add_argument("--gitleaks-cache", help="SQLite file caching gitleaks runs across shards and commits")
+    run.add_argument("--detectors", help="comma-separated adapter names to keep")
+    run.add_argument("--consensus", choices=("any", "majority", "unanimous"))
     args = parser.parse_args(argv)
     return cmd_validate(args) if args.command == "validate" else cmd_run(args)
 

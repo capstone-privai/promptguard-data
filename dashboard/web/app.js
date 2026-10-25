@@ -147,6 +147,8 @@ const state = {
   status: null,
   statusPolling: true,
   sha: null, // commit chosen by the reader; null follows the newest commit
+  ensemble: null, // selected combination id; null uses the commit's default configuration
+  pendingEnsembles: new Map(), // accepted requests not indexed by the worker yet
   detection: null, // { commit, key, stale, fallbackFrom }
   summary: null,
   summaryKey: null,
@@ -186,6 +188,7 @@ const VIEWS = [
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
   state.sha = params.get("c");
+  state.ensemble = params.get("e");
   state.view = VIEWS.some((view) => view.key === params.get("v")) ? params.get("v") : "detection";
   state.filters = { d: params.get("d"), t: params.get("t"), c: params.get("ch"), g: params.get("g") };
   state.outcome = params.get("o");
@@ -196,6 +199,7 @@ function readHash() {
 function writeHash() {
   const params = new URLSearchParams();
   if (state.sha) params.set("c", state.sha.slice(0, 12));
+  if (state.ensemble) params.set("e", state.ensemble);
   const { d, t, c, g } = state.filters;
   if (d) params.set("d", d);
   if (t) params.set("t", t);
@@ -233,6 +237,10 @@ function isLatest(commit) {
 function pick(track) {
   const list = commits();
   const target = selectedCommit();
+  if (track === "detection" && state.ensemble) {
+    const record = detectionRecord(target);
+    return { commit: target, key: record?.state === "done" ? record.key : null, record };
+  }
   if (!target || !target[track]) return { commit: target, key: null, record: target && target[track] };
   const record = target[track];
   if (record.state === "done") return { commit: target, key: record.key, record };
@@ -246,14 +254,24 @@ function pick(track) {
   return { commit: target, key: null, record };
 }
 
+function detectionRecord(commit) {
+  if (!state.ensemble) return commit?.detection;
+  const record = (commit?.ensembles || []).find((item) => item.id === state.ensemble);
+  if (record) return record;
+  const pending = state.pendingEnsembles.get(`${commit?.sha}:${state.ensemble}`)
+    || state.status?.ensemble_requests?.find((item) => item.sha === commit?.sha && item.id === state.ensemble);
+  return pending ? { ...pending, state: "queued" } : undefined;
+}
+
 function doneCommits(track) {
-  return commits().filter((commit) => commit[track] && commit[track].state === "done");
+  return commits().map((commit) => track === "detection" ? { ...commit, detection: detectionRecord(commit) } : commit)
+    .filter((commit) => commit[track] && commit[track].state === "done");
 }
 
 function previousDistinct(track, commit, key) {
   const list = commits();
   for (let index = list.findIndex((item) => item.sha === commit.sha) - 1; index >= 0; index--) {
-    const record = list[index][track];
+    const record = track === "detection" ? detectionRecord(list[index]) : list[index][track];
     if (record && record.state === "done" && record.key !== key) return { commit: list[index], record };
   }
   return null;
@@ -597,6 +615,132 @@ function commitPopover() {
   ];
 }
 
+// ------------------------------------------------------------------ ensemble settings
+
+const ENSEMBLE_MODULES = [
+  ["credsweeper", "CredSweeper", "기본 규칙과 추가 자격증명 규칙"],
+  ["gitleaks", "gitleaks", "토큰·키 탐지 · 기존 결과 캐시 재사용"],
+  ["promptguard-rules", "PromptGuard 규칙", "자체 비밀값 탐지 규칙"],
+];
+const ENSEMBLE_STATES = { done: "평가 완료", queued: "평가 대기", running: "평가 중", failed: "평가 실패" };
+
+function ensembleLabel(config) {
+  return `${config.detectors.map((name) => ENSEMBLE_MODULES.find((item) => item[0] === name)?.[1] || name).join(" + ")} · ${config.consensus}`;
+}
+
+function ensembleVotes(count, consensus) {
+  return consensus === "any" ? 1 : consensus === "unanimous" ? count : Math.floor(count / 2) + 1;
+}
+
+async function selectEnsemble(identity) {
+  state.ensemble = identity;
+  state.shown = PAGE;
+  state.openExamples.clear();
+  writeHash();
+  await showSelected();
+}
+
+function renderEnsembleActive() {
+  const box = clear($("#ensemble-active"));
+  $("#ensemble-open").disabled = !selectedCommit();
+  if (!state.ensemble) return;
+  const record = detectionRecord(selectedCommit());
+  add(box, h("span", { class: "ensemble-badge" }, "선택 구성"),
+    h("span", null, record ? ensembleLabel(record) : "선택한 조합은 이 커밋에서 아직 평가하지 않았어요."),
+    record ? h("span", { class: "muted" }, ENSEMBLE_STATES[record.state]) : null,
+    h("button", { class: "link", type: "button", onclick: () => selectEnsemble(null) }, "기본 구성으로"),
+    h("div", { class: "muted ensemble-scope" }, "선택 구성은 탐지 성능에 적용돼요. 탐지 지연과 작업 성공은 기본 구성의 결과예요."));
+}
+
+function openEnsemblePanel() {
+  const commit = selectedCommit();
+  if (!commit) return;
+  closePopover();
+  const dialog = clear($("#ensemble-dialog"));
+  const chosen = detectionRecord(commit);
+  const described = !state.ensemble && !state.detection?.fallbackFrom ? state.summary?.system?.detector : null;
+  const draft = {
+    detectors: chosen?.detectors?.slice() || described?.adapters?.map((item) => item.name)
+      || ENSEMBLE_MODULES.map((item) => item[0]),
+    consensus: chosen?.consensus || described?.consensus || "majority",
+  };
+  const writable = state.status?.ensemble_writable === true;
+  const message = h("p", { class: "note", role: "status", "aria-live": "polite" });
+  const hint = h("p", { class: "ensemble-votes", "aria-live": "polite" });
+  const submit = h("button", { class: "ensemble-submit", type: "submit" });
+  const existing = () => (commit.ensembles || []).find((item) => item.consensus === draft.consensus
+    && item.detectors.length === draft.detectors.length && item.detectors.every((name) => draft.detectors.includes(name)));
+  const update = () => {
+    const count = draft.detectors.length;
+    hint.textContent = count ? `${count}개 모듈 중 ${ensembleVotes(count, draft.consensus)}개가 탐지하면 가려요.` : "모듈을 한 개 이상 켜 주세요.";
+    const record = existing();
+    submit.disabled = !count || (!writable && !record);
+    submit.textContent = record && record.state !== "failed" ? "이 구성 보기" : record ? "다시 평가" : "이 구성으로 평가";
+    message.textContent = record ? `${ENSEMBLE_STATES[record.state]}${record.error ? `: ${record.error}` : ""}`
+      : writable ? "새 조합은 재평가가 필요해요. 같은 조건의 gitleaks 결과는 캐시에서 가져와요."
+        : "결과 보기 전용이에요. 이미 평가한 구성은 아래에서 볼 수 있어요.";
+    if (record?.state === "failed" && !writable) submit.disabled = true;
+  };
+  const form = h("form", { onsubmit: async (event) => {
+    event.preventDefault();
+    const record = existing();
+    if (record && record.state !== "failed") {
+      dialog.close();
+      await selectEnsemble(record.id);
+      return;
+    }
+    if (!draft.detectors.length || !writable) return;
+    submit.disabled = true;
+    message.textContent = "평가를 요청하고 있어요…";
+    try {
+      const response = await fetch("api/ensemble", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sha: commit.sha, detectors: draft.detectors, consensus: draft.consensus }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+      // Pin the request's commit even if the reader was following the latest one.
+      state.sha = commit.sha;
+      state.ensemble = result.id;
+      state.pendingEnsembles.set(`${commit.sha}:${result.id}`, { sha: commit.sha, ...result, state: "queued" });
+      writeHash();
+      dialog.close();
+      await refreshIndex();
+    } catch (error) {
+      message.textContent = `평가 요청 실패: ${error.message}`;
+      submit.disabled = false;
+    }
+  } });
+  const fieldset = h("fieldset", { class: "ensemble-modules" }, h("legend", null, "탐지 모듈"));
+  for (const [name, label, note] of ENSEMBLE_MODULES) {
+    const input = h("input", { type: "checkbox", name: "detectors", value: name, onchange: (event) => {
+      draft.detectors = event.target.checked ? [...draft.detectors, name] : draft.detectors.filter((item) => item !== name);
+      update();
+    } });
+    input.checked = draft.detectors.includes(name);
+    fieldset.append(h("label", { class: "ensemble-module" }, input,
+      h("span", null, h("strong", null, label), h("small", null, note))));
+  }
+  const policy = h("select", { id: "ensemble-policy", onchange: (event) => { draft.consensus = event.target.value; update(); } },
+    h("option", { value: "any" }, "any · 하나 이상 탐지"),
+    h("option", { value: "majority" }, "majority · 과반수 탐지"),
+    h("option", { value: "unanimous" }, "unanimous · 모두 탐지"));
+  policy.value = draft.consensus;
+  add(form, fieldset, h("label", { class: "ensemble-policy", for: "ensemble-policy" }, "투표 방식", policy), hint, message,
+    h("div", { class: "actions" },
+      h("button", { class: "ghost", type: "button", onclick: () => { dialog.close(); selectEnsemble(null); } }, "기본 구성 보기"), submit));
+  add(dialog, h("div", { class: "card-head" }, h("h2", { id: "ensemble-title" }, "앙상블 설정"),
+    h("button", { class: "ghost", type: "button", "aria-label": "앙상블 설정 닫기", onclick: () => dialog.close() }, "닫기")),
+    h("p", { class: "muted" }, `${commit.short} · ${commit.title}`),
+    h("p", { class: "ensemble-scope" }, "탐지 성능의 모듈과 투표 방식을 바꿔 비교해 보세요."), form);
+  if ((commit.ensembles || []).length) {
+    add(dialog, h("h3", null, "이 커밋에서 요청한 구성"), h("div", { class: "ensemble-history" },
+      commit.ensembles.map((record) => h("button", { class: "ensemble-history-item", type: "button", onclick: () => {
+        dialog.close(); selectEnsemble(record.id);
+      } }, h("span", null, ensembleLabel(record)), h("small", null, ENSEMBLE_STATES[record.state])))));
+  }
+  update();
+  dialog.showModal();
+}
+
 // ------------------------------------------------------------------ hero
 
 function renderKpis() {
@@ -693,6 +837,12 @@ function emptyDetectionText() {
   const pickInfo = state.detection;
   const record = pickInfo && pickInfo.record;
   if (!state.index) return "아직 평가 결과가 없어요. 서비스가 첫 평가를 돌리고 있을 수 있어요.";
+  if (state.ensemble) {
+    if (!record) return "이 커밋의 선택 조합 결과가 없어요. 앙상블 설정에서 평가를 요청해 주세요.";
+    if (record.state === "failed") return `선택 조합 평가가 실패했어요: ${record.error || ""} 앙상블 설정에서 다시 평가할 수 있어요.`;
+    if (record.state === "running") return "선택한 앙상블 구성으로 평가하는 중이에요. 완료되면 결과가 자동으로 표시돼요.";
+    if (record.state === "queued") return "선택 조합이 평가 대기 중이에요. 현재 작업이 끝나면 캐시를 활용해 평가해요.";
+  }
   if (record && record.state === "failed") return "이 커밋의 탐지 성능 평가가 실패했어요. 위 커밋 버튼에서 이유를 볼 수 있어요.";
   if (record && record.state === "running") return "이 커밋을 평가하는 중이에요.";
   return "아직 평가된 결과가 없어요.";
@@ -1468,6 +1618,7 @@ function applyCatalog() {
 function renderAll() {
   applyCatalog();
   renderChip();
+  renderEnsembleActive();
   renderKpis();
   renderHeroNote();
   renderTrend();
@@ -1524,6 +1675,12 @@ async function selectCommit(sha) {
 async function refreshIndex() {
   try {
     state.index = await getJSON("data/index.json");
+    for (const [identity, pending] of state.pendingEnsembles) {
+      const commit = state.index.commits.find((item) => item.sha === pending.sha);
+      if (!commit) continue;
+      if ((commit.ensembles || []).some((item) => item.id === pending.id)) state.pendingEnsembles.delete(identity);
+      else (commit.ensembles ||= []).push(pending);
+    }
   } catch {
     if (state.index) return; // keep showing what was loaded; the next status poll tries again
   }
@@ -1547,6 +1704,7 @@ async function pollStatus() {
   else if (state.summaryError || state.latencyError || state.taskError) await showSelected();
   else {
     renderChip();
+    renderEnsembleActive();
     const examplesKey = `${state.detection?.key}/${state.filters.d || "_all"}`;
     if (state.summary && state.exampleErrors.has(examplesKey)) await renderOutcomes();
   }
@@ -1560,6 +1718,7 @@ function onResize() {
 
 async function main() {
   readHash();
+  $("#ensemble-open").addEventListener("click", openEnsemblePanel);
   $("#commit-chip").addEventListener("click", (event) => {
     if (state.popover && state.popover.anchor === event.currentTarget) closePopover();
     else openPopover(event.currentTarget, commitPopover);
@@ -1580,8 +1739,9 @@ async function main() {
   window.addEventListener("resize", onResize);
   window.addEventListener("hashchange", async () => {
     const before = state.sha;
+    const beforeEnsemble = state.ensemble;
     readHash();
-    if (before !== state.sha) await selectCommit(state.sha);
+    if (before !== state.sha || beforeEnsemble !== state.ensemble) await selectCommit(state.sha);
     else {
       renderDetails();
       renderViews();
