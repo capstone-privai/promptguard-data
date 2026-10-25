@@ -11,8 +11,9 @@ Run from the repository root, after downloading the dataset (see metric-detectio
   python metric-detection/scripts/ml_train_privesc.py build --privesc ../privesc-llm-data --synthetic-train-gold M
   python metric-detection/scripts/ml_train_privesc.py build --privesc ../privesc-llm-data --sessions N
   python metric-detection/scripts/ml_train_privesc.py verify --privesc ../privesc-llm-data
-build writes, under --out (default metric-detection/), data_test/sessions_ml_privesc.jsonl,
-data_answer/gold_ml_privesc.jsonl and labels_ml_privesc.jsonl.
+build writes, under --out (default metric-detection/ml_build/, outside the evaluation data_test/: the scorer
+refuses train sessions), data_test/sessions_ml_privesc.jsonl, data_answer/gold_ml_privesc.jsonl and
+labels_ml_privesc.jsonl.
 
 Masks: [KIND_n], KIND from the gold type (value_gen.MASK_KIND_OF_TYPE), n numbered per KIND in the order a
 value is first gold outside tool_input, as ml_train_build.Masks does. A value the agent writes before it was ever
@@ -43,7 +44,7 @@ import tempfile
 
 from convert_privesc import NAME, REPO_ROOT, REVISION, convert
 from dataset_build import write_jsonl
-from dataset_policy import ALLOWED_USE
+from dataset_policy import allowed_use
 import dataset_verify as V
 from label_rules import BREAK, is_common
 import value_gen
@@ -157,7 +158,7 @@ def build(root: Path, sample: dict) -> tuple[list[dict], list[dict], list[dict]]
         items, item_gold, item_labels = mask_session(s, spans[sid], others[sid])
         out_sessions.append({"session_id": sid, "items": items, "meta": {
             "dataset_version": upstream.pop("dataset_version"), "source": SOURCE, "origin": ORIGIN,
-            "allowed_use": ALLOWED_USE[ORIGIN], "group_id": f"privesc-{s['meta']['scenario']}", "split": split,
+            "allowed_use": allowed_use(ORIGIN, split), "group_id": f"privesc-{s['meta']['scenario']}", "split": split,
             "upstream_split": s["meta"]["split"], "sample": sample, **upstream}})
         for item in items:
             iid = item["item_id"]
@@ -271,7 +272,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("build", help="write sessions, gold and labels")
     p.add_argument("--privesc", type=Path, default=REPO_ROOT.parent / NAME, help=f"local copy of {NAME}")
-    p.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1])
+    p.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1] / "ml_build")
     size = p.add_mutually_exclusive_group(required=True)
     size.add_argument("--target-gold", type=int, help="at most this many train gold spans")
     size.add_argument("--synthetic-train-gold", type=int,
@@ -279,7 +280,7 @@ def main():
     size.add_argument("--sessions", type=int, help="this many train sessions")
     p = sub.add_parser("verify", help="check built files (LABELING.md, masks, splits, reproduction)")
     p.add_argument("--privesc", type=Path, help=f"local copy of {NAME}, to rebuild byte for byte")
-    p.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1])
+    p.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1] / "ml_build")
     p.add_argument("--synthetic-train-gold", type=int, help=f"fail if privesc is over {TRAIN_SHARE * 100:.0f}%% of train gold")
     args = parser.parse_args()
 
