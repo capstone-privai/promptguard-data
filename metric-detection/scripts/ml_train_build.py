@@ -12,6 +12,9 @@ dataset_build placeholder syntax and generators (metric-detection/templates/READ
                                                         value_gen.mask_kind), recorded in the labels file as mask.
                                                         NAME is the secret's name (s1 of {{password:s1}}) or the
                                                         value of a {{TYPE=value}}. A tool_input holds no secret
+  |as=identifier / |as=not_propagated                   repeat a named value without gold, checked against
+                                                        its positive occurrence and LABELING's position rule
+  |suffix=CHARS                                        append literal edge characters before later transforms
   |wrap=N, |truncate=N                                  terminal wrapping; a key block cut after N body lines
   meta.split (required)        train, val, test or test_ood; part of every value seed. A group stays in one split
   meta.variants                build the session N times with different values (session_id~k)
@@ -41,7 +44,7 @@ from dataset_build import (CHANNELS, GENERATORS, PLACEHOLDER, REPO_ROOT, SUSPICI
                            transform, uri_parts, write_jsonl)
 from dataset_policy import allowed_use
 import dataset_verify as V
-from label_rules import classify, exclusion_kind, is_common, normalize_span
+from label_rules import classify, exclusion_kind, is_common, judge_occurrence, normalize_span
 import value_gen
 
 SOURCE = "ml_train_template"
@@ -49,6 +52,7 @@ ORIGIN = "authored"
 SPLITS = ("train", "val", "test", "test_ood")
 REDRAWS = 8
 NEG = "neg:"  # Slot.kind prefix of a {{neg:kind}} value: recorded in labels, never gold
+REPLAY_ROLES = {"identifier", "not_propagated"}
 MASK = "mask"  # labels kind of a {{mask:NAME}}
 MASK_TEXT = re.compile(r"\[[A-Z0-9_]+_\d+\]")
 KINDS = {**GENERATORS, **{kind: (kind_type, lambda seed, gen=gen: gen(value_gen.Draw(seed)))
@@ -64,6 +68,11 @@ class Slot:
 
 
 def extra_transform(text: str, name: str, arg: str | None) -> tuple[str, str | None]:
+    if name == "suffix":
+        # Make an edge character part of a generated value, before JSON/URL encoding if requested.
+        if not arg or any(c.isspace() for c in arg):
+            raise ValueError("suffix= needs nonempty characters without whitespace")
+        return text + arg, None
     if name == "wrap":
         # Terminal wrapping: a line break every N characters, inside the one gold span (LABELING.md 경계).
         n = int(arg or 80)
@@ -133,10 +142,21 @@ def parse_text(text: str, seed: str, unnamed: list[int], profile: str | None,
         if m.group("type"):
             if m.group("type") not in TYPES:
                 raise ValueError(f"unknown gold type in {m.group(0)!r}, expected one of {sorted(TYPES)}")
-            parts.append(Slot(m.group("literal"), m.group("type"), f"{m.group('type')}={m.group('literal')}"))
+            literal = m.group("literal")
+            value, sep, role = literal.rpartition("|as=")
+            if sep and (role not in REPLAY_ROLES or masks is not None):
+                raise ValueError("literal as= needs identifier / not_propagated outside tool_input")
+            value = value if sep else literal
+            parts.append(Slot(value, NEG + role if sep else m.group("type"), f"{m.group('type')}={value}"))
             continue
         kind, name = m.group("kind"), m.group("name")
         transforms = list(filter(None, m.group("transforms").split("|")))
+        roles = [t[3:] for t in transforms if t.startswith("as=")]
+        transforms = [t for t in transforms if not t.startswith("as=")]
+        if roles and (len(roles) != 1 or roles[0] not in REPLAY_ROLES or not name or kind in {MASK, "neg"}):
+            raise ValueError("as=identifier / as=not_propagated needs one named secret placeholder")
+        if roles and masks is not None:
+            raise ValueError("a replay belongs outside tool_input; use mask:NAME in tool_input")
         if kind == MASK:
             if masks is None:
                 raise ValueError(f"{m.group(0)!r}: a mask belongs in tool_input, where the agent writes it")
@@ -169,6 +189,8 @@ def parse_text(text: str, seed: str, unnamed: list[int], profile: str | None,
             source = value_gen.NOT_COMMON.get(source, source)
         kind_type, generate = KINDS[source]
         out = generate(f"{seed}:{kind}:{name}" + (f":redraw{redraw[key]}" if key in redraw else ""))
+        if kind == "db_uri" and roles:
+            raise ValueError("db_uri replay is ambiguous; write a password placeholder in an explicit URI")
         if kind == "db_uri":
             if any(t != "url" for t in transforms):
                 raise ValueError(f"{m.group(0)!r}: db_uri supports only the url transform")
@@ -176,7 +198,7 @@ def parse_text(text: str, seed: str, unnamed: list[int], profile: str | None,
             parts.extend((before, Slot(password.value, "PASSWORD", key), after))
             continue
         out, kind_type = apply_transforms(out, kind_type, transforms)
-        parts.append(Slot(out, kind_type, key))
+        parts.append(Slot(out, NEG + roles[0] if roles else kind_type, key))
     parts.append(text[pos:])
     for part in parts:
         if isinstance(part, str) and (m := SUSPICIOUS.search(part)):
@@ -194,10 +216,34 @@ def render(parts) -> tuple[str, list[dict], list[dict]]:
         start = len(text)
         text += part.value
         if part.kind.startswith(NEG):
-            negs.append({"start": start, "end": len(text), "kind": part.kind[len(NEG):]})
+            negs.append({"start": start, "end": len(text), "kind": part.kind[len(NEG):],
+                         **({"replay": True} if part.key else {})})
         else:
             spans.append({"start": start, "end": len(text), "type": part.kind, "key": part.key})
     return text, spans, negs
+
+
+def merge_spans(spans: list[dict]) -> list[dict]:
+    """LABELING: touching/overlapping spans form one; longest original wins, PRIVATE_KEY takes priority.
+
+    Keep the winning original length separately: the length of a union must not change type precedence.
+    Equal lengths keep the earlier type. Input rows and their keys remain intact for redraw/mask handling.
+    """
+    merged: list[dict] = []
+    winning_length = 0
+    for span in sorted(spans, key=lambda sp: (sp["start"], sp["end"])):
+        length = span["end"] - span["start"]
+        if not merged or span["start"] > merged[-1]["end"]:
+            merged.append(dict(span))
+            winning_length = length
+            continue
+        previous = merged[-1]
+        if (span["type"] == "PRIVATE_KEY" and previous["type"] != "PRIVATE_KEY"
+                or previous["type"] != "PRIVATE_KEY" and length > winning_length):
+            previous["type"] = span["type"]
+            winning_length = length
+        previous["end"] = max(previous["end"], span["end"])
+    return merged
 
 
 def unfit(text: str, start: int, end: int) -> str | None:
@@ -302,9 +348,9 @@ def build_lines(lines: list[str], name: str, stem: str, template: str) -> tuple[
                                   "channel": item["channel"], "text": text})
                 gold += [{"session_id": session_id, "item_id": item_id, "span_id": j,
                           "span": {"start": sp["start"], "end": sp["end"], "type": sp["type"]}}
-                         for j, sp in enumerate(spans)]
+                         for j, sp in enumerate(merge_spans(spans))]
                 labels += [{"session_id": session_id, "item_id": item_id, "start": ng["start"], "end": ng["end"],
-                            "gold": False, "kind": ng["kind"]} for ng in negs]
+                            "gold": False, "kind": ng["kind"], **({"replay": True} if ng.get("replay") else {})} for ng in negs]
             sessions.append({"session_id": session_id, "items": out_items,
                              "meta": {**meta, "variant": k} if variants else meta})
     return sessions, gold, labels
@@ -337,7 +383,8 @@ def check_positions(spans, texts, errors):
                           f"({rule}): LABELING.md does not count it as gold; rewrite the template there")
 
 
-def check_negatives(labels, texts, channels, errors):
+def check_negatives(labels, texts, channels, errors, gold_values=None):
+    gold_values = gold_values or {}
     for row in labels:
         key = (row["session_id"], row["item_id"])
         if key not in texts or not 0 <= row["start"] <= row["end"] <= len(texts[key]):
@@ -348,6 +395,14 @@ def check_negatives(labels, texts, channels, errors):
             if channels[key] != "tool_input" or not MASK_TEXT.search(value):
                 errors.append(f"mask {value[:30]!r} in {key[0]}/{key[1]} ({channels[key]}): a mask is a [KIND_n] in "
                               "tool_input")
+            continue
+        if row["kind"] == "not_propagated" or row.get("replay"):
+            value = texts[key][row["start"]:row["end"]]
+            if value not in gold_values.get(row["session_id"], set()):
+                errors.append(f"replay in {key}: value has no positive occurrence in this session")
+            gold, role, _ = judge_occurrence(texts[key], row["start"], row["end"], is_common(value))
+            if gold or role != row["kind"]:
+                errors.append(f"replay in {key}: expected {row['kind']}, reads as {role}")
             continue
         want = value_gen.NEGATIVE_KINDS[row["kind"]][1]
         got = exclusion_kind(texts[key], row["start"], row["end"])
@@ -389,7 +444,10 @@ def check_rows(sessions, gold, labels, name: str, errors: list[str]) -> tuple[di
     for sid, iid, start, _, _ in spans:
         if channels[(sid, iid)] == "tool_input":  # the agent writes what PromptGuard showed it: masks, no values
             errors.append(f"gold in tool_input {sid}/{iid} at {start}: training data keeps secrets out of tool_input")
-    check_negatives(labels, texts, channels, errors)
+    gold_values: dict[str, set[str]] = defaultdict(set)
+    for sid, iid, start, end, _ in spans:
+        gold_values[sid].add(texts[(sid, iid)][start:end])
+    check_negatives(labels, texts, channels, errors, gold_values)
     return texts, spans, check_splits(sessions, spans, texts, errors)
 
 

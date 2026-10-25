@@ -74,6 +74,8 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 ## ML 학습용 템플릿 (`ml_train_build.py`)
 
+손으로 작성한 경계·퍼뜨림 템플릿 160개는 [ml_train/hand_v1.jsonl](ml_train/hand_v1.jsonl)에 있다. 학습 빌더의 `as=identifier`, `as=not_propagated`, `suffix` 표기와 span 병합은 [손 템플릿 작성·검증](ml_train/HAND.md)에 설명했다.
+
 학습용 합성 데이터([계획](../docs/README_ml-train-plan.md))는 평가용 생성기와 따로 [ml_train_build.py](../scripts/ml_train_build.py)로 만들고 검증한다. 위 문법과 kind를 모두 쓸 수 있고, 아래가 더해진다. 모든 세션은 `authored`다.
 
 ```bash
