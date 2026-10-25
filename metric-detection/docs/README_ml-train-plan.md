@@ -210,6 +210,15 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 - 도구 형식 1개: MCP 도구의 구조화된 결과
 - 생성 모델 변경: 템플릿을 학습용과 다른 모델로 쓴다. 학습 데이터의 문체를 외웠는지 확인하기 위해서다
 
+### 5.2 내보내기 (구현함, [ml_train_export.py](../scripts/ml_train_export.py))
+
+빌드한 입력(LLM 템플릿, 손 템플릿, privesc 학습 파일)을 한 번에 받아 train·val은 ML 담당에게 넘길 `metric-detection/ml_handoff/`로, test·test_ood는 평가 데이터 `data_test/sessions_mleval_<입력>_<split>.jsonl`로 쓴다(2026-10-25 결정). 둘 다 git에 올리지 않고, 같은 입력이면 바이트 단위로 같은 결과가 나온다.
+
+- 먼저 검사하고, 하나라도 걸리면 아무것도 쓰지 않는다: origin(authored, recorded), group_id가 입력 파일 사이에서 겹치지 않고 한 split에만 있는지, 흔하지 않은 정답 값이 학습 쪽과 평가 쪽에 함께 나오지 않는지, tool_input 정답, 5.1절 특징(카탈로그 ood 행, `[ood]`의 문맥·도구 형식·kind)이 학습 쪽에 없는지.
+- 중복 검사는 값과 숫자를 가린 100자 이상 item의 단어 3-gram으로 한다(datasketch 2.0.0 MinHash LSH 후보 → 정확한 Jaccard). 학습 쪽과 0.8 이상인 test group은 train으로 옮기고(`meta.split_moved_from`), test_ood group은 뺀다. 5.1절 특징이 학습 쪽에 들어가면 안 되기 때문이다.
+- privesc끼리는 옮기지 않고 manifest에 기록만 한다. 같은 VM이라 OOD 시나리오 2개가 학습 시나리오 8개와 각각 1,900~4,000 item이 같고(유사도 1.0), 에이전트의 추측 비밀번호 11개(`toor` 등, test_ood 71세션)가 양쪽에 정답으로 나온다. 규칙을 그대로 적용하면 privesc OOD가 모두 빠진다.
+- 기존 privesc 평가 파일(2,200세션 전체)은 학습 시나리오를 포함하므로 평가에서 뺐다. privesc는 test_ood 시나리오로만 채점한다.
+
 ## 6. 품질 검증
 
 | 단계 | 검사 | 실패하면 |
