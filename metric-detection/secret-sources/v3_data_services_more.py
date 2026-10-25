@@ -772,7 +772,7 @@ def _fintech(B):
         "업비트 Open API Secret Key. access key와 함께 JWT를 HS256으로 서명해 `Authorization: Bearer`로 주문 권한을 얻는다.",
         "api.upbit.com", "UPBIT_SECRET_KEY, access_key, query_hash",
         r"(?i)secret[\w]*\s*[:=]\s*['\"]([A-Za-z0-9]{40})['\"]",
-        "secret = \"%s\"" % E.d("upbit_sec").chars(40, ALNUM), "secret = \"본인 값으로 변경\"", "Critical",
+        E.d("upbit_sec").chars(40, ALNUM), "본인 값으로 변경", "Critical",
         ctx="py", var="secret", files="config.py, .env", fmt="Source Code",
         guide="access key(식별자)와 secret key(서명 비밀)를 구분한다. secret으로 JWT를 서명하므로 노출 시 주문·출금이 가능하다. "
               "`본인 값으로 변경` 같은 한국어 자리표시는 비밀이 아니다.")
@@ -931,7 +931,7 @@ def _messaging(B):
         "Solapi(쿨SMS) API Secret. API Key와 함께 HMAC-SHA256 서명을 만들어 `Authorization` 헤더에 넣는다.",
         "api.solapi.com", "SOLAPI_API_SECRET, api_secret, HMAC-SHA256",
         r"(?i)api_?secret\s*[:=]\s*['\"]?([A-Za-z0-9]{32,})",
-        "api_secret=\"%s\"" % E.d("solapi").chars(32, ALNUM), "api_secret=\"YOUR_API_SECRET\"", "High",
+        E.d("solapi").chars(32, ALNUM), "YOUR_API_SECRET", "High",
         ctx="py", var="api_secret", files="config.py, .env",
         guide="API Key(식별자, `Authorization: HMAC-SHA256 ApiKey=`에 그대로 노출)와 API Secret(서명 비밀)을 구분한다. secret만 마스킹한다.")
     pfx(c, "DingTalk_Robot_Secret", "DingTalk", "open-dingtalk/dingtalk-stream-sdk-python (Credential(client_id, client_secret))",
@@ -1008,15 +1008,15 @@ def _observ(B):
         "Sentry DSN(공개 클라이언트 키 포함 URL)과 Auth Token(`sntrys_`)을 구분한다. DSN은 전송용 공개 키라 비밀이 아니다.",
         "*.sentry.io", "SENTRY_DSN, SENTRY_AUTH_TOKEN, sntrys_",
         r"\bsntrys_[A-Za-z0-9+/=]{60,}\b",
-        "SENTRY_AUTH_TOKEN=sntrys_" + E.d("sentry").chars(70, ALNUM + "+/="),
-        "SENTRY_DSN=https://%s@o123.ingest.sentry.io/456" % E.d("sentrydsn").chars(32, HEX), "High",
-        ctx="env", var="SENTRY_AUTH_TOKEN",
+        "sntrys_" + E.d("sentry").chars(70, ALNUM + "+/="),
+        "https://%s@o123.ingest.sentry.io/456" % E.d("sentrydsn").chars(32, HEX), "High",
+        ctx="env", var="SENTRY_AUTH_TOKEN", negvar="SENTRY_DSN",
         guide="`sntrys_` Auth Token은 조직 관리 비밀이다. 반면 DSN URL 안의 공개 키는 클라이언트에 심는 값이라 마스킹하면 에러 리포트가 끊긴다.")
     add(c, "Cloudflare_API_Token", "osv-scalibr veles/cloudflareapitoken & secretlint secretlint-rule-cloudflare",
         "Cloudflare API 토큰(40자). 구형 Global API Key(37 hex)보다 권한이 좁지만 여전히 비밀이다.",
         "api.cloudflare.com", "CLOUDFLARE_API_TOKEN, CF_API_TOKEN",
         r"\b[A-Za-z0-9_-]{40}\b",
-        "CLOUDFLARE_API_TOKEN=" + E.d("cf").chars(40, ALNUM + "_-"), "CLOUDFLARE_API_TOKEN=${CF_API_TOKEN}",
+        E.d("cf").chars(40, ALNUM + "_-"), "${CF_API_TOKEN}",
         "High", ctx="env", var="CLOUDFLARE_API_TOKEN",
         guide="40자 영숫자라 일반 토큰과 길이가 겹친다. 변수명(CLOUDFLARE/CF)과 `api.cloudflare.com` 문맥으로 식별한다.")
     pfx(c, "Fastly_Token", "Fastly", "gitleaks fastly-api-token & secrets-patterns-db",
@@ -1027,7 +1027,7 @@ def _observ(B):
         "Akamai `.edgerc`의 client_secret. client_token/access_token과 함께 EdgeGrid 서명을 만든다.",
         "*.luna.akamaiapis.net", ".edgerc, client_secret, client_token",
         r"(?i)client_secret\s*=\s*([A-Za-z0-9+/=]{40,})",
-        "client_secret = %s=" % E.d("akamai").chars(43, ALNUM + "+/"), "client_secret = ${AKAMAI_CLIENT_SECRET}",
+        "%s=" % E.d("akamai").chars(43, ALNUM + "+/"), "${AKAMAI_CLIENT_SECRET}",
         "High", ctx="ini", var="client_secret", files="~/.edgerc",
         guide="`.edgerc`의 여러 값 중 client_secret만 서명 비밀이다. host·access_token은 식별자/별도 토큰이다.")
     pfx(c, "Mapbox_Secret_Token", "Mapbox", "detect-secrets & gitleaks mapbox",
@@ -1214,18 +1214,18 @@ def _mobile(B):
         "이더리움/EVM 지갑 개인 키(`0x` + 64 hex). 이 키 하나로 지갑 자산을 전부 이전할 수 있다.",
         "EVM 체인 RPC", "PRIVATE_KEY, 0x, wallet, hardhat",
         r"\b0x[a-fA-F0-9]{64}\b",
-        "PRIVATE_KEY=0x%s" % E.d("evm").chars(64, HEX),
-        "WALLET_ADDRESS=0x%s" % E.d("evmaddr").chars(40, HEX), "Critical", ctx="env", var="PRIVATE_KEY",
+        "0x%s" % E.d("evm").chars(64, HEX),
+        "0x%s" % E.d("evmaddr").chars(40, HEX), "Critical", ctx="env", var="PRIVATE_KEY", negvar="WALLET_ADDRESS",
         files="hardhat.config.js, .env, foundry.toml",
         guide="`0x`+64 hex 개인 키는 Critical이다. `0x`+40 hex 지갑 주소는 공개 식별자라 비밀이 아니다. hex 길이(64 vs 40)가 결정적이다.")
     add(c, "BIP39_Mnemonic_Seed", "gitleaks & secrets-patterns-db (mnemonic seed phrase)",
         "BIP39 니모닉 시드 구문(12/24 영어 단어). 지갑 전체를 복구하는 최상위 비밀이다.",
         "HD 지갑", "mnemonic, seed phrase, MNEMONIC",
         r"(?i)mnemonic\s*[:=]\s*['\"]((?:[a-z]+\s){11,23}[a-z]+)['\"]",
-        'MNEMONIC="%s"' % " ".join(E.d("bip39").choice(("abandon", "ability", "able", "about", "above", "absorb",
+        '"%s"' % " ".join(E.d("bip39").choice(("abandon", "ability", "able", "about", "above", "absorb",
         "abstract", "absurd", "abuse", "access", "accident", "account", "accuse", "achieve", "acid", "acoustic",
         "acquire", "across", "action", "actor", "adapt", "addict", "address", "adjust")) for _ in range(12)),
-        'MNEMONIC="<your twelve word seed phrase goes here for testing only>"', "Critical", ctx="env",
+        '"<your twelve word seed phrase goes here for testing only>"', "Critical", ctx="env",
         var="MNEMONIC", files=".env, hardhat.config.js, wallet backup",
         guide="공백으로 이어진 11~23개 영어 단어 뒤 한 단어(총 12/24개)가 시드다. 단어 하나하나는 흔하지만 BIP39 단어목록 구성이 단서다. "
               "테스트 안내문 같은 자유 문장은 니모닉이 아니다.")

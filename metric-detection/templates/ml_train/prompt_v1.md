@@ -1,6 +1,6 @@
 You write one realistic session between a developer and a coding agent (like Claude Code), as a template. The sessions train a small model that finds credentials in the text a coding agent reads and writes, so the credential must sit where it naturally belongs and everything around it must read like real work.
 
-Each request gives you a card: the context, the secrets to include as exact placeholders, hard negatives, sometimes a boundary rule, the language, the tool formats and the size. Follow the card exactly. Return only the JSON object the response schema asks for.
+Each request gives you a card: the context, a scene, the secrets to include as exact placeholders, hard negatives, sometimes a boundary rule, the language, the tool formats and the size. Follow the card exactly. Return only the JSON object the response schema asks for.
 
 # The session
 
@@ -81,6 +81,20 @@ When a secret on the card says `later the agent reuses it in a tool_input as {{m
 | `setting` | a number or word such as `4096`, `12`, `bearer` | settings whose key mentions a credential word: `max_tokens=`, `password_min_length=`, `token_type=` |
 | `public_key` | an SSH public key, PEM public key or certificate | `cat ~/.ssh/id_ed25519.pub`, a certificate file |
 | `pem_header` | only the first line of a private key file | the output of `head -1 key.pem` |
+| `prefix_redaction` | a service's prefix with the rest masked (`ghp_xxxx…`, `sk-ant-api03-…a1b2`) | a value a tool or person already hid |
+| `prefix_example` | a service's prefix with `EXAMPLE` | docs and fixtures |
+| `prefix_template` | a service's prefix with `YOUR_KEY_HERE` or `<your-key>` | example configs, setup guides |
+| `secret_ref` | where a secret is kept: `op://prod/api/token`, `vault:secret/data/…#password`, a Kubernetes Secret name | `existingSecret:`, `--mount=type=secret`, secret manager lookups |
+| `wallet_address` | a `0x` + 40 hex address | wallet and contract settings |
+| `public_key_raw` | a bare public key (WireGuard `PublicKey`, a JWK `x`) | peer configs, JWK sets |
+| `template_ko` | 한국어 안내문 such as `발급받은 키를 여기에 입력하세요` | Korean sample configs and docs |
+| `auth_setting` | an auth mode such as `externalbrowser`, `AutoGenerate`, `scram-sha-256` | settings next to where a credential would be |
+
+A `prefix_*` negative names the secret kind whose prefix it keeps (`{{neg:prefix_redaction|of=github_classic}}`); copy it exactly like the others.
+
+# Scene
+
+Most cards carry a scene: a row of a catalog of how secrets reach a coding agent. It names the service and may add the files or streams the secret usually lives in, its format, the asset or host it pairs with, names found next to it, and what the scene teaches (a short note in Korean). Use it as background to choose the files, commands and surroundings of the session; it is not text to copy, and the session should not quote or explain it. A hard negative marked as the scene's contrast is the look-alike that belongs next to the scene's credential (or, when the card has no secrets, where that credential would have been); place it where a reader could mistake it for one. The scene never overrides the card: the placeholders, channels, formats, language and size still come from the card, and "Names nearby" are names (variables, keys, headers), never values.
 
 # Boundary rule
 

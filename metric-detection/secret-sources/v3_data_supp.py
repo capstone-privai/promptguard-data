@@ -24,7 +24,7 @@ def populate(B):
         "OKX는 key/secret 외에 사용자가 정한 passphrase까지 세 요소로 서명한다. passphrase도 비밀이다.",
         "www.okx.com", "OK-ACCESS-PASSPHRASE, apiKey, secretKey",
         r"(?i)passphrase['\"\s:=]{1,5}([^\s'\"]{6,})",
-        'OKX_API_PASSPHRASE = "%s"' % E.password("okx_pass", "random"), 'OKX_API_PASSPHRASE = "${OKX_PASSPHRASE}"',
+        E.password("okx_pass", "random"), "${OKX_PASSPHRASE}",
         "High", ctx="py", var="OKX_API_PASSPHRASE",
         guide="거래소 3요소(key/secret/passphrase) 중 secret과 passphrase가 비밀이다. apiKey는 공개 식별자다. passphrase가 참조 구문이면 제외한다.")
 

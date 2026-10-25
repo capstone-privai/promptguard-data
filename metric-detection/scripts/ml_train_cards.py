@@ -5,9 +5,14 @@ channel and repetition of each, hard negatives, a boundary rule to exercise, lan
 context x secret type cells are allocated to match card_config.toml exactly; everything else is drawn per card
 from a seed, so the same config always yields the same cards.
 
+Each card also takes one row of the secret-source catalog (catalog.jsonl, ml_train_catalog.py) as its scene: within
+a cell the rows that fit its context and type take turns. The row gives the primary secret's kind, scene hints and
+a contrast, the hard negative the row pairs with its secret. Rows for the shifted test appear only in test_ood cards.
+
 Run from the repository root:
-  python metric-detection/scripts/ml_train_cards.py [--config C.toml] [--out cards.jsonl] [--limit N]
+  python metric-detection/scripts/ml_train_cards.py [--config C.toml] [--out cards.jsonl] [--limit N] [--by-source]
 --limit N keeps a stratified subset of N cards (a pilot), in the same proportions of split and context.
+--by-source adds the number of cards per catalog row to the summary.
 """
 from __future__ import annotations
 
@@ -73,6 +78,11 @@ BOUNDARY = {
 def load(path: Path) -> dict:
     with path.open("rb") as f:
         return tomllib.load(f)
+
+
+def load_catalog(cfg: dict, config_path: Path = CONFIG) -> list[dict]:
+    path = config_path.parent / cfg["catalog"]["path"]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
 
 
 def pairs(table: dict) -> list[tuple[str, int]]:
@@ -159,9 +169,11 @@ def with_transform(s: dict, transform: str, d: value_gen.Draw) -> tuple[dict, di
 def boundary_rule(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
     rule = d.weighted(pairs(cfg["boundary"]["rules"]))
     need, transform, text = BOUNDARY[rule]
-    # db_uri expands to a whole URI and takes no transform, so it cannot carry a rule
+    # db_uri expands to a whole URI and takes no transform, so it cannot carry a rule; nor can a secret already
+    # transformed by its catalog row
     target = next((i for i, s in enumerate(secrets)
-                   if (need is None or s["type"] == need) and s["kind"] != "db_uri"), None)
+                   if (need is None or s["type"] == need) and s["kind"] != "db_uri" and "|" not in s["placeholder"]),
+                  None)
     if target is None:  # add a secret of the type the rule needs (a plain password when any type will do)
         kinds = {"password": 1} if need in ("PASSWORD", None) else None
         secrets.append(secret(d, cfg, need or "PASSWORD", len(secrets) + 1, kinds))
@@ -181,13 +193,38 @@ def boundary_rule(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
     return {"rule": rule, "secret": target + 1, "instruction": text.replace("{p}", secrets[target]["placeholder"])}
 
 
-def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, primary: str, ood: dict | None) -> dict:
+def scene(row: dict, fill: dict[str, str]) -> dict:
+    """What the card tells the writer about its catalog row: the service, and the hints unless the row comes from an
+    evaluation-only source (then only the service and the value format)."""
+    out = {"service": row["service"]}
+    out.update({k: v for k, v in (row["hints"] or {}).items() if v})
+    if "<USER>" in fill:
+        out["basic_auth_user"] = fill["<USER>"]
+    return out
+
+
+def contrast(row: dict) -> dict:
+    c = row["contrast"]
+    placeholder = "{{neg:" + c["kind"] + (f"|of={c['of']}" if c["of"] else "") + c["args"] + "}}"
+    return {"placeholder": placeholder, "kind": c["kind"], "position": c["position"], "contrast": True}
+
+
+def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, primary: str, ood: dict | None,
+         row: dict | None = None) -> dict:
     ctx = cfg["contexts"].get(context)
     fmt = d.choice(ctx["formats"]) if ctx else cfg["ood"]["contexts"][context]
     secrets: list[dict] = []
+    fill: dict[str, str] = {}
     if primary != "none":
-        kinds = {ood["kind"]: 1} if ood and ood.get("kind") else None
+        if ood and ood.get("kind"):
+            kinds = {ood["kind"]: 1}
+        elif row and row["kind"] != "*":  # the row's own format; "*" leaves the kind to [kinds]
+            kinds = {row["kind"]: 1}
+        else:
+            kinds = None
         secrets.append(secret(d, cfg, primary, 1, kinds))
+        if row and row["transform"] and kinds and row["kind"] in kinds:
+            secrets[0], fill = with_transform(secrets[0], row["transform"], d)
         extra_types = pairs(cfg["extra_secrets"]["types"])
         for _ in range(int(d.weighted(pairs(cfg["extra_secrets"]["weights"])))):
             secrets.append(secret(d, cfg, d.weighted(extra_types), len(secrets) + 1))
@@ -201,6 +238,8 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
             kind = d.weighted(pairs(cfg["negatives"]["kinds"]))
             negatives.append({"placeholder": f"{{{{neg:{kind}}}}}", "kind": kind,
                               "position": d.weighted([("credential", 1), ("anywhere", 1)])})
+    if row and row["contrast"] and d.int(1000) < cfg["catalog"]["contrast_share"] * 1000:
+        negatives.append(contrast(row))
     items = span(d, d.weighted(pairs(cfg["session"]["items"])))
     turns = min(span(d, d.weighted(pairs(cfg["session"]["turns"]))), max(1, items // 2))
     tool_output = ood["tool_output_format"] if ood and ood.get("tool_output_format") else \
@@ -220,7 +259,9 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
     return {"card_id": card_id, "group_id": card_id, "split": split,
             "model": cfg["templates"]["model_ood" if split == "test_ood" else "model"],
             "variants": cfg["templates"]["variants_ood" if split == "test_ood" else "variants"],
-            "context": context, "format": fmt, "primary_type": primary, "secrets": secrets, "negatives": negatives,
+            "context": context, "format": fmt, "primary_type": primary,
+            "source_id": row["source_id"] if row else None, "scene": scene(row, fill) if row else None,
+            "secrets": secrets, "negatives": negatives,
             "boundary": boundary, "language": d.weighted(pairs(cfg["language"]["weights"])),
             "tool_output_format": tool_output, "tool_input_format": d.weighted(pairs(cfg["tool_input_format"]["weights"])),
             "items": items, "turns": turns,
@@ -228,31 +269,62 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
             "ood": ood}
 
 
-def draw(cfg: dict) -> list[dict]:
+def assign_rows(slots: list, rows: list[dict], base: str) -> list[dict]:
+    """A catalog row for every slot. A cell (context, type) takes the rows whose types hold its type (any row for a
+    session without secrets) and whose contexts hold its context, or, if none does, every row of its type. Each slot
+    takes the fitting row used least so far, counted within the cell and then within the type, ties broken in a
+    shuffled order: the rows of a cell take turns, and every row of a type gets cards before any gets many."""
+    rank: dict[str, dict[str, int]] = {}
+    fits: dict[tuple, list[dict]] = {}
+    for ctx, t in sorted(set(slots), key=str):
+        of_type = [r for r in rows if t == "none" or t in r["types"]]
+        if not of_type:
+            raise ValueError(f"no catalog row for type {t}")
+        if t not in rank:
+            order = shuffle(sorted(r["source_id"] for r in of_type), value_gen.Draw(f"{base}:rows:{t}"))
+            rank[t] = {sid: i for i, sid in enumerate(order)}
+        fits[(ctx, t)] = [r for r in of_type if ctx in r["contexts"]] or of_type
+    in_cell: Counter = Counter()
+    in_type: Counter = Counter()
+    out = []
+    for ctx, t in slots:
+        row = min(fits[(ctx, t)], key=lambda r: (in_cell[(ctx, t, r["source_id"])], in_type[(t, r["source_id"])],
+                                                 rank[t][r["source_id"]]))
+        in_cell[(ctx, t, row["source_id"])] += 1
+        in_type[(t, row["source_id"])] += 1
+        out.append(row)
+    return out
+
+
+def draw(cfg: dict, catalog: list[dict] | None = None) -> list[dict]:
     base = f"{cfg['seed']}:{cfg['version']}"
+    catalog = load_catalog(cfg) if catalog is None else catalog
     cells = [((ctx, t), int(w)) for ctx, c in cfg["contexts"].items() for t, w in c["weights"].items() if int(w) > 0]
     slots = shuffle(allocate(cells, cfg["templates"]["in_distribution"]), value_gen.Draw(base + ":order"))
     splits = stratified_splits(slots, pairs(cfg["split"]))
-    cards = [card(value_gen.Draw(f"{base}:c{i:04d}"), cfg, f"c{i:04d}", split, ctx, t, None)
-             for i, ((ctx, t), split) in enumerate(zip(slots, splits), 1)]
-    # test_ood: each card carries one feature never drawn for the other splits
+    rows = assign_rows(slots, [r for r in catalog if r["status"] == "train"], base)
+    cards = [card(value_gen.Draw(f"{base}:c{i:04d}"), cfg, f"c{i:04d}", split, ctx, t, None, row)
+             for i, ((ctx, t), split, row) in enumerate(zip(slots, splits, rows), 1)]
+    # test_ood: each card carries one feature never drawn for the other splits, and the catalog row of that feature
     od = cfg["ood"]
+    ood_row = {(r["ood"]["feature"], v): r for r in catalog if r["status"] == "ood" for v in r["ood"]["values"]}
     features = allocate([("context", 2), ("kind", 2), ("tool_output_format", 1)], cfg["templates"]["test_ood"])
     for i, feature in enumerate(shuffle(features, value_gen.Draw(base + ":ood")), 1):
         d = value_gen.Draw(f"{base}:o{i:04d}")
         if feature == "context":
             ctx = d.choice(sorted(od["contexts"]))
             primary = d.weighted([(t, 1) for t in TYPES[:4]] + [("none", 1)])
-            ood = {"feature": "context"}
+            ood, row = {"feature": "context"}, ood_row.get(("context", ctx))
         elif feature == "kind":
             kind = d.choice(sorted(od["kinds"]))
             ctx, primary = d.choice(sorted(cfg["contexts"])), od["kinds"][kind]
-            ood = {"feature": "kind", "kind": kind}
+            ood, row = {"feature": "kind", "kind": kind}, ood_row.get(("kind", kind))
         else:
             ctx = d.choice(sorted(cfg["contexts"]))
             primary = d.weighted([(t, 1) for t in TYPES] + [("none", 1)])
             ood = {"feature": "tool_output_format", "tool_output_format": od["tool_output_format"]}
-        cards.append(card(d, cfg, f"o{i:04d}", "test_ood", ctx, primary, ood))
+            row = ood_row.get(("tool_output_format", od["tool_output_format"]))
+        cards.append(card(d, cfg, f"o{i:04d}", "test_ood", ctx, primary, ood, row))
     return cards
 
 
@@ -266,17 +338,37 @@ def stratified(cards: list[dict], n: int) -> list[dict]:
     return [c for k in keys for c in groups[k][:take[k]]]
 
 
-def summary(cards: list[dict]) -> dict:
+def summary(cards: list[dict], catalog: list[dict], by_source: bool = False) -> dict:
     secrets = [s for c in cards for s in c["secrets"]]
-    return {"cards": len(cards), "sessions": sum(c["variants"] for c in cards),
-            "by_split": dict(sorted(Counter(c["split"] for c in cards).items())),
-            "by_primary_type": dict(sorted(Counter(c["primary_type"] for c in cards).items())),
-            "secrets": len(secrets), "secrets_by_channel": dict(sorted(Counter(s["channel"] for s in secrets).items())),
-            "secrets_masked_in_tool_input": sum(bool(s["mask"]) for s in secrets),
-            "with_negatives": sum(bool(c["negatives"]) for c in cards),
-            "negatives": sum(len(c["negatives"]) for c in cards),
-            "with_boundary_rule": sum(bool(c["boundary"]) for c in cards),
-            "by_language": dict(sorted(Counter(c["language"] for c in cards).items()))}
+    in_dist = [c for c in cards if c["split"] != "test_ood"]
+    per_row = Counter(c["source_id"] for c in in_dist)
+    ood_ids = {r["source_id"] for r in catalog if r["status"] == "ood"}
+    eval_ids = {r["source_id"] for r in catalog if r.get("eval_only")}
+    out = {"cards": len(cards), "sessions": sum(c["variants"] for c in cards),
+           "by_split": dict(sorted(Counter(c["split"] for c in cards).items())),
+           "by_primary_type": dict(sorted(Counter(c["primary_type"] for c in cards).items())),
+           "by_cell": dict(sorted(Counter(f"{c['context']}:{c['primary_type']}" for c in in_dist).items())),
+           "by_cell_split": dict(sorted(Counter(f"{c['context']}:{c['primary_type']}:{c['split']}"
+                                                for c in in_dist).items())),
+           "secrets": len(secrets), "secrets_by_channel": dict(sorted(Counter(s["channel"] for s in secrets).items())),
+           "secrets_masked_in_tool_input": sum(bool(s["mask"]) for s in secrets),
+           "with_negatives": sum(bool(c["negatives"]) for c in cards),
+           "negatives": sum(len(c["negatives"]) for c in cards),
+           "contrasts": sum(n.get("contrast", False) for c in cards for n in c["negatives"]),
+           "with_boundary_rule": sum(bool(c["boundary"]) for c in cards),
+           "by_language": dict(sorted(Counter(c["language"] for c in cards).items())),
+           "catalog": {"train_rows": sum(r["status"] == "train" for r in catalog),
+                       "rows_used": len(per_row),
+                       "cards_per_row": {"min": min(per_row.values(), default=0), "max": max(per_row.values(), default=0)},
+                       "ood_rows_used_in_test_ood": len({c["source_id"] for c in cards if c["split"] == "test_ood"}
+                                                        & ood_ids),
+                       "ood_rows_outside_test_ood": sum(c["source_id"] in ood_ids for c in in_dist),
+                       "eval_only_cards": sum(c["source_id"] in eval_ids for c in cards),
+                       "eval_only_cards_with_hints": sum(c["source_id"] in eval_ids and set(c["scene"]) != {"service"}
+                                                         for c in cards)}}
+    if by_source:
+        out["cards_by_source"] = dict(sorted(per_row.items()))
+    return out
 
 
 def main():
@@ -284,13 +376,16 @@ def main():
     parser.add_argument("--config", type=Path, default=CONFIG)
     parser.add_argument("--out", type=Path, default=CONFIG.parent / "cards.jsonl")
     parser.add_argument("--limit", type=int, help="keep a stratified subset of this many cards")
+    parser.add_argument("--by-source", action="store_true", help="also count the cards of every catalog row")
     args = parser.parse_args()
-    cards = draw(load(args.config))
+    cfg = load(args.config)
+    catalog = load_catalog(cfg, args.config)
+    cards = draw(cfg, catalog)
     if args.limit:
         cards = stratified(cards, args.limit)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("".join(json.dumps(c, ensure_ascii=False) + "\n" for c in cards), encoding="utf-8")
-    print(json.dumps({"out": str(args.out), **summary(cards)}, ensure_ascii=False, indent=2))
+    print(json.dumps({"out": str(args.out), **summary(cards, catalog, args.by_source)}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

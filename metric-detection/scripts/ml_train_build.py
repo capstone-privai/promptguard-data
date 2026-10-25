@@ -5,6 +5,8 @@ dataset_build placeholder syntax and generators (metric-detection/templates/READ
   {{kind:name}} with a value_gen.SECRET_KINDS kind      service formats, password families, private keys
   {{neg:kind}}                                          a value that is not gold (value_gen.NEGATIVE_KINDS),
                                                         recorded in the labels file
+  {{neg:prefix_redaction|of=KIND}}                      a prefix negative (value_gen.PREFIX_NEGATIVES): KIND's
+                                                        prefix with a masked, example or placeholder body
   {{mask:NAME}}                                         in tool_input only: the placeholder PromptGuard would have
                                                         shown the agent for a secret seen earlier ([KIND_n],
                                                         value_gen.mask_kind), recorded in the labels file as mask.
@@ -143,8 +145,17 @@ def parse_text(text: str, seed: str, unnamed: list[int], profile: str | None,
         if kind == "neg":
             if name not in value_gen.NEGATIVE_KINDS:
                 raise ValueError(f"{m.group(0)!r}: expected {{{{neg:KIND}}}}, KIND one of {sorted(value_gen.NEGATIVE_KINDS)}")
+            of = [t[3:] for t in transforms if t.startswith("of=")]
+            transforms = [t for t in transforms if not t.startswith("of=")]
+            if (name in value_gen.PREFIX_NEGATIVES) != bool(of):
+                raise ValueError(f"{m.group(0)!r}: " + (f"{{{{neg:{name}|of=KIND}}}} needs the secret kind whose prefix "
+                                                        "it keeps" if not of else "only a prefix negative takes |of="))
+            if of and not value_gen.prefixes_of(of[0]):
+                raise ValueError(f"{m.group(0)!r}: kind {of[0]!r} has no literal prefix")
             unnamed[0] += 1  # every negative is a new value
-            out = value_gen.NEGATIVE_KINDS[name][0](value_gen.Draw(f"{seed}:neg:{name}:#{unnamed[0]}"))
+            draw = value_gen.Draw(f"{seed}:neg:{name}:#{unnamed[0]}")
+            gen = value_gen.NEGATIVE_KINDS[name][0]
+            out = gen(draw, of[0]) if of else gen(draw)
             parts.append(Slot(apply_transforms(out, "", transforms)[0], NEG + name))
             continue
         if kind not in KINDS:

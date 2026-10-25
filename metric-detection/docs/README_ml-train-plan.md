@@ -60,7 +60,7 @@ authored는 내장 코퍼스, 템플릿 예시, 에이전트 세션 v2를 합친
 평가용 데이터의 생성 경로(`dataset_build.py`)는 그대로 두고, 학습 데이터는 [ml_train_build.py](../scripts/ml_train_build.py)로 따로 만들고 검증한다. 문법과 명령은 [templates/README.md](../templates/README.md#ml-학습용-템플릿-ml_train_buildpy)에 있다.
 
 - `build`: `dataset_build`의 placeholder 문법과 생성기를 그대로 쓰고, 아래를 더한다.
-  - [value_gen.py](../scripts/value_gen.py)의 kind 43개와 `{{neg:KIND}}` 13종
+  - [value_gen.py](../scripts/value_gen.py)의 kind 43개와 `{{neg:KIND}}` 13종. 비밀 출처 카탈로그에서 서비스 형식 kind 351개와 대조군용 neg kind 8종을 더했다(아래 "비밀 출처 카탈로그")
   - `wrap`, `truncate` 변환
   - `meta.split`(필수), `meta.variants`, `meta.value_profile`
   - kind 이름에는 형식을 밑줄로 붙인다(`password_weak`, `github_fine_grained`, `openai_key`). `:` 뒤는 name 자리이기 때문이다.
@@ -73,6 +73,15 @@ authored는 내장 코퍼스, 템플릿 예시, 에이전트 세션 v2를 합친
   - sessions·gold·labels 재생성 바이트 일치
 - `report`: 값 모양만으로 정답과 어려운 음성을 가르는 로지스틱 회귀의 AUROC(4.3절)와, 유형별 (길이, 문자 구성) 최빈 칸의 비율을 낸다. scikit-learn이 필요하다.
 - VERSION(`metric1-v0.1`)은 바꾸지 않는다. 값 시드가 `VERSION:split:템플릿파일명:session_id[~k]:kind:name`이라, 기존 평가 데이터와도 split끼리도 값이 겹치지 않는다.
+
+### 비밀 출처 카탈로그 (구현함, 2026-10-25)
+
+[secret-sources](../secret-sources/README.md)의 카탈로그(566행, "어떤 서비스·맥락에서 비밀이 어떻게 에이전트에게 들어오는가")를 카드의 장면으로 쓴다. 카탈로그 CSV는 git 밖에 두고(예시 열에 실제 형식의 가짜 키가 있다), [ml_train_catalog.py](../scripts/ml_train_catalog.py)가 행별 결정([catalog_decisions.toml](../templates/ml_train/catalog_decisions.toml))과 함께 읽어 예시 값 없는 `catalog.jsonl`과 서비스 형식 kind(`value_gen_catalog.py`)를 만든다.
+
+- 판정은 LABELING.md를 따른다. 카탈로그가 음성으로 둔 공개용 키(Stripe `pk_`, Supabase anon JWT, Toss `test_ck_`, Kakao JS 키), 약한 값(`changeme`), 0으로 채운 UUID는 정답으로 보고 대조군으로 쓰지 않는다. 해시·식별자를 양성으로 둔 행은 빼거나 음성 장면으로 쓴다.
+- 566행 중 학습 504, 분포 이동 test 전용 8(Twilio, Datadog 키 둘, Hugging Face, Azure 저장소 키, Terraform state, Jupyter 출력, MCP 결과), 제외 54(LABELING 판정·열린 질문, 자동 수집 행의 접두사 조각과 중복).
+- 카드마다 행 하나를 받는다. 문맥 × 유형 칸의 수와 split은 그대로이고, 칸 안에서 맞는 행을 덜 쓴 것부터 돌린다. 행이 주 비밀의 kind, 장면 힌트(경로, 포맷, 짝 자산, 주변 이름, 학습 포인트), 대조군(`{{neg:…}}`)을 준다. 대조군은 카드의 어려운 음성에 하나 더 들어간다.
+- 평가 전용 출처(CredData, SecretBench, Nemotron-PII, SWE-Gym, openhands-feedback, Nosey Parker)를 인용한 행은 서비스 이름과 값 형식만 쓰고 장면 힌트와 대조군을 넣지 않는다. 그래도 형식 지식(접두사, 길이, 문자 집합)은 공유하므로 Nosey Parker와 CredData 점수는 낙관적일 수 있다(5절).
 
 ## 3. 커버리지 설계
 
@@ -190,7 +199,7 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 - **값도 나눈다**: 값 시드에 split 이름을 넣고, 빌드 후 split 사이에 같은 값이 없는지 검사한다. 흔한 값 목록은 공유해도 된다.
 - **중복 검사**: 값과 숫자를 가린 텍스트로 MinHash를 만들어, split 사이에 유사도 0.8 이상인 item이 있으면 그 group을 옮긴다.
 - **privesc**: 정답 수는 많지만 한 분야라서 train 정답의 30% 이하로 묶는다(세션 표본 추출). privesc의 tool_input에는 진짜 비밀번호와 정답(6,324개)이 있다. 합성 데이터와 같은 규칙으로 학습에 섞을 때는 tool_input의 정답을 빼고, tool_input은 문맥으로만 쓴다. test-OOD에는 `password_reuse`, `ssh_key_reuse`처럼 서로 다른 형식의 시나리오 2종을 둔다.
-- **외부 데이터**(CredData, Nemotron-PII, openhands-feedback, SWE-Gym, Nosey Parker)는 평가에만 쓴다. 텍스트와 값은 쓰지 않았고, 이 계획에는 형식·채널·길이의 집계 통계만 참고했다. 그래도 커버리지 목표를 그 통계에 맞춰 정했으므로 외부 데이터 점수가 실제보다 낙관적으로 나올 수 있다. 그래서 외부 데이터 결과는 "목표 분포를 참고한 평가"라고 함께 적는다.
+- **외부 데이터**(CredData, Nemotron-PII, openhands-feedback, SWE-Gym, Nosey Parker)는 평가에만 쓴다. 텍스트와 값은 쓰지 않았고, 이 계획에는 형식·채널·길이의 집계 통계만 참고했다. 그래도 커버리지 목표를 그 통계에 맞춰 정했으므로 외부 데이터 점수가 실제보다 낙관적으로 나올 수 있다. 그래서 외부 데이터 결과는 "목표 분포를 참고한 평가"라고 함께 적는다. 비밀 출처 카탈로그도 이 출처들을 인용한 행(55행)이 있어 그 텍스트와 예시 값은 쓰지 않았지만, 서비스 형식(접두사, 길이, 문자 집합)은 Nosey Parker 규칙·CredSweeper와 겹치므로 Nosey Parker와 CredData 점수는 더 낙관적일 수 있다.
 
 ### 5.1 분포 이동 test (test-OOD)
 

@@ -74,6 +74,7 @@ def card_message(card: dict) -> str:
              f"- Language: {card['language']}. Items: exactly {card['items']}. Turns: exactly {card['turns']}.",
              f"- Longest tool_output: about {card['longest_output_chars']} characters.",
              f"- tool_output format: {card['tool_output_format']}. tool_input format: {card['tool_input_format']}."]
+    lines += scene_lines(card)
     if card["secrets"]:
         lines.append("- Secrets (copy each placeholder exactly):")
         lines += [f"  - {s['placeholder']} ({s['type']}): first in {s['channel']}, repeat {s['repeat']}"
@@ -84,10 +85,29 @@ def card_message(card: dict) -> str:
                      "could appear.")
     if card["negatives"]:
         lines.append("- Hard negatives:")
-        lines += [f"  - {n['placeholder']}: position {n['position']}" for n in card["negatives"]]
+        lines += [f"  - {n['placeholder']}: position {n['position']}"
+                  + ("; the scene's contrast, next to where its credential would sit" if n.get("contrast") else "")
+                  for n in card["negatives"]]
     if card["boundary"]:
         lines.append(f"- Boundary rule ({card['boundary']['rule']}): {card['boundary']['instruction']}")
     return "\n".join(lines) + "\n\nCard JSON:\n" + json.dumps(card, ensure_ascii=False)
+
+
+SCENE_HINTS = (("paths", "Files or streams"), ("format", "Format"), ("asset", "Paired asset or host"),
+               ("identifiers", "Names nearby"), ("basic_auth_user", "Basic auth user name"),
+               ("learning_point", "What the scene teaches (a note in Korean, not text to copy)"))
+
+
+def scene_lines(card: dict) -> list[str]:
+    """The card's catalog row as background (prompt_v1.md "Scene"): differs per row, so it goes in the card."""
+    s = card.get("scene")
+    if not s:
+        return []
+    lines = [f"- Scene (catalog {card['source_id']}): {s['service']}."]
+    for key, label in SCENE_HINTS:
+        if s.get(key):
+            lines.append(f"  - {label}: {', '.join(s[key]) if isinstance(s[key], list) else s[key]}")
+    return lines
 
 
 def request(card: dict, attempt: int, system: str) -> dict:
@@ -181,9 +201,11 @@ def follows_card(card: dict, items: list[dict]) -> list[str]:
             problems.append(f"secret {ph} in one channel, card asks multi_channel")
         if s.get("mask") and not any(s["mask"] in i["text"] for i in items if i["channel"] == "tool_input"):
             problems.append(f"mask {s['mask']} not in a tool_input")
-    for kind, n in Counter(neg["kind"] for neg in card["negatives"]).items():
-        if sum(i["text"].count(f"{{{{neg:{kind}}}}}") for i in items) < n:
-            problems.append(f"negative {{{{neg:{kind}}}}} missing")
+    for placeholder, n in Counter(neg["placeholder"] for neg in card["negatives"]).items():
+        if sum(i["text"].count(placeholder) for i in items) < n:
+            what = "contrast" if any(neg.get("contrast") and neg["placeholder"] == placeholder
+                                     for neg in card["negatives"]) else "negative"
+            problems.append(f"{what} {placeholder} missing")
     in_input = {m for i in items if i["channel"] == "tool_input"
                 for m in re.findall(r"\{\{(?!neg:|mask:)[^{}]*\}\}", i["text"]) if not m.startswith("{{ ")}
     if in_input:
@@ -200,7 +222,7 @@ def follows_card(card: dict, items: list[dict]) -> list[str]:
 
 def template_line(card: dict, items: list[dict], generator: dict) -> dict:
     meta = {"split": card["split"], "group_id": card["group_id"], "variants": card["variants"],
-            "value_profile": "mltrain", "card": {k: card[k] for k in CARD_FIELDS},
+            "value_profile": "mltrain", "card": {k: card[k] for k in CARD_FIELDS}, "source_id": card.get("source_id"),
             "boundary_rule": card["boundary"]["rule"] if card["boundary"] else None,
             "negatives": [n["kind"] for n in card["negatives"]], "generator": generator}
     return {"session_id": card["card_id"], "meta": meta, "items": items}

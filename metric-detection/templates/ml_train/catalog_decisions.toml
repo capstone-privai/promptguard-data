@@ -1,0 +1,384 @@
+# Per-row decisions on the secret-source catalog (metric-detection/secret-sources/frame.csv), read by
+# scripts/ml_train_catalog.py to write catalog.jsonl and scripts/value_gen_catalog.py.
+# Judgements follow LABELING.md, never the catalog: a counterpart the catalog calls negative but LABELING counts as
+# gold (a public key, a weak value, a UUID in a key's place) is not used as a contrast.
+#
+# [exclude]   Source_ID = reason. The row stays in catalog.jsonl with status "excluded".
+# eval_only   rows citing an evaluation-only source (CredData, SecretBench, Nemotron-PII, SWE-Gym, openhands-feedback,
+#             Nosey Parker): the card gets the service and value format only, no scene hints and no contrast.
+# [ood]       rows for the shifted test only (card_config.toml [ood]): the feature and the values it stands for.
+# [rows]      overrides. kind: an existing value_gen kind, a base kind (password, token, ...), "*" (the card draws a
+#             kind of its type from card_config [kinds]), a kind another row makes, or left out for a new catalog kind
+#             named after the service. spec: the new kind's parts when column 11 cannot be read (strings, [choices],
+#             [ALPHABET, min, max]). Also: types, type, mask, transform, contexts (names or the groups any, key,
+#             files, terminal, source), contrast (a negative kind with optional |args, or "none"), contrast_position
+#             (credential, anywhere), service, paths, format, asset, identifiers, learning_point (false drops it).
+
+version = "catalog-v0.2"
+
+eval_only = [
+  "SRC-003", "SRC-006", "SRC-016", "SRC-060", "SRC-153", "SRC-237", "SRC-238", "SRC-255", "SRC-275", "SRC-282",
+  "SRC-331",
+  # Nosey Parker rule citations
+  "SRC-020", "SRC-032", "SRC-059", "SRC-063", "SRC-104", "SRC-105", "SRC-106", "SRC-107", "SRC-108", "SRC-119",
+  "SRC-183", "SRC-186", "SRC-187", "SRC-193", "SRC-230", "SRC-488", "SRC-489", "SRC-490", "SRC-491", "SRC-492",
+  "SRC-493", "SRC-494", "SRC-495", "SRC-496", "SRC-497", "SRC-498", "SRC-499", "SRC-500", "SRC-501", "SRC-502",
+]
+
+[exclude]
+# LABELING.md: not gold, or no rule yet
+"SRC-231" = "PuTTY 개인키: 경계 규칙이 열린 질문이다(README_ml-train-open-questions.md 3절)"
+"SRC-248" = "BIP39 니모닉: 공백으로 이은 단어는 label_rules가 descriptor로 읽고(열린 질문 3절), abandon×12는 공개 테스트 벡터다"
+"SRC-259" = "문자 배열 join: 정답 span 하나로 표현할 수 없다"
+"SRC-238" = "/etc/shadow 해시: LABELING.md에서 hash라 정답이 아니고, 평가 전용 출처(SecretBench)다"
+"SRC-282" = "평가 전용 출처(CredData F/X, SecretBench is_template)를 정리한 행이다"
+"SRC-331" = "평가 전용 출처(CredData Class X)를 옮긴 행이고, 대조군의 changeme는 LABELING.md에서 정답이다"
+"SRC-365" = "AWS IAM 역할 고유 id(AROA…)는 식별자다"
+"SRC-466" = "MongoDB Atlas 서비스 계정 client id는 식별자다"
+"SRC-507" = "Checkout.com 고객 id(cus_)는 식별자다"
+"SRC-510" = "dotdigital apiuser-는 사용자 이름(식별자)이다"
+"SRC-526" = "Stripe payment intent id(pi_)는 식별자다"
+"SRC-546" = "Square application id(sq0idp-)는 식별자다"
+# auto-mined rows whose prefix is a fragment of the real one, or too short to check
+"SRC-458" = "접두사 조각(실제는 sm_aat_)"
+"SRC-459" = "접두사 조각(실제는 sm_pat_)"
+"SRC-460" = "접두사 조각(실제는 sm_sat_)"
+"SRC-464" = "접두사 조각(lsv2_pt_), SRC-036과 중복"
+"SRC-467" = "접두사 조각(pdl_live_apikey_), SRC-428과 중복"
+"SRC-468" = "접두사 조각(production_)"
+"SRC-470" = "접두사 조각(polar_at_)"
+"SRC-471" = "접두사 조각(polar_oat_)"
+"SRC-482" = "접두사 조각(packagist_ort_), SRC-123과 중복"
+"SRC-483" = "접두사 조각(packagist_out_), SRC-123과 중복"
+"SRC-484" = "접두사 조각(packagist_acs_), SRC-123과 중복"
+"SRC-485" = "접두사 조각(packagist_ack_), SRC-123과 중복"
+"SRC-506" = "JWT 머리의 조각이다"
+"SRC-508" = "출처 규칙(v2 cfk_)으로 서비스를 확인할 수 없다"
+"SRC-511" = "접두사 AK1이 너무 짧아 형식을 확인할 수 없다"
+"SRC-512" = "출처 규칙(v3 figp_)으로 서비스를 확인할 수 없다"
+"SRC-517" = "접두사 조각(pscale_tkn_), SRC-093과 중복"
+"SRC-518" = "접두사 조각(pscale_pw_), SRC-092와 중복"
+"SRC-523" = "접두사 MVG9가 너무 짧아 형식을 확인할 수 없다"
+"SRC-542" = "접두사 조각(us-)"
+"SRC-544" = "접두사 edd2가 너무 짧아 형식을 확인할 수 없다"
+"SRC-548" = "접두사 Ab8R이 너무 짧아 형식을 확인할 수 없다"
+"SRC-549" = "접두사 조각(token-)"
+"SRC-550" = "접두사 조각(packagist_uut_), SRC-123과 중복"
+"SRC-551" = "접두사 조각(packagist_cut_), SRC-123과 중복"
+"SRC-554" = "JWT 머리의 조각이다"
+"SRC-558" = "접두사 조각(pk.eyJ1), mapbox_public과 중복"
+"SRC-565" = "JWT 머리(splunk.secret kid)의 조각이다"
+"SRC-566" = "접두사 조각(tskey-auth-), SRC-223과 중복"
+# duplicates of another row or of an existing kind
+"SRC-461" = "SRC-126과 중복"
+"SRC-480" = "SRC-126과 중복"
+"SRC-486" = "postman_key와 중복"
+"SRC-496" = "SRC-122와 중복"
+"SRC-497" = "SRC-168과 중복"
+"SRC-498" = "SRC-168과 중복"
+"SRC-499" = "SRC-168과 중복"
+"SRC-500" = "SRC-168과 중복"
+"SRC-528" = "SRC-137과 중복"
+"SRC-533" = "SRC-201과 중복"
+"SRC-535" = "SRC-433과 중복"
+"SRC-536" = "SRC-376과 중복"
+"SRC-538" = "SRC-130과 중복"
+
+[ood]
+"SRC-192" = { feature = "kind", values = ["twilio_auth_token", "twilio_api_key"] }
+"SRC-212" = { feature = "kind", values = ["datadog_api_key"] }
+"SRC-213" = { feature = "kind", values = ["datadog_app_key"] }
+"SRC-032" = { feature = "kind", values = ["huggingface_token"] }
+"SRC-066" = { feature = "kind", values = ["azure_storage_key"] }
+"SRC-266" = { feature = "context", values = ["terraform_state"] }
+"SRC-276" = { feature = "context", values = ["jupyter_output"] }
+"SRC-274" = { feature = "tool_output_format", values = ["mcp_result"] }
+
+[rows]
+# 01 generic patterns
+"SRC-001" = { kind = "*", types = ["SECRET"], contrast = "identifier", contrast_position = "anywhere", learning_point = "변수명이 SECRET·API_KEY인 자리의 hex는 정답이다. 빌드 해시·청크 해시처럼 비밀이 아닌 이름 아래의 같은 모양 hex는 식별자다." }
+"SRC-002" = { kind = "*", types = ["PASSWORD"] }
+"SRC-003" = { kind = "*", types = ["PASSWORD"] }
+"SRC-004" = { kind = "*", types = ["TOKEN"] }
+"SRC-005" = { kind = "*", types = ["SECRET"], contrast = "none", learning_point = false }
+"SRC-006" = { kind = "*", types = ["PASSWORD"] }
+"SRC-007" = { kind = "*", types = ["PASSWORD"], contrast = "reference", learning_point = false }
+"SRC-008" = { kind = "*", types = ["SECRET"] }
+"SRC-009" = { kind = "password", types = ["TOKEN"], transform = "basic=<USER>" }
+"SRC-010" = { kind = "*", types = ["SECRET"], contrast = "none", learning_point = false }
+"SRC-011" = { kind = "*", types = ["PASSWORD", "TOKEN", "SECRET"], contexts = ["command_output", "log", "code", "document", "natural_language", "config"], learning_point = "명령줄 --token·--password 값은 정답이다. 이 값은 스크립트·셸 히스토리·CI 로그나 사용자 메시지에서 먼저 보이고, 에이전트가 쓰는 명령에는 가림 표시만 들어간다." }
+"SRC-012" = { kind = "*", types = ["PASSWORD"], contexts = ["command_output", "log", "code", "document", "natural_language"], learning_point = "curl -u user:비밀번호의 비밀번호만 정답이다. 이 값은 스크립트·셸 히스토리·문서에서 먼저 보이고, 에이전트가 쓰는 명령에는 가림 표시만 들어간다." }
+"SRC-014" = { kind = "*", types = ["PASSWORD"], contexts = ["code", "diff", "command_output"] }
+"SRC-015" = { kind = "*", types = ["PASSWORD", "SECRET"], contexts = ["config", "code", "diff"], contrast = "code" }
+"SRC-016" = { kind = "aws_secret_access_key" }
+# 02 AI / LLM
+"SRC-017" = { kind = "openai_key" }
+"SRC-020" = { kind = "openai_key" }
+"SRC-021" = { kind = "anthropic_key" }
+"SRC-023" = { kind = "gcp_api_key", learning_point = false }
+"SRC-032" = { kind = "huggingface_token" }
+# 03 cloud
+"SRC-059" = { kind = "aws_access_key_id" }
+"SRC-060" = { kind = "aws_secret_access_key" }
+"SRC-061" = { kind = "aws_session_token" }
+"SRC-063" = { kind = "private_key_any", transform = "json", contexts = ["key_file", "config", "command_output", "diff"] }
+"SRC-066" = { kind = "azure_storage_key" }
+"SRC-068" = { spec = [["ALNUM", 40, 52], "%3D"], type = "TOKEN" }
+"SRC-070" = { type = "ACCESS_KEY" }
+"SRC-071" = { type = "ACCESS_KEY" }
+"SRC-073" = { type = "ACCESS_KEY" }
+"SRC-074" = { contrast = "reference" }
+"SRC-075" = { type = "ACCESS_KEY" }
+"SRC-077" = { kind = "*", types = ["PASSWORD"], contexts = ["config", "command_output", "diff"] }
+"SRC-078" = { kind = "digitalocean_token" }
+"SRC-082" = { contrast = "reference" }
+# 04 databases
+"SRC-083" = { kind = "password" }
+"SRC-084" = { kind = "password" }
+"SRC-085" = { kind = "password" }
+"SRC-086" = { kind = "password" }
+"SRC-087" = { kind = "password" }
+"SRC-088" = { kind = "password" }
+"SRC-089" = { kind = "password" }
+"SRC-090" = { kind = "jwt_any", learning_point = "Supabase JWT는 service_role이든 anon이든 인증 자리의 JWT라 정답이다." }
+"SRC-091" = { kind = "jwt_any", service = "Supabase Anon Key", contrast = "reference", learning_point = false }
+"SRC-095" = { kind = "jwt_any" }
+# 05 VCS / CI / packages
+"SRC-104" = { kind = "github_classic" }
+"SRC-105" = { kind = "github_oauth" }
+"SRC-106" = { kind = "github_app" }
+"SRC-107" = { kind = "github_app" }
+"SRC-108" = { kind = "github_app" }
+"SRC-109" = { kind = "github_fine_grained" }
+"SRC-110" = { kind = "gitlab_pat" }
+"SRC-118" = { kind = "npm_token" }
+"SRC-119" = { kind = "pypi_token" }
+"SRC-125" = { spec = ["AQAAABAAAA", ["B64", 40, 80]], learning_point = "Jenkins credentials.xml의 {AQAAABAAAA…} 값은 암호화되어 있어도 자격증명 자리의 리터럴이라 정답이다. 중괄호는 span에 넣지 않는다." }
+"SRC-128" = { contrast = "reference" }
+"SRC-134" = { contrast = "reference" }
+# 06 secret managers / containers
+"SRC-141" = { type = "TOKEN" }
+"SRC-143" = { kind = "password", types = ["TOKEN"], transform = "basic=<USER>", contexts = ["config", "command_output", "diff"] }
+"SRC-144" = { kind = "password", transform = "base64", contexts = ["config", "command_output", "diff"], contrast = "template" }
+"SRC-145" = { kind = "jwt_any" }
+"SRC-146" = { spec = [["ALNUM", 32, 32]] }
+# 07 frameworks
+"SRC-147" = { spec = [["HEXU", 64, 128]], contrast = "auth_setting" }
+"SRC-148" = { kind = "password", contexts = ["config", "command_output", "diff", "code"] }
+"SRC-149" = { spec = [["django-insecure-", ""], ["=abcdefghijklmnopqrstuvwxyz0123456789!@#%^&-_=+", 50, 50]], contrast = "reference", learning_point = false }
+"SRC-151" = { spec = [["=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#%^&-_+~:?/|", 64, 64]], contexts = ["config", "code", "diff", "command_output"] }
+"SRC-152" = { contrast = "empty" }
+"SRC-153" = { kind = "password", transform = "base64", contexts = ["config", "command_output"] }
+"SRC-154" = { kind = "password", service = "htpasswd plaintext password", contexts = ["config", "command_output"], contrast = "hash", learning_point = "`user:{PLAIN}비밀번호`처럼 평문으로 저장된 값은 정답이다. `user:$apr1$…` 같은 해시는 정답이 아니다(hash). 콜론 앞 사용자명은 식별자다." }
+# 08 payments
+"SRC-157" = { kind = "stripe_secret", learning_point = false }
+"SRC-158" = { kind = "stripe_secret", learning_point = false }
+"SRC-159" = { kind = "stripe_secret", learning_point = false }
+"SRC-161" = { kind = "stripe_publishable", service = "Stripe Publishable Key", learning_point = false }
+"SRC-163" = { spec = [["HEX", 32, 32]], type = "SECRET" }
+"SRC-174" = { service = "TossPayments Client Key", learning_point = false }
+"SRC-177" = { service = "KIS AppSecret", spec = [["B64", 176, 184]], learning_point = "한국투자증권 appsecret(180자 안팎)은 정답이다. appkey도 키 쌍의 id라 정답(ACCESS_KEY)이다. `앱키 시크릿` 같은 한국어 자리표시만 정답이 아니다." }
+"SRC-180" = { kind = "ec_private_key", contexts = ["key_file", "config", "code", "command_output", "diff"], contrast = "reference" }
+# 09 messaging
+"SRC-183" = { kind = "slack_bot" }
+"SRC-184" = { kind = "slack_user" }
+"SRC-185" = { spec = ["xapp-1-", ["UPPERNUM", 11, 11], "-", ["DIGITS", 13, 13], "-", ["HEX", 64, 64]] }
+"SRC-186" = { kind = "slack_webhook" }
+"SRC-190" = { spec = [["B64", 160, 180]] }
+"SRC-192" = { kind = "twilio_auth_token" }
+"SRC-193" = { kind = "sendgrid_key" }
+"SRC-197" = { contrast = "reference" }
+# 10 observability
+"SRC-212" = { kind = "datadog_api_key" }
+"SRC-218" = { service = "Sentry Auth Token", spec = ["sntrys_", ["B64", 60, 100]], contrast = "none", learning_point = "`sntrys_` 조직 인증 토큰은 정답이다." }
+"SRC-219" = { kind = "cloudflare_token" }
+"SRC-224" = { contexts = ["key_file", "config", "command_output", "diff"], contrast = "public_key_raw" }
+# 11 cryptography
+"SRC-226" = { kind = "rsa_private_key" }
+"SRC-227" = { kind = "ec_private_key" }
+"SRC-228" = { kind = "private_key_any" }
+"SRC-229" = { kind = "private_key_any" }
+"SRC-230" = { kind = "openssh_private_key" }
+"SRC-232" = { kind = "jwt_any", contrast = "none", learning_point = false }
+"SRC-233" = { spec = [["B64URL", 43, 43]], type = "PRIVATE_KEY", contexts = ["key_file", "config", "command_output", "code"], contrast = "public_key_raw" }
+"SRC-236" = { kind = "*", types = ["SECRET"] }
+"SRC-237" = { kind = "password", contexts = ["config", "command_output"] }
+"SRC-239" = { kind = "password", contexts = ["command_output"], contrast = "hash" }
+# 13 mobile / IoT / web3
+"SRC-240" = { kind = "gcp_api_key", contexts = ["config", "code", "command_output", "diff"], learning_point = false }
+"SRC-241" = { kind = "private_key_any", transform = "json", contexts = ["key_file", "config", "command_output", "diff"] }
+"SRC-242" = { kind = "password", contexts = ["config", "command_output", "diff"] }
+"SRC-243" = { kind = "private_key_any" }
+"SRC-247" = { contexts = ["key_file", "config", "code", "command_output", "diff"], contrast = "wallet_address", contrast_position = "anywhere" }
+"SRC-250" = { kind = "*", types = ["PASSWORD", "SECRET"], contexts = ["code", "diff", "command_output"], contrast = "empty" }
+"SRC-251" = { kind = "password", contexts = ["config", "code", "command_output", "http"] }
+# 12 agent runtime contexts
+"SRC-252" = { kind = "npm_token", contexts = ["terminal"] }
+"SRC-253" = { kind = "aws_access_key_id", contexts = ["terminal"], contrast = "doc_example" }
+"SRC-254" = { kind = "openai_key", contexts = ["terminal", "config"], contrast = "none", learning_point = false }
+"SRC-255" = { kind = "*", types = ["SECRET", "TOKEN"], contexts = ["source"] }
+"SRC-256" = { kind = "*", types = ["SECRET"], contexts = ["source"], contrast = "code" }
+"SRC-257" = { spec = [["HEX", 32, 64]], contexts = ["source"] }
+"SRC-258" = { spec = [["B64", 24, 44]], contexts = ["source"] }
+"SRC-260" = { kind = "*", types = ["SECRET", "TOKEN"], contexts = ["source"], contrast = "empty" }
+"SRC-261" = { kind = "*", types = ["SECRET", "TOKEN"], contexts = ["source"], contrast = "empty" }
+"SRC-262" = { kind = "*", types = ["SECRET", "TOKEN"], contexts = ["source"], contrast = "none" }
+"SRC-263" = { kind = "*", types = ["SECRET", "TOKEN"], contexts = ["source"], contrast = "none" }
+"SRC-264" = { kind = "*", types = ["PASSWORD", "SECRET", "TOKEN"], contexts = ["terminal"] }
+"SRC-265" = { kind = "*", types = ["PASSWORD"], contexts = ["command_output", "config"], contrast = "secret_ref" }
+"SRC-266" = { kind = "*", types = ["PASSWORD", "SECRET", "TOKEN", "ACCESS_KEY"] }
+"SRC-267" = { kind = "*", types = ["SECRET", "TOKEN", "PASSWORD"], contexts = ["diff"] }
+"SRC-268" = { kind = "github_classic", contexts = ["command_output", "config", "log"], contrast = "none" }
+"SRC-269" = { kind = "*", types = ["TOKEN", "SECRET"], contexts = ["command_output"], contrast = "none" }
+"SRC-270" = { kind = "*", types = ["TOKEN", "SECRET"], contexts = ["command_output"], contrast = "none" }
+"SRC-271" = { kind = "*", types = ["PASSWORD", "SECRET", "TOKEN"], contexts = ["command_output"], contrast = "none" }
+"SRC-272" = { kind = "*", types = ["TOKEN", "SECRET", "PASSWORD"], contexts = ["command_output"], contrast = "none" }
+"SRC-273" = { kind = "*", types = ["TOKEN", "SECRET"], contexts = ["config", "command_output", "diff", "document"] }
+"SRC-274" = { kind = "*", types = ["TOKEN", "SECRET", "PASSWORD"], contrast = "none" }
+"SRC-275" = { kind = "password", contexts = ["stacktrace", "log"] }
+"SRC-276" = { kind = "*", types = ["SECRET", "TOKEN", "PASSWORD", "ACCESS_KEY"], contrast = "none" }
+"SRC-277" = { kind = "*", types = ["SECRET", "TOKEN"], contexts = ["code", "command_output"], contrast = "none" }
+"SRC-278" = { kind = "*", types = ["TOKEN"], contexts = ["http", "command_output", "config"], contrast = "non_credential", contrast_position = "anywhere" }
+"SRC-279" = { kind = "*", types = ["TOKEN", "SECRET"], contexts = ["command_output"], contrast = "none" }
+"SRC-280" = { service = "Google OAuth Access Token", spec = ["ya29.", ["B64URL", 100, 150]], type = "TOKEN", contexts = ["command_output", "log"], contrast = "none" }
+"SRC-281" = { spec = [["ALNUM", 64, 96]], contexts = ["code", "config", "http", "command_output", "log"] }
+"SRC-283" = { kind = "*", types = ["TOKEN", "SECRET"], contexts = ["code", "diff"], contrast = "secret_ref" }
+"SRC-284" = { kind = "*", types = ["SECRET", "TOKEN", "PASSWORD", "ACCESS_KEY"], contexts = ["command_output"], contrast = "none" }
+"SRC-285" = { kind = "*", types = ["TOKEN", "SECRET"], contexts = ["log"], contrast = "redaction" }
+# 08 / 09 supplements
+"SRC-298" = { kind = "password", learning_point = "secret과 passphrase는 정답이다. apiKey도 키 쌍의 id라 정답(ACCESS_KEY)이다. passphrase가 참조 구문이면 정답이 아니다." }
+"SRC-300" = { service = "Kakao JavaScript Key", type = "ACCESS_KEY", learning_point = false }
+"SRC-305" = { kind = "password" }
+"SRC-306" = { kind = "password" }
+"SRC-307" = { kind = "password" }
+"SRC-308" = { kind = "password" }
+"SRC-309" = { kind = "password" }
+"SRC-310" = { kind = "password" }
+"SRC-311" = { kind = "password" }
+"SRC-312" = { kind = "password" }
+"SRC-313" = { kind = "password", contexts = ["config", "command_output", "code"] }
+"SRC-314" = { kind = "password" }
+# developer tool credential files
+"SRC-315" = { kind = "*", types = ["PASSWORD", "SECRET", "TOKEN"], contexts = ["command_output"], contrast = "none" }
+"SRC-316" = { kind = "password", contexts = ["command_output"], contrast = "identifier", contrast_position = "anywhere" }
+"SRC-317" = { kind = "private_key_any", transform = "base64", contexts = ["config", "command_output", "key_file"], contrast = "public_key|base64" }
+"SRC-318" = { kind = "gcp_oauth_refresh_token", contexts = ["command_output", "config"], contrast = "identifier", contrast_position = "anywhere" }
+"SRC-319" = { kind = "password", contexts = ["config", "command_output", "diff"] }
+"SRC-320" = { kind = "google_oauth_access_token", contexts = ["config", "command_output"] }
+"SRC-321" = { kind = "*", types = ["TOKEN"], contexts = ["command_output", "config"], contrast = "none" }
+"SRC-322" = { kind = "*", types = ["PASSWORD", "SECRET"], contexts = ["command_output", "config"], contrast = "none" }
+"SRC-323" = { kind = "password", contexts = ["config", "command_output", "diff"], contrast = "empty" }
+"SRC-324" = { kind = "*", types = ["SECRET"], contexts = ["command_output", "log", "document", "natural_language"], contrast = "none", learning_point = "`wrangler secret put`에 넘긴 값은 정답이다. 이 값은 셸 히스토리·스크립트·사용자 메시지에서 먼저 보이고, 에이전트의 명령에는 가림 표시만 들어간다." }
+"SRC-325" = { kind = "*", types = ["PASSWORD", "SECRET"], contexts = ["command_output"], contrast = "none" }
+"SRC-326" = { kind = "*", types = ["PASSWORD", "SECRET"], contexts = ["terminal"], contrast = "none" }
+"SRC-327" = { kind = "stripe_secret", contexts = ["source"], contrast = "none" }
+"SRC-328" = { kind = "*", types = ["SECRET"], contexts = ["source"], contrast = "none" }
+"SRC-329" = { kind = "github_classic", contexts = ["source"], contrast = "none" }
+"SRC-330" = { kind = "*", types = ["SECRET"], contexts = ["source"], contrast = "none" }
+"SRC-341" = { kind = "npm_token", contexts = ["config", "command_output", "diff"] }
+"SRC-342" = { kind = "npm_token", contexts = ["config", "command_output", "diff"], contrast = "reference" }
+"SRC-343" = { kind = "password", contexts = ["config", "command_output", "diff"] }
+"SRC-344" = { kind = "password", contexts = ["config", "command_output"] }
+"SRC-345" = { kind = "*", types = ["PASSWORD", "TOKEN"], contexts = ["config", "command_output"] }
+"SRC-346" = { kind = "rubygems_key", contexts = ["config", "command_output"] }
+"SRC-347" = { kind = "password", contexts = ["config", "command_output"], contrast = "none" }
+"SRC-348" = { kind = "password", contexts = ["config", "command_output"] }
+"SRC-349" = { kind = "aws_secret_access_key", contexts = ["config", "command_output"], learning_point = "s3cmd의 secret_key는 정답이다. access_key(AKIA…)도 키 쌍의 id라 정답(ACCESS_KEY)이다. 환경변수 참조는 정답이 아니다." }
+"SRC-350" = { kind = "databricks_pat", contexts = ["config", "command_output"] }
+"SRC-351" = { kind = "password", contexts = ["config", "command_output"], contrast = "auth_setting" }
+"SRC-352" = { kind = "*", types = ["TOKEN"], contexts = ["command_output", "config"], contrast = "setting" }
+"SRC-353" = { service = "Google Cloud Storage HMAC Secret", spec = [["B64", 40, 40]], contexts = ["config", "command_output"], learning_point = "`*_secret_access_key`는 정답이다. access_key_id(GOOG…)도 키 쌍의 id라 정답(ACCESS_KEY)이다. 환경변수 참조는 정답이 아니다." }
+"SRC-354" = { kind = "*", types = ["SECRET", "TOKEN"], contexts = ["config", "diff", "command_output"] }
+"SRC-355" = { kind = "anthropic_key", contexts = ["config", "command_output", "diff"] }
+"SRC-356" = { kind = "openai_key", contexts = ["config", "command_output"] }
+"SRC-357" = { kind = "*", types = ["TOKEN", "SECRET", "PASSWORD"], contexts = ["config", "diff"] }
+"SRC-358" = { kind = "*", types = ["TOKEN", "SECRET", "PASSWORD"], contexts = ["config", "diff"] }
+"SRC-359" = { kind = "*", types = ["TOKEN", "SECRET"], contexts = ["code", "diff"] }
+"SRC-360" = { kind = "password", contexts = ["command_output"], contrast = "none" }
+"SRC-361" = { kind = "password", contexts = ["command_output"], contrast = "none" }
+"SRC-362" = { kind = "*", types = ["PASSWORD", "SECRET"], contexts = ["command_output"], contrast = "none" }
+"SRC-366" = { kind = "*", types = ["none"], service = "GCP OAuth Client ID", contexts = ["config", "code", "command_output", "diff"], contrast = "identifier", contrast_position = "anywhere" }
+# 14 scanner catalog and auto-mined rows: types and clean service names
+"SRC-379" = { kind = "jwt_any" }
+"SRC-397" = { kind = "jwt_any" }
+"SRC-411" = { kind = "jwt_any" }
+"SRC-416" = { kind = "jwt_any" }
+"SRC-429" = { kind = "jwt_any" }
+"SRC-432" = { type = "SECRET" }
+"SRC-447" = { type = "ACCESS_KEY" }
+"SRC-462" = { service = "Databento API Key" }
+"SRC-463" = { service = "Ionic Personal Access Token" }
+"SRC-465" = { service = "Lichess Personal Access Token" }
+"SRC-469" = { service = "Pinterest Access Token" }
+"SRC-472" = { service = "Ramp OAuth Client Secret" }
+"SRC-473" = { service = "redirect.pizza API Token" }
+"SRC-474" = { service = "Rootly API Key" }
+"SRC-475" = { service = "Thunderstore API Token" }
+"SRC-476" = { service = "Unkey Root Key" }
+"SRC-477" = { service = "Val Town API Token" }
+"SRC-478" = { service = "WakaTime API Key" }
+"SRC-479" = { service = "Zuplo Consumer API Key" }
+"SRC-481" = { service = "Deno Organization Token" }
+"SRC-487" = { service = "Postman Collection Access Token" }
+"SRC-488" = { service = "Adobe OAuth Client Secret" }
+"SRC-489" = { service = "AWS AppSync API Key" }
+"SRC-490" = { service = "Dependency-Track API Key" }
+"SRC-491" = { service = "GitLab Runner Registration Token" }
+"SRC-492" = { service = "New Relic Admin API Key" }
+"SRC-493" = { service = "New Relic Insights Insert Key" }
+"SRC-494" = { service = "New Relic Insights Query Key" }
+"SRC-495" = { service = "New Relic REST API Key" }
+"SRC-501" = { service = "Square Access Token sq0atp" }
+"SRC-502" = { service = "Square OAuth Secret" }
+"SRC-503" = { service = "Alchemy Access Token" }
+"SRC-504" = { service = "Bitbucket Data Center Token" }
+"SRC-505" = { service = "BestTime API Key" }
+"SRC-509" = { service = "Contentful Personal Access Token" }
+"SRC-513" = { service = "Flexport API Key" }
+"SRC-514" = { service = "GitLab OAuth Application Secret" }
+"SRC-515" = { service = "New Relic Browser Key NRBR" }
+"SRC-516" = { service = "New Relic EU License Key" }
+"SRC-519" = { service = "Portainer Access Token" }
+"SRC-520" = { service = "PostHog Personal API Key" }
+"SRC-521" = { service = "Prefect API Key" }
+"SRC-522" = { service = "ReadMe API Key" }
+"SRC-524" = { service = "Sentry User Token" }
+"SRC-525" = { service = "Sourcegraph Cody Gateway Key" }
+"SRC-527" = { service = "Supabase Personal Access Token" }
+"SRC-529" = { service = "Typeform Personal Token" }
+"SRC-530" = { service = "Ubidots Token" }
+"SRC-531" = { service = "Clojars Deploy Token" }
+"SRC-532" = { service = "Bitbucket Repository Access Token" }
+"SRC-534" = { service = "Figma Personal Access Token" }
+"SRC-537" = { service = "Nylas API Key" }
+"SRC-539" = { service = "WunderGraph Cosmo API Key" }
+"SRC-540" = { service = "Grafana Cloud API Key" }
+"SRC-541" = { service = "Elastic Cloud API Key essu" }
+"SRC-543" = { service = "GitLab Incoming Mail Token" }
+"SRC-545" = { service = "PostHog Project API Key", type = "ACCESS_KEY" }
+"SRC-547" = { service = "Deno Personal Access Token" }
+"SRC-552" = { service = "pyx API Key" }
+"SRC-553" = { service = "Aiven Service Password", spec = ["AVNS_", ["ALNUM", 15, 22]], type = "PASSWORD" }
+"SRC-555" = { service = "GitLab Feed Token" }
+"SRC-556" = { service = "GitLab Agent Token" }
+"SRC-557" = { service = "GitLab SCIM OAuth Token" }
+"SRC-559" = { service = "New Relic Browser Key NRJS", spec = ["NRJS-", ["HEX", 19, 19]] }
+"SRC-560" = { service = "Brevo SMTP Key", spec = ["xsmtpsib-", ["HEX", 64, 64], "-", ["ALNUM", 16, 16]] }
+"SRC-561" = { service = "Shopify Partner API Token", spec = ["prtapi_", ["HEX", 32, 32]], type = "TOKEN" }
+"SRC-562" = { service = "SonarQube User Token", spec = ["squ_", ["HEX", 40, 40]], type = "TOKEN" }
+"SRC-563" = { service = "SonarQube Analysis Token", spec = ["sqa_", ["HEX", 40, 40]], type = "TOKEN" }
+"SRC-564" = { service = "SonarQube Project Token", spec = ["sqp_", ["HEX", 40, 40]], type = "TOKEN" }
+# learning points (column 15) that contradict LABELING.md: a public or paired key id is gold (ACCESS_KEY)
+"SRC-013" = { learning_point = false }
+"SRC-037" = { learning_point = false }
+"SRC-099" = { learning_point = false }
+"SRC-160" = { learning_point = false }
+"SRC-170" = { learning_point = false }
+"SRC-171" = { learning_point = false }
+"SRC-172" = { learning_point = false }
+"SRC-173" = { learning_point = false }
+"SRC-175" = { learning_point = false }
+"SRC-178" = { learning_point = "secret key는 정답이다. access key도 키 쌍의 id라 정답(ACCESS_KEY)이다. `본인 값으로 변경` 같은 한국어 자리표시는 정답이 아니다." }
+"SRC-205" = { learning_point = "API Secret은 정답이다. API Key도 키 쌍의 id라 정답(ACCESS_KEY)이다." }
+"SRC-222" = { learning_point = "`sk.` 비밀 토큰은 정답이다. `pk.` 공개 토큰도 LABELING.md 기준으로 정답(ACCESS_KEY)이다." }
+"SRC-299" = { learning_point = "Admin 키(`KakaoAK` 헤더)와 REST API 키는 정답이다. JavaScript·Native 키도 공개용이지만 LABELING.md 기준으로 정답(ACCESS_KEY)이다." }

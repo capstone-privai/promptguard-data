@@ -1,7 +1,7 @@
 # secret-sources: 코딩 에이전트 시크릿 출처 마스터 카탈로그
 
 코딩 에이전트가 주고받는 텍스트에서 비밀값을 '문맥'으로 찾아 가리도록 SLM을 학습시키기 위한
-**출처 카탈로그**(`coding_agent_secret_sources_master_v3.csv`, 613행 × 15열)를 결정적으로 생성한다.
+**출처 카탈로그**(`coding_agent_secret_sources_master_v3.csv`, 566행 × 15열)를 결정적으로 생성한다.
 한 행은 하나의 고유 시크릿 유형 또는 하나의 고유 코딩/에이전트 맥락이다.
 
 CSV 자체는 git에 올리지 않는다(`.gitignore`). 예시 열의 비밀값이 실제 포맷(접두사·길이·체크섬)을 따르는
@@ -59,4 +59,4 @@ python3 index_disc.py  <신규_출처_레포_루트> rules_disc.json  # 신규 9
 # 커밋용 경량본: examples/negatives 필드를 비워 rules_slim.json / rules_disc_slim.json 생성
 ```
 
-인덱스가 없으면 `build_v3.py`는 auto 확장(약 156행)을 건너뛰고 457행을 만든다(최소치 400 충족).
+인덱스가 없으면 `build_v3.py`는 auto 확장(약 109행)을 건너뛰고 457행을 만든다(최소치 400 충족).
