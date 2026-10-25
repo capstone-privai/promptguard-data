@@ -6,6 +6,7 @@ Run from the repository root:
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -158,8 +159,20 @@ class ExportTest(unittest.TestCase):
 
     def test_warns_about_training_groups_left_in_data_test(self):
         report = self.export(self.build("clean", CLEAN, out=self.eval_out))
-        self.assertEqual(len(report["warnings"]), 1)
+        # the build holds its test and test_ood sessions too
+        self.assertEqual(len(report["warnings"]), 2)
         self.assertIn("sessions_ml_clean.jsonl holds 3 training-side group(s)", report["warnings"][0])
+        self.assertIn("sessions_ml_clean.jsonl holds 2 session(s) of the evaluation files", report["warnings"][1])
+
+    def test_warns_about_evaluation_sessions_kept_twice_in_data_test(self):
+        clean = self.build("clean", CLEAN)
+        self.export(clean)
+        # what the full privesc conversion is to the privesc test_ood: the same sessions under the same ids
+        first = self.eval_out / "data_test" / "sessions_mleval_clean_test.jsonl"
+        shutil.copy(first, self.eval_out / "data_test" / "sessions_from_full.jsonl")
+        report = self.export(clean)
+        self.assertEqual(len(report["warnings"]), 1)
+        self.assertIn("sessions_from_full.jsonl holds 1 session(s) of the evaluation files", report["warnings"][0])
 
     # ---- checks that stop the export
 
@@ -258,6 +271,7 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(report["sessions"], {"train": 3, "val": 0, "near/test": 1, "rec/test_ood": 1})
         moved = next(s for s in V.read_jsonl(self.handoff / "sessions_train.jsonl", []) if s["session_id"] == "n0002")
         self.assertEqual((moved["meta"]["split"], moved["meta"]["split_moved_from"]), ("train", "test"))
+        self.assertEqual(moved["meta"]["allowed_use"], ["ml_train"])
         pairs = json.loads((self.handoff / "manifest.json").read_text())["near_duplicates"]["pairs"]
         rules = {(p["group"], p["partner"]): p["rule"] for p in pairs}
         self.assertEqual(rules[("n0002", "n0001")], "moved_to_train")

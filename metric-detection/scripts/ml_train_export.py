@@ -30,7 +30,8 @@ Writes, replacing what an earlier run wrote:
       data_test/sessions_mleval_<NAME>_<split>.jsonl, data_answer/gold_mleval_<NAME>_<split>.jsonl,
       labels_mleval_<NAME>_<split>.jsonl; manifest_mleval.json
 The same inputs give the same bytes. Needs datasketch (pip install datasketch==2.0.0).
-Afterwards it warns about any other data_test/ file that holds a training-side group: it would be scored.
+Afterwards it warns about any other data_test/ file that holds a training-side group (it would be scored) or a
+session of the evaluation files (the full privesc conversion holds the same test_ood runs under the same ids).
 """
 from __future__ import annotations
 
@@ -401,17 +402,22 @@ def old_eval_outputs(out: Path) -> list[Path]:
                    *out.glob(f"labels_{EVAL_PREFIX}_*.jsonl"), *out.glob(f"manifest_{EVAL_PREFIX}.json")])
 
 
-def stray_training_groups(out: Path, written: set[Path], train_groups: set[str]) -> list[str]:
-    """data_test/ files besides this run's that hold a training-side group: an evaluation would score them."""
+def stray_in_data_test(out: Path, written: set[Path], train_groups: set[str], eval_ids: set[str]) -> list[str]:
+    """data_test/ files besides this run's that hold a training-side group, which an evaluation would score, or a
+    session of the evaluation files, which a total over datasets would count twice."""
     warnings = []
     for path in sorted((out / "data_test").glob("sessions*.jsonl")):
         if path.resolve() in written:
             continue
         with path.open(encoding="utf-8") as f:
-            groups = {json.loads(line).get("meta", {}).get("group_id") for line in f if line.strip()}
+            sessions = [json.loads(line) for line in f if line.strip()]
+        groups = {s.get("meta", {}).get("group_id") for s in sessions}
         if hit := sorted(g for g in groups & train_groups if g):
             warnings.append(f"{rel(path)} holds {len(hit)} training-side group(s) ({', '.join(hit[:3])}); "
                             "move it out of data_test/ so no evaluation scores it")
+        if hit := sorted({s.get("session_id") for s in sessions} & eval_ids):
+            warnings.append(f"{rel(path)} holds {len(hit)} session(s) of the evaluation files under the same ids "
+                            f"({', '.join(hit[:3])}); keep one of the two in data_test/")
     return warnings
 
 
@@ -461,7 +467,8 @@ def export(inputs: list[Path], handoff: Path, eval_out: Path) -> dict:
                 continue
             split = split_of_session[sid]
             if split != s["meta"]["split"]:
-                s = {**s, "meta": {**s["meta"], "split": split, "split_moved_from": s["meta"]["split"]}}
+                s = {**s, "meta": {**s["meta"], "split": split, "split_moved_from": s["meta"]["split"],
+                                   "allowed_use": allowed_use(s["meta"]["origin"], split)}}
             target = handoff_rows[split] if split in TRAIN_SIDE else eval_rows.setdefault((b.name, split), ([], [], []))
             target[0].append(s)
             target[1].extend(gold_of[sid])
@@ -516,7 +523,8 @@ def export(inputs: list[Path], handoff: Path, eval_out: Path) -> dict:
                          **{f"{n}/{s}": len(r[0]) for (n, s), r in sorted(eval_rows.items())}},
             "near_duplicates": dict(Counter(row["rule"] for row in near)),
             "recorded_values_on_both_sides": len(shared_values),
-            "warnings": stray_training_groups(eval_out, written, set(train_groups))}
+            "warnings": stray_in_data_test(eval_out, written, set(train_groups),
+                                           {s["session_id"] for rows in eval_rows.values() for s in rows[0]})}
 
 
 HANDOFF_README = """\
@@ -595,6 +603,9 @@ labels는 정답이 아닌 구간이다. 대부분 일부러 넣은 어려운 �
 | `setting`, `auth_setting` | 자격증명 단어가 든 설정값 | `max_tokens = 4096`, `password_min_length = 12` |
 | `public_key`, `public_key_raw`, `pem_header`, `wallet_address` | 공개키, 인증서, 본문 없는 PEM 머리글, 지갑 주소 | `ssh-ed25519 AAAA…` |
 | `mask` | tool_input에서 에이전트가 쓴 PromptGuard 표시 | `[PASSWORD_1]` |
+
+privesc의 labels는 거의 다 `identifier`(`ls -l` 소유자 칸의 `root` 같은 것)와 `not_propagated`, `mask`다. 음성 kind별
+비율이나 가중치는 출처를 섞지 말고 manifest의 `counts_by_input`으로 출처마다 본다.
 
 labels에 없는 구간이 모두 평범한 텍스트라는 뜻은 아니다. 정답이 아닌 것은 gold에 없는 모든 구간이고, labels는 그중
 이름을 붙여 둔 것이다.
