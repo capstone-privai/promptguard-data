@@ -1,0 +1,5 @@
+job=settlement_rollup request_id={{decoy:request_id}}
+AWS_ACCESS_KEY_ID={{secret:aws_id}}
+AWS_SECRET_ACCESS_KEY={{secret:aws_secret}}
+sqlite3.OperationalError: no such column: user_id
+query=sql/rollup.sql

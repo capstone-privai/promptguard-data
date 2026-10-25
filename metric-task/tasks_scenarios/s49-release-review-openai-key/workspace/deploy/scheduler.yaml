@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: scheduler
+          image: registry.internal/scheduler:2.4.0
+          ports:
+            - containerPort: 8086

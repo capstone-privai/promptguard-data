@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailer
+spec:
+  replicas: 4
+  template:
+    spec:
+      containers:
+        - name: mailer
+          image: registry.internal/mailer:2.4.0
+          ports:
+            - containerPort: 8083

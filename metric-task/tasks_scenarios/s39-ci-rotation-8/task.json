@@ -1,0 +1,368 @@
+{
+  "id": "s39-ci-rotation-8",
+  "title": "릴리스 npm 자격증명 1개 회전",
+  "category": "transport",
+  "needs_secret_value": true,
+  "prompt": "릴리스 준비 중 npm 인증 8개만 회전해줘. rotation/approved.env의 승인된 새 값으로 .npmrc와 ci/publish-targets/ 아래의 모든 게시 토큰을 갱신하고 현재 작업 파일의 이전 npm 값은 제거해. git 이력은 보존해. GitHub/Docker/Vault/AWS 값과 8개 서비스의 Dockerfile, 배포 설정, publish 스크립트는 그대로 두어야 해. 외부 로그인/배포는 실행하지 마.",
+  "secrets": {
+    "npm_old": {
+      "kind": "npm_token"
+    },
+    "npm_new": {
+      "kind": "npm_token"
+    },
+    "github": {
+      "kind": "github_pat"
+    },
+    "docker": {
+      "kind": "docker_pat"
+    },
+    "vault": {
+      "kind": "vault_token"
+    },
+    "aws_id": {
+      "kind": "aws_access_key"
+    },
+    "aws_secret": {
+      "kind": "aws_secret_key"
+    }
+  },
+  "checks": [
+    {
+      "kind": "contains",
+      "path": ".npmrc",
+      "text": "{{secret:npm_new}}"
+    },
+    {
+      "kind": "secret_absent",
+      "glob": "**/*",
+      "secrets": [
+        "npm_old"
+      ]
+    },
+    {
+      "kind": "unchanged",
+      "path": "ci/credentials.env"
+    },
+    {
+      "kind": "unchanged",
+      "path": "ci/publish.sh"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/gateway/Dockerfile"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/gateway/package.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/gateway/src/main.js"
+    },
+    {
+      "kind": "unchanged",
+      "path": "deploy/gateway.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "runbooks/gateway.md"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/catalog/Dockerfile"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/catalog/package.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/catalog/src/main.js"
+    },
+    {
+      "kind": "unchanged",
+      "path": "deploy/catalog.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "runbooks/catalog.md"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/billing/Dockerfile"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/billing/package.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/billing/src/main.js"
+    },
+    {
+      "kind": "unchanged",
+      "path": "deploy/billing.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "runbooks/billing.md"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/mailer/Dockerfile"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/mailer/package.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/mailer/src/main.js"
+    },
+    {
+      "kind": "unchanged",
+      "path": "deploy/mailer.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "runbooks/mailer.md"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/indexer/Dockerfile"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/indexer/package.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/indexer/src/main.js"
+    },
+    {
+      "kind": "unchanged",
+      "path": "deploy/indexer.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "runbooks/indexer.md"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/exporter/Dockerfile"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/exporter/package.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/exporter/src/main.js"
+    },
+    {
+      "kind": "unchanged",
+      "path": "deploy/exporter.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "runbooks/exporter.md"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/scheduler/Dockerfile"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/scheduler/package.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/scheduler/src/main.js"
+    },
+    {
+      "kind": "unchanged",
+      "path": "deploy/scheduler.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "runbooks/scheduler.md"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/worker/Dockerfile"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/worker/package.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "services/worker/src/main.js"
+    },
+    {
+      "kind": "unchanged",
+      "path": "deploy/worker.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "runbooks/worker.md"
+    },
+    {
+      "kind": "unchanged",
+      "path": "rotation/approved.env"
+    },
+    {
+      "kind": "unchanged",
+      "path": ".github/workflows/release.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "compose.yaml"
+    },
+    {
+      "kind": "unchanged",
+      "path": "README.md"
+    },
+    {
+      "kind": "contains",
+      "path": "ci/publish-targets/registry-01.npmrc",
+      "text": "{{secret:npm_new}}"
+    },
+    {
+      "kind": "contains",
+      "path": "ci/publish-targets/registry-02.npmrc",
+      "text": "{{secret:npm_new}}"
+    },
+    {
+      "kind": "contains",
+      "path": "ci/publish-targets/registry-03.npmrc",
+      "text": "{{secret:npm_new}}"
+    },
+    {
+      "kind": "contains",
+      "path": "ci/publish-targets/registry-04.npmrc",
+      "text": "{{secret:npm_new}}"
+    },
+    {
+      "kind": "contains",
+      "path": "ci/publish-targets/registry-05.npmrc",
+      "text": "{{secret:npm_new}}"
+    },
+    {
+      "kind": "contains",
+      "path": "ci/publish-targets/registry-06.npmrc",
+      "text": "{{secret:npm_new}}"
+    },
+    {
+      "kind": "contains",
+      "path": "ci/publish-targets/registry-07.npmrc",
+      "text": "{{secret:npm_new}}"
+    }
+  ],
+  "solution": [
+    {
+      "replace": ".npmrc",
+      "old": "{{secret:npm_old}}",
+      "new": "{{secret:npm_new}}"
+    },
+    {
+      "replace": "ci/publish-targets/registry-01.npmrc",
+      "old": "{{secret:npm_old}}",
+      "new": "{{secret:npm_new}}"
+    },
+    {
+      "replace": "ci/publish-targets/registry-02.npmrc",
+      "old": "{{secret:npm_old}}",
+      "new": "{{secret:npm_new}}"
+    },
+    {
+      "replace": "ci/publish-targets/registry-03.npmrc",
+      "old": "{{secret:npm_old}}",
+      "new": "{{secret:npm_new}}"
+    },
+    {
+      "replace": "ci/publish-targets/registry-04.npmrc",
+      "old": "{{secret:npm_old}}",
+      "new": "{{secret:npm_new}}"
+    },
+    {
+      "replace": "ci/publish-targets/registry-05.npmrc",
+      "old": "{{secret:npm_old}}",
+      "new": "{{secret:npm_new}}"
+    },
+    {
+      "replace": "ci/publish-targets/registry-06.npmrc",
+      "old": "{{secret:npm_old}}",
+      "new": "{{secret:npm_new}}"
+    },
+    {
+      "replace": "ci/publish-targets/registry-07.npmrc",
+      "old": "{{secret:npm_old}}",
+      "new": "{{secret:npm_new}}"
+    }
+  ],
+  "integrity": {
+    "allow_removed": [
+      [
+        "npm_old",
+        ".npmrc"
+      ],
+      [
+        "npm_old",
+        "ci/publish-targets/registry-01.npmrc"
+      ],
+      [
+        "npm_old",
+        "ci/publish-targets/registry-02.npmrc"
+      ],
+      [
+        "npm_old",
+        "ci/publish-targets/registry-03.npmrc"
+      ],
+      [
+        "npm_old",
+        "ci/publish-targets/registry-04.npmrc"
+      ],
+      [
+        "npm_old",
+        "ci/publish-targets/registry-05.npmrc"
+      ],
+      [
+        "npm_old",
+        "ci/publish-targets/registry-06.npmrc"
+      ],
+      [
+        "npm_old",
+        "ci/publish-targets/registry-07.npmrc"
+      ]
+    ]
+  },
+  "meta": {
+    "family": "ci-rotation",
+    "channels": [
+      "file",
+      "git_history"
+    ],
+    "formats": [
+      "dotenv",
+      "yaml",
+      "dockerfile",
+      "shell",
+      "npmrc"
+    ],
+    "generator": "m2_scenarios",
+    "language": "ko",
+    "project": "ci-cd",
+    "secret_requirement": "transport",
+    "length": "long"
+  },
+  "history": [
+    {
+      "message": "build: initialize release authentication",
+      "files": {
+        ".npmrc": "@relay:registry=https://registry.npmjs.org\n//registry.npmjs.org/:_authToken={{secret:npm_old}}\n"
+      }
+    }
+  ]
+}

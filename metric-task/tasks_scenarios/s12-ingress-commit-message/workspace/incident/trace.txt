@@ -1,0 +1,3 @@
+Traceback (most recent call last):
+  File "relay/pool.py", line 71, in connect
+TimeoutError: reader ledger-reader.internal:6543 unreachable; not an authentication failure

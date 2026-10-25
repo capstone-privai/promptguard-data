@@ -1,0 +1,1 @@
+{"type":"service_account","project_id":"relay-storage","client_email":"relay@relay-storage.iam.gserviceaccount.com","private_key":"{{secret:gcp_pem_escaped}}"}

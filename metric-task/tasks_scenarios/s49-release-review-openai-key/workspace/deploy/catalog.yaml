@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+spec:
+  replicas: 4
+  template:
+    spec:
+      containers:
+        - name: catalog
+          image: registry.internal/catalog:2.4.0
+          ports:
+            - containerPort: 8081

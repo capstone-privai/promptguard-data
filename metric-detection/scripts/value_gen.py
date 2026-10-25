@@ -487,3 +487,32 @@ NEGATIVE_KINDS = {
     "public_key": (neg_public_key, None),
     "pem_header": (neg_pem_header, None),
 }
+
+
+# ---- masks ({{mask:NAME}}) ---------------------------------------------------------
+
+# The placeholder kind PromptGuard's Native Mod writes for a value, [KIND_n] (promptguard-claude-demoV0
+# src/native-mod/hooks/register.mjs, kinds from src/detector/pgdetector/core.py CANONICAL_TYPES). Which kind the
+# detector really reports depends on the adapter that found the value; this is the one its type_for() gives the format.
+MASK_KIND_PREFIXES = [
+    (("aws_",), "AWS_KEY"),
+    (("github",), "GITHUB_TOKEN"),
+    (("slack",), "SLACK_TOKEN"),
+    (("jwt",), "JWT"),
+    (("password", "passphrase", "db_uri"), "PASSWORD"),
+    (("private_key", "rsa_private", "ec_private", "openssh_private"), "PRIVATE_KEY"),
+    (("api_key", "openai", "anthropic", "gcp_api", "sendgrid", "postman", "datadog", "twilio", "stripe", "mapbox",
+      "publishable"), "API_KEY"),
+    (("token", "generic_token", "gitlab", "npm", "pypi", "dockerhub", "huggingface", "shopify", "digitalocean", "cloudflare"), "TOKEN"),
+    (("secret", "hex_secret", "uuid_key", "discord", "azure", "generic_secret"), "SECRET"),
+]
+# {{TYPE=literal}}: gold type -> mask kind
+MASK_KIND_OF_TYPE = {"PASSWORD": "PASSWORD", "TOKEN": "TOKEN", "SECRET": "SECRET", "ACCESS_KEY": "API_KEY",
+                     "PRIVATE_KEY": "PRIVATE_KEY"}
+
+
+def mask_kind(kind: str) -> str:
+    for prefixes, mask in MASK_KIND_PREFIXES:
+        if kind.startswith(prefixes):
+            return mask
+    return "CREDENTIAL"

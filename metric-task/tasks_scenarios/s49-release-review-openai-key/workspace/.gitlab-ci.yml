@@ -1,0 +1,5 @@
+stages: [verify, publish]
+publish:
+  script: ./ci/publish.sh
+  variables:
+    GITLAB_TOKEN: "{{secret:gitlab}}"

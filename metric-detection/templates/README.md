@@ -87,6 +87,7 @@ python metric-detection/scripts/ml_train_build.py report metric-detection/data_t
 |---|---|
 | kind | [value_gen.py](../scripts/value_gen.py)의 `SECRET_KINDS`: `password_mix`, `password_random`, `password_human`, `password_weak`, `passphrase`, `generic_secret`, `generic_token`, `jwt_any`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `gcp_api_key`, `azure_storage_key`, `digitalocean_token`, `cloudflare_token`, `github_classic`, `github_oauth`, `github_app`, `github_fine_grained`, `gitlab_pat`, `npm_token`, `pypi_token`, `dockerhub_pat`, `huggingface_token`, `slack_bot`, `slack_user`, `slack_webhook`, `discord_webhook`, `sendgrid_key`, `twilio_auth_token`, `twilio_api_key`, `stripe_secret`, `stripe_publishable`, `openai_key`, `anthropic_key`, `datadog_api_key`, `shopify_token`, `postman_key`, `mapbox_public`, `private_key_any`, `rsa_private_key`, `ec_private_key`, `openssh_private_key` |
 | `{{neg:KIND}}` | 정답이 아닌 값. 나올 때마다 새 값이고 labels 파일에 위치와 KIND를 남긴다. KIND: `redaction`, `template`, `reference`, `code`, `doc_example`, `descriptor`, `empty`, `hash`, `identifier`, `non_credential`, `setting`, `public_key`, `pem_header` |
+| `{{mask:NAME}}` | tool_input에만 쓴다. 앞에서 나온 비밀 NAME(`{{password:s1}}`의 `s1`, `{{PASSWORD=postgres}}`의 `postgres`)을 PromptGuard Mod가 에이전트에게 보여 주는 모양 `[KIND_n]`으로 바꾼다. KIND는 탐지기 type(`value_gen.mask_kind`), n은 type별로 세션에서 처음 나온 순서다. labels 파일에 `mask`로 남고 정답이 아니다. 학습 데이터의 tool_input에는 비밀값이 들어가지 않는다 |
 | `\|wrap=N` | N자마다 줄바꿈을 넣는다(터미널 폭). 줄바꿈을 포함한 span 하나가 정답이다 |
 | `\|truncate=N` | 개인키 블록을 BEGIN 줄과 본문 N줄만 남기고 자른다(N ≥ 1) |
 | `meta.split` (필수) | `train`, `val`, `test`, `test_ood`. 값 시드에 들어가므로 split마다 값이 다르다. 같은 `group_id`는 한 split에만 둔다 |
@@ -101,6 +102,7 @@ python metric-detection/scripts/ml_train_build.py report metric-detection/data_t
 - `verify`가 보는 것은 다섯 가지다.
   - `dataset_verify.py`의 스키마와 LABELING.md 검사
   - 정답 자리 검사: 식별자 자리의 정답, 자격증명 자리 밖의 흔한 정답이 없어야 한다. 걸리면 템플릿을 고친다.
+  - tool_input에 정답이 없고, mask는 tool_input 안의 `[KIND_n]`인지
   - `neg:` 값이 label_rules에서도 정답이 아닌 kind로 읽히는지
   - split 누수: group이 한 split에만 있고, 고유한 정답 값이 두 split에 함께 나오지 않는지
   - sessions, gold, labels 세 파일의 재생성 바이트 일치

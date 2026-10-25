@@ -44,7 +44,8 @@ from urllib.parse import quote
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TASKS_DIR = REPO_ROOT / "metric-task" / "tasks"
 GEN_TASKS_DIR = REPO_ROOT / "metric-task" / "tasks_gen"
-TASK_DIRS = (TASKS_DIR, GEN_TASKS_DIR)
+SCENARIO_TASKS_DIR = REPO_ROOT / "metric-task" / "tasks_scenarios"
+TASK_DIRS = (TASKS_DIR, GEN_TASKS_DIR, SCENARIO_TASKS_DIR)
 
 
 def load_module(path: Path, name: str):
@@ -144,7 +145,7 @@ class Task:
 
     @property
     def suite(self) -> str:
-        return "gen" if self.dir.parent == GEN_TASKS_DIR else "core"
+        return "scenarios" if self.dir.parent == SCENARIO_TASKS_DIR else "gen" if self.dir.parent == GEN_TASKS_DIR else "core"
 
     @property
     def fingerprint(self) -> str:
@@ -197,6 +198,8 @@ def task_matches(task: Task, selector: str) -> bool:
     field_name, sep, wanted = selector.partition(":")
     if not sep:
         return False
+    if field_name in {"language", "project", "secret_requirement", "length"}:
+        return task.meta.get(field_name) == wanted
     if field_name == "category":
         return task.category == wanted
     if field_name == "family":
@@ -207,7 +210,7 @@ def task_matches(task: Task, selector: str) -> bool:
         return wanted in task.meta.get("formats", [])
     if field_name == "kind":
         return wanted in {s.get("kind") for s in task.spec.get("secrets", {}).values()}
-    raise SystemExit(f"unknown selector field {field_name!r} (category, family, channel, format, kind)")
+    raise SystemExit(f"unknown selector field {field_name!r} (category, family, channel, format, kind, language, project, secret_requirement, length)")
 
 
 def load_tasks(selectors: list[str] | None = None) -> list[Task]:
@@ -274,8 +277,13 @@ def build(task: Task, dest: Path) -> dict[str, str]:
         rel = path.relative_to(src).as_posix()
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        if is_text(path):
-            text = task.fill(path.read_text(encoding="utf-8"))
+        try:
+            source_text = path.read_bytes().decode("utf-8") if task.suite == "scenarios" else None
+        except UnicodeDecodeError:
+            source_text = None
+        text_file = source_text is not None if task.suite == "scenarios" else is_text(path)
+        if text_file:
+            text = task.fill(source_text if source_text is not None else path.read_text(encoding="utf-8"))
             if SECRET_REF.search(text) or "{{secret:" in text or "{{decoy:" in text:
                 raise ValueError(f"{task.id}/{rel}: unresolved secret reference")
             write_text_file(target, text)
@@ -328,6 +336,8 @@ def gen_keyed_payload(dest: Path, gen: dict, built: dict[str, str], task: "Task"
     if gen.get("secret2"):
         secret += ":" + task.secrets[gen["secret2"]].value
     raw = gen["inline"] if "inline" in gen else json.loads((task.dir / gen["data"]).read_text(encoding="utf-8"))
+    if task.suite == "scenarios":
+        raw = json.loads(task.fill(json.dumps(raw, ensure_ascii=False)))
     data = json.dumps(raw, separators=(",", ":"), ensure_ascii=False)
     key = hashlib.sha256(("m2-payload:" + secret).encode()).digest()
     payload = base64.b64encode(keystream_xor(key, data.encode())).decode()
@@ -694,7 +704,7 @@ def integrity(task: Task, ws: Path, built: dict[str, str]) -> tuple[bool, str]:
                 problems.append(f"{name} lost from {rel}")
     for file in sorted(p for p in ws.rglob("*") if p.is_file() and ".git" not in p.relative_to(ws).parts):
         rel = file.relative_to(ws).as_posix()
-        if not is_text(file):
+        if not is_text(file) and task.suite != "scenarios":
             continue
         text = file.read_text(encoding="utf-8", errors="replace")
         before = set(PLACEHOLDER.findall(built.get(rel, "")))
@@ -748,10 +758,20 @@ def lint_task(task: Task, built: dict[str, str]) -> list[str]:
     problems = [f"missing {k}" for k in REQUIRED_FIELDS if k not in spec]
     if problems:
         return problems
-    if task.suite == "gen":
+    if task.suite in ("gen", "scenarios"):
         problems += [f"missing meta.{k}" for k in ("family", "channels", "formats") if not task.meta.get(k)]
     problems += [f"secret {s.name} has {len(s.value)} characters (< {MIN_SECRET_LENGTH}): gold and the leak scan "
                  f"skip it" for s in task.secrets.values() if len(s.value) < MIN_SECRET_LENGTH]
+    if task.suite == "scenarios":
+        problems += [f"missing meta.{k}" for k in ("generator", "language", "project", "secret_requirement", "length")
+                     if not task.meta.get(k)]
+        requirement = task.meta.get("secret_requirement")
+        if requirement not in {"none", "property", "use", "transport", "identity"}:
+            problems.append("invalid secret_requirement")
+        if spec["needs_secret_value"] != (requirement in {"property", "use", "transport"}):
+            problems.append("needs_secret_value disagrees with secret_requirement")
+        if "integrity" not in spec:
+            problems.append("missing explicit integrity policy")
     values = [s.value for s in task.secrets.values()]
 
     def has(texts) -> bool:
@@ -821,4 +841,7 @@ def corrupt_with_placeholder(task: Task, ws: Path, built: dict[str, str]) -> boo
             if s.value in text:
                 write_text_file(file, text.replace(s.value, "[PASSWORD_1]"))
                 return True
+    if task.suite == "scenarios":
+        write_text_file(ws / "placeholder-corruption.txt", "[PASSWORD_1]\n")
+        return True
     return False

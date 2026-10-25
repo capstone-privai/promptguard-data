@@ -13,7 +13,7 @@ none, gold and promptguard all run the unchanged mod and MCP bridge from promptg
 detector process behind the bridge differs (scripts/detector_worker.py for none and gold, the demo's
 src/detector/worker.py for promptguard). So the conditions differ in what gets masked and nothing else.
 
-Tasks are picked with --tasks: ids, short ids (t01, g0042), suites (core, gen) or field:value selectors
+Tasks are picked with --tasks: ids, short ids (t01, g0042), suites (core, gen, scenarios) or field:value selectors
 (category:use, family:cfgdiag, channel:prompt, format:yaml, kind:github_pat).
 
 Commands, from the repository root:
@@ -314,7 +314,10 @@ def run_one(task: mt.Task, condition: str, rep: int, run_dir: Path, pg_root: Pat
     session_id = str(uuid.uuid4())
     result = {"task": task.id, "suite": task.suite, "category": task.category,
               "needs_secret_value": task.spec["needs_secret_value"], "family": task.meta.get("family"),
-              "channels": task.meta.get("channels", ["file"]), "secrets_fingerprint": task.fingerprint,
+              "channels": task.meta.get("channels", ["file"]), "meta": task.meta,
+              "formats": task.meta.get("formats", []), "language": task.meta.get("language"),
+              "project": task.meta.get("project"), "secret_requirement": task.meta.get("secret_requirement"),
+              "length": task.meta.get("length"), "secrets_fingerprint": task.fingerprint,
               "condition": condition, "rep": rep, "model": model, "session_id": session_id,
               "started_at": datetime.now().isoformat(timespec="seconds"), "error": None, "capture": capture,
               "detector_capture": record_detector and condition != "plain"}
@@ -438,11 +441,14 @@ def cmd_selftest(args):
             built = mt.build(task, ws)
             untouched = mt.check_task(task, ws, built)["success"]
             lint = mt.lint_task(task, built)
+            if task.suite == "scenarios":
+                import m2_declarations
+                lint += m2_declarations.audit_task(task, ws)
             mt.apply_solution(task, ws)
             solved = mt.check_task(task, ws, built)
             corrupted = mt.corrupt_with_placeholder(task, ws, built)
             broken = mt.check_task(task, ws, built)["success"] if corrupted else False
-            ok = not untouched and solved["success"] and not broken and not lint
+            ok = not untouched and solved["success"] and not broken and not lint and (corrupted or task.suite != "scenarios")
             problems += not ok
             print(f"{'ok ' if ok else 'BAD'} {task.id:30s} untouched={untouched!s:5} solved={solved['success']!s:5} "
                   f"placeholder_written={'n/a' if not corrupted else broken}")
@@ -621,7 +627,7 @@ def rate(n: int, d: int) -> str:
 CATEGORY_KO = {
     "diagnose": "진단 (비밀과 무관)", "edit": "비밀이 든 파일 수정", "identity": "같은 비밀인지 비교",
     "overmask": "비밀 아닌 값 필요", "property": "비밀 값의 속성 필요", "use": "비밀을 명령에 사용",
-    "transport": "비밀 옮기기", "sanitize": "비밀을 뺀 사본 만들기",
+    "transport": "비밀 옮기기", "sanitize": "비밀을 뺀 사본 만들기", "review": "변경 보안 검토",
 }
 # How a task puts its secrets into the session (task.json meta.channels). "file" is a workspace file the agent
 # reads with a tool.
@@ -685,6 +691,15 @@ def write_report(rows: list[dict], out: Path):
           lambda k: "필요 (property, use, transport)" if k else "불필요 (그 밖)")
     cats = [c for c in CATEGORY_KO if any(r["category"] == c for r in rows)]
     table("과제 유형별", cats, lambda r, k: r["category"] == k, lambda k: f"{k}: {CATEGORY_KO[k]}")
+    for field, title in (("language", "프롬프트 언어"),
+                         ("project", "프로젝트"), ("secret_requirement", "비밀 요구"), ("length", "과제 길이")):
+        keys = sorted({r.get(field) for r in rows if r.get(field)})
+        if keys:
+            table(title, keys, lambda r, k, field=field: r.get(field) == k)
+    formats = sorted({fmt for r in rows for fmt in r.get("formats", [])})
+    if formats:
+        table("과제 형식별", formats, lambda r, k: k in r.get("formats", []),
+              note="한 과제가 여러 형식을 사용하면 각 행에 들어간다.")
     channels = [c for c in CHANNEL_KO if any(c in (r.get("channels") or ["file"]) for r in rows)]
     table("노출 경로별", channels, lambda r, k: k in (r.get("channels") or ["file"]),
           lambda k: f"{k}: {CHANNEL_KO[k]}",
@@ -782,7 +797,7 @@ def write_report(rows: list[dict], out: Path):
         lines.append("")
     (out / "summary.md").write_text("\n".join(lines), encoding="utf-8")
 
-    fields = ["task", "suite", "family", "category", "channels", "needs_secret_value", "condition", "rep", "valid",
+    fields = ["task", "suite", "family", "category", "channels", "language", "project", "secret_requirement", "length", "formats", "needs_secret_value", "condition", "rep", "valid",
               "success", "task_ok", "integrity_ok", "secrets_seen", "secrets_written", "tool_inputs_with_placeholder",
               "server_leaked", "server_secrets_total", "server_channels", "server_tools", "server_encoded_only",
               "server_partial_only", "server_requests", "masked_findings", "mod_failures", "num_turns", "cost_usd",
@@ -795,6 +810,9 @@ def write_report(rows: list[dict], out: Path):
             server = r.get("server") or {}
             w.writerow({"task": r["task"], "suite": r.get("suite", "core"), "family": r.get("family"),
                         "category": r["category"], "channels": ",".join(r.get("channels") or ["file"]),
+                        "language": r.get("language"), "project": r.get("project"),
+                        "secret_requirement": r.get("secret_requirement"), "length": r.get("length"),
+                        "formats": ",".join(r.get("formats") or []),
                         "needs_secret_value": r["needs_secret_value"],
                         "condition": r["condition"], "rep": r["rep"], "valid": r.get("valid"), "success": r["success"],
                         "task_ok": r["task_ok"], "integrity_ok": r["integrity_ok"],

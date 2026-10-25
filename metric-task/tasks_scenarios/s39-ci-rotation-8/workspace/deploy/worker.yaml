@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 6
+  template:
+    spec:
+      containers:
+        - name: worker
+          image: registry.internal/worker:2.4.0
+          ports:
+            - containerPort: 8087

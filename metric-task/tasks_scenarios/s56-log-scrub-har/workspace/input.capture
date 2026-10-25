@@ -1,0 +1,1 @@
+{"log": {"entries": [{"request": {"url": "https://notify.internal/send", "headers": [{"name": "Authorization", "value": "Bearer {{secret:datadog}}"}], "postData": {"text": "{\"request_id\": \"{{decoy:request_id}}\", \"datadog_api_key\": \"{{secret:datadog}}\", \"twilio_auth_token\": \"{{secret:twilio}}\", \"signing_secret\": \"{{secret:signing}}\", \"status\": 429}"}}}]}}

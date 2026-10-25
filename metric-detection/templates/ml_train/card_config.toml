@@ -1,0 +1,214 @@
+# Target distributions for the ML training cards (docs/README_ml-train-plan.md 3절).
+# ml_train_cards.py draws one card per LLM template from these weights with a fixed seed.
+# Weights are relative; they need not sum to 1.
+
+version = "cards-v0.1"
+seed = "ml-train-cards"
+
+[split]
+# share of the in-distribution templates per split (5절); test_ood is drawn separately below
+train = 80
+val = 10
+test = 10
+
+[templates]
+in_distribution = 2240
+test_ood = 250
+variants = 3            # sessions built per in-distribution template (value seeds)
+variants_ood = 2
+model = "claude-opus-5-5"
+model_ood = "claude-sonnet-5-5"   # a different writer, to see whether the model learned the writer's style
+
+# Session context x primary secret type, in sessions (3.2절). "none" is a session without secrets.
+[contexts.config]
+label = "설정 파일"
+formats = [".env", "docker-compose.yml", "Kubernetes manifest", "application.yml (Spring)", "settings.py (Django)",
+           "config.json", "config.toml", "INI file", "Java .properties", "terraform.tfvars", "Helm values.yaml",
+           ".npmrc / .pypirc", "nginx.conf", "GitHub Actions workflow", "appsettings.json (.NET)"]
+weights = { PASSWORD = 340, SECRET = 300, TOKEN = 160, ACCESS_KEY = 90, PRIVATE_KEY = 50, none = 360 }
+
+[contexts.command_output]
+label = "명령 출력"
+formats = ["env / printenv", "ps aux", "docker inspect", "kubectl get secret -o yaml", "kubectl describe",
+           "git config --list", "aws configure list / aws sts", "gcloud config list", "heroku config", "systemctl status",
+           "mysql/psql client session", "redis-cli", "ssh -v"]
+weights = { PASSWORD = 260, SECRET = 170, TOKEN = 170, ACCESS_KEY = 80, PRIVATE_KEY = 40, none = 280 }
+
+[contexts.log]
+label = "로그"
+formats = ["application log (plain)", "JSON log lines", "nginx/apache access log", "CI job log (GitHub Actions)",
+           "CI job log (GitLab CI)", "journald", "docker compose logs", "Kubernetes pod logs"]
+weights = { PASSWORD = 230, SECRET = 120, TOKEN = 170, ACCESS_KEY = 30, PRIVATE_KEY = 0, none = 250 }
+
+[contexts.stacktrace]
+label = "스택트레이스·오류 출력"
+formats = ["Python traceback", "Node.js stack trace", "Java exception", "Go panic", "Rust panic", "pytest failure output",
+           "jest failure output"]
+weights = { PASSWORD = 160, SECRET = 60, TOKEN = 60, ACCESS_KEY = 20, PRIVATE_KEY = 0, none = 200 }
+
+[contexts.diff]
+label = "diff·git 이력"
+formats = ["git diff", "git log -p", "git show", "git stash show -p", "PR review diff"]
+weights = { PASSWORD = 120, SECRET = 120, TOKEN = 80, ACCESS_KEY = 60, PRIVATE_KEY = 40, none = 180 }
+
+[contexts.http]
+label = "HTTP"
+formats = ["curl -v", "httpie output", "raw HTTP request/response", "HAR excerpt", "browser devtools copy as cURL",
+           "API client debug log"]
+weights = { PASSWORD = 60, SECRET = 60, TOKEN = 280, ACCESS_KEY = 20, PRIVATE_KEY = 0, none = 180 }
+
+[contexts.code]
+label = "소스 코드"
+formats = ["Python", "TypeScript", "JavaScript", "Go", "Java", "Kotlin", "Ruby", "PHP", "Rust", "C#", "shell script",
+           "SQL", "Jupyter notebook cell source", "Dockerfile", "Makefile"]
+weights = { PASSWORD = 220, SECRET = 220, TOKEN = 150, ACCESS_KEY = 60, PRIVATE_KEY = 50, none = 400 }
+
+[contexts.natural_language]
+label = "자연어"
+formats = ["user request in chat", "GitHub issue", "Slack-style chat paste", "commit message", "PR description",
+           "email paste"]
+weights = { PASSWORD = 330, SECRET = 100, TOKEN = 120, ACCESS_KEY = 30, PRIVATE_KEY = 20, none = 200 }
+
+[contexts.document]
+label = "문서"
+formats = ["README", "internal wiki page", "markdown table of environments", "runbook", "onboarding guide",
+           "CLAUDE.md / AGENTS.md"]
+weights = { PASSWORD = 120, SECRET = 60, TOKEN = 60, ACCESS_KEY = 20, PRIVATE_KEY = 10, none = 230 }
+
+[contexts.key_file]
+label = "키 파일 출력"
+formats = ["cat ~/.ssh/id_*", "PEM file", "GCP service account JSON", "JWK set", "kubeconfig with client key",
+           "openssl output"]
+weights = { PASSWORD = 0, SECRET = 40, TOKEN = 0, ACCESS_KEY = 0, PRIVATE_KEY = 220, none = 40 }
+
+# Kinds per secret type (value_gen.SECRET_KINDS plus the dataset_build base kinds), with weights.
+# Base kinds (password, token, api_key, ...) vary their shape under value_profile mltrain.
+[kinds]
+PASSWORD = { password = 80, db_uri = 8, password_weak = 6, passphrase = 6 }
+ACCESS_KEY = { aws_access_key_id = 65, stripe_publishable = 25, mapbox_public = 10 }
+PRIVATE_KEY = { private_key_any = 60, rsa_private_key = 15, openssh_private_key = 15, ec_private_key = 10 }
+
+[kinds.SECRET]
+api_key = 22
+secret = 14
+hex_secret = 6
+aws_secret_access_key = 10
+gcp_api_key = 6
+openai_key = 7
+anthropic_key = 5
+stripe_secret = 6
+sendgrid_key = 4
+slack_webhook = 5
+discord_webhook = 3
+postman_key = 2
+uuid_key = 3
+
+[kinds.TOKEN]
+token = 22
+jwt = 16
+github_classic = 9
+github_fine_grained = 5
+github_oauth = 3
+github_app = 3
+gitlab_pat = 6
+npm_token = 5
+pypi_token = 4
+dockerhub_pat = 3
+slack_bot = 6
+slack_user = 3
+shopify_token = 2
+digitalocean_token = 3
+cloudflare_token = 3
+aws_session_token = 4
+
+# Extra secrets in a session that has one (0, 1 or 2 more, any type)
+[extra_secrets]
+weights = { "0" = 45, "1" = 35, "2" = 20 }
+types = { PASSWORD = 35, SECRET = 25, TOKEN = 25, ACCESS_KEY = 10, PRIVATE_KEY = 5 }
+
+# Where each secret first appears (3.3절). Never tool_input: the agent only writes what PromptGuard showed it,
+# so a secret it reuses in a command is a mask ({{mask:NAME}}), drawn below.
+[channel]
+weights = { tool_output = 74, prompt = 17, instructions = 9 }
+
+# Share of secrets the agent later reuses in a tool_input, written as PromptGuard's mask ([KIND_n])
+[mask]
+share = 0.3
+
+# How often a secret shows up again (3.3절): another item of the same channel, or another channel
+[repeat]
+weights = { once = 50, multi_item = 30, multi_channel = 20 }
+
+[language]
+weights = { en = 70, ko = 25, mixed = 5 }
+
+[tool_output_format]
+weights = { raw = 40, numbered_read = 25, grep = 10, json_wrapped = 15, truncated = 10 }
+
+[tool_input_format]
+weights = { shell = 60, json_args = 30, edit = 10 }
+
+# Session size: items and turns (3.3절: 3-30 items, median 8; 1-8 turns)
+[session]
+items = { "3-5" = 30, "6-10" = 40, "11-18" = 22, "19-30" = 8 }
+turns = { "1" = 35, "2-3" = 40, "4-8" = 25 }
+# Length of the longest tool_output in characters (3.1절: median 500-800, 10% over 3,000)
+longest_output = { "200-500" = 25, "500-1200" = 45, "1200-3000" = 20, "3000-6000" = 10 }
+
+# Hard negatives (3.4절): share of sessions with at least one, and their kinds (value_gen.NEGATIVE_KINDS)
+[negatives]
+share_positive = 0.45
+share_none = 0.65
+count = { "1" = 55, "2" = 30, "3" = 15 }
+
+[negatives.kinds]
+identifier = 1000
+template = 800
+reference = 800
+redaction = 600
+code = 500
+hash = 500
+doc_example = 400
+setting = 400
+descriptor = 300
+non_credential = 300
+empty = 300
+public_key = 200
+pem_header = 100
+
+# Boundary and propagation rules (3.4절): share of positive sessions asked to exercise one, and which
+[boundary]
+share = 0.5
+
+[boundary.rules]
+quoted = 30
+trailing_punct = 30
+value_ends_punct = 15
+bearer = 20
+basic = 20
+token_scheme = 10
+url_password = 40
+user_colon_password = 20
+connection_string = 20
+cookie = 20
+pem_full = 15
+pem_truncated = 15
+pem_json_escaped = 15
+wrapped = 15
+base64 = 15
+url_encoded = 15
+json_escaped = 15
+common_value_both_positions = 40
+distinct_value_repeated_in_logs = 60
+
+# Shifted test (5.1절): only these, and never in the in-distribution cards
+[ood]
+contexts = { jupyter_output = "Jupyter notebook cell output", terraform_state = "terraform state show / plan output" }
+tool_output_format = "mcp_result"
+
+[ood.kinds]
+twilio_auth_token = "SECRET"
+twilio_api_key = "SECRET"
+datadog_api_key = "SECRET"
+huggingface_token = "TOKEN"
+azure_storage_key = "SECRET"
