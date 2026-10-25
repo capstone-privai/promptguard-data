@@ -24,6 +24,10 @@ GOLD_TYPES: tuple[str, ...] = ("PASSWORD", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY",
 # meta.allowed_use purposes an evaluation run can require (see scripts/dataset_policy.py).
 USES: tuple[str, ...] = ("rule_eval", "ml_eval")
 
+# meta.split values of the ML training side (scripts/dataset_policy.py TRAIN_SPLITS): never scored, whatever
+# meta.allowed_use says. test_system_contract checks it equals the policy.
+TRAINING_SPLITS: tuple[str, ...] = ("train", "val")
+
 
 @dataclass(frozen=True)
 class GoldSpan:

@@ -39,7 +39,7 @@ import tempfile
 
 from dataset_build import (CHANNELS, GENERATORS, PLACEHOLDER, REPO_ROOT, SUSPICIOUS, TYPES, URI_HOST, VERSION,
                            transform, uri_parts, write_jsonl)
-from dataset_policy import ALLOWED_USE
+from dataset_policy import allowed_use
 import dataset_verify as V
 from label_rules import classify, exclusion_kind, is_common, normalize_span
 import value_gen
@@ -264,7 +264,7 @@ def build_lines(lines: list[str], name: str, stem: str, template: str) -> tuple[
             raise ValueError(f"{where}: a session needs session_id, items and meta; got {sorted(s)}")
         sid, meta = s["session_id"], dict(s["meta"])
         owned = {"dataset_version": VERSION, "source": SOURCE, "template": template, "origin": ORIGIN,
-                 "allowed_use": ALLOWED_USE[ORIGIN]}
+                 "allowed_use": allowed_use(ORIGIN, s["meta"].get("split"))}  # train/val: ml_train only
         for key in (*owned, "variant"):
             if key in meta:
                 raise ValueError(f"{where}: meta.{key} is set by the builder; remove it from the template")
