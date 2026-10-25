@@ -82,6 +82,25 @@ assistant의 본문과 reasoning은 채널이 없어 뺐다. `turn_id`는 assist
 
 탐지기가 이런 값을 가리면 과잉 마스킹으로 센다. 과잉 마스킹이 어디서 나왔는지는 `per_edit.jsonl`의 좌표를 labels 파일과 맞춰 나눠 볼 수 있다.
 
+## ML 학습용 변환
+
+평가용 변환은 tool_input의 진짜 비밀번호를 그대로 둔다. 학습 데이터는 tool_input에 비밀값과 정답을 두지 않으므로([학습 데이터 계획](docs/README_ml-train-plan.md) 5절), [scripts/ml_train_privesc.py](scripts/ml_train_privesc.py)가 같은 변환 결과에서 학습용 파일을 따로 만든다. 평가용 파일은 바꾸지 않는다.
+
+```bash
+python metric-detection/scripts/ml_train_privesc.py build --privesc ../privesc-llm-data --out metric-detection/ml_build --synthetic-train-gold M   # 또는 --target-gold N, --sessions N
+python metric-detection/scripts/ml_train_privesc.py verify --privesc ../privesc-llm-data --out metric-detection/ml_build --synthetic-train-gold M
+# -> ml_build/data_test/sessions_ml_privesc.jsonl, ml_build/data_answer/gold_ml_privesc.jsonl, ml_build/labels_ml_privesc.jsonl
+```
+
+`--out`의 기본값도 `metric-detection/ml_build`다. train 세션이 든 파일을 평가용 `data_test/`에 두면 채점기가 실행을 거부한다([README](README.md)).
+
+- **가림 표시**: tool_input의 정답 6,324개를 PromptGuard Native Mod가 에이전트에게 보여 주는 `[KIND_n]`으로 바꾼다. KIND는 type(`PASSWORD`, `PRIVATE_KEY`)이고, n은 type별로 그 값이 tool_input 밖에서 처음 정답으로 나온 순서다. 앞에서 정답으로 나온 적 없는 값 2,018개(에이전트가 추측한 값, 경로 등에서 가려지지 않은 채로 본 흔한 값)도 tool_input에서 처음 나온 자리에서 다음 번호를 받는다. labels 파일에 `mask`로 남고 정답이 아니다. 같은 item의 다른 labels 좌표는 바뀐 길이만큼 옮긴다.
+- **split**: `password_reuse`, `ssh_key_reuse`는 `test_ood`(440세션 모두), 나머지 8종은 `train`이다. group_id는 `privesc-<시나리오>`이고, 원본의 training/validation은 `meta.upstream_split`에 남긴다. `allowed_use`는 `dataset_policy.allowed_use`대로 train이 `["ml_train"]`, test_ood가 `["rule_eval", "ml_eval"]`이다.
+- **표본**: train은 시나리오를 돌아가며, 시나리오마다 고정된 해시 순서로 세션을 더한다. 정답 수(instructions와 tool_output)가 목표를 넘기 직전에 멈춘다. `--synthetic-train-gold M`이면 목표는 `M × 0.3 / 0.7`이다. 목표는 `meta.sample`에 남아 `verify`가 같은 파일을 다시 만든다. train 정답은 모두 7,361개라, 합성 train 정답이 약 17,200개를 넘으면 표본 없이 모두 들어간다.
+- **labels**: `ml_train_build.py`와 같은 필드다. `mask` 외에 이 변환이 정답에서 뺀 `identifier`, `not_propagated`, `hash`(위 표의 `password_hash`), `code`, `reference`, `redaction`도 남긴다.
+- **verify**: `dataset_verify`의 스키마, 용도 정책, LABELING 검사(`check_labels`, `check_coverage`), tool_input에 정답이 없음, mask와 tool_input 안의 `[KIND_n]`이 일대일로 맞음, split과 group_id, 원본에서 다시 만든 세 파일의 바이트 일치를 본다. `--synthetic-train-gold`를 주면 privesc 비율이 30%를 넘을 때 실패한다.
+- 고유한 정답 값 11개가 두 split에 함께 나온다(`toor`, `changeme`, `P@ssw0rd` 등). 심은 값은 궤적마다 무작위라 겹치지 않는다. 겹친 것은 에이전트가 시나리오와 상관없이 넣어 보는 추측 값이다. 그래서 `verify`는 이것을 실패로 보지 않고 수만 낸다(`values_in_both_splits`).
+
 ## 알려진 한계
 
 - **비밀값 종류가 PASSWORD와 PRIVATE_KEY뿐이다.** TOKEN, ACCESS_KEY, SECRET이 없으므로 유형별 recall은 이 두 유형만 잴 수 있다.

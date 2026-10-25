@@ -198,7 +198,7 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 - **group_id = 템플릿 하나**. 한 템플릿에서 나온 세션(값 시드 변형)은 모두 같은 split에 간다. 같은 카드에서 나온 양성·음성 대조 쌍도 같은 group으로 묶는다.
 - **값도 나눈다**: 값 시드에 split 이름을 넣고, 빌드 후 split 사이에 같은 값이 없는지 검사한다. 흔한 값 목록은 공유해도 된다.
 - **중복 검사**: 값과 숫자를 가린 텍스트로 MinHash를 만들어, split 사이에 유사도 0.8 이상인 item이 있으면 그 group을 옮긴다.
-- **privesc**: 정답 수는 많지만 한 분야라서 train 정답의 30% 이하로 묶는다(세션 표본 추출). privesc의 tool_input에는 진짜 비밀번호와 정답(6,324개)이 있다. 합성 데이터와 같은 규칙으로 학습에 섞을 때는 tool_input의 정답을 빼고, tool_input은 문맥으로만 쓴다. test-OOD에는 `password_reuse`, `ssh_key_reuse`처럼 서로 다른 형식의 시나리오 2종을 둔다.
+- **privesc** (구현함, [ml_train_privesc.py](../scripts/ml_train_privesc.py)): 정답 수는 많지만 한 분야라서 train 정답의 30% 이하로 묶는다(시나리오를 돌아가며 세션 표본 추출, 목표 정답 수를 인자로 받는다). privesc의 tool_input에는 진짜 비밀번호와 정답(6,324개)이 있어, 학습용은 tool_input의 정답을 모두 `[KIND_n]` 가림 표시로 바꾸고 tool_input은 문맥으로만 쓴다. 앞에서 정답으로 나온 적 없는 값(에이전트가 추측한 값, 가려지지 않은 채로 본 흔한 값, 2,018개)도 tool_input에서 처음 나온 자리에서 번호를 붙여 가린다(2026-10-25 결정). 그런 세션을 빼면 `weak_password` 220세션이 모두 빠지기 때문이다. test-OOD에는 `password_reuse`, `ssh_key_reuse` 2종(440세션)을 표본 없이 모두 둔다. group_id는 `privesc-<시나리오>`다.
 - **외부 데이터**(CredData, Nemotron-PII, openhands-feedback, SWE-Gym, Nosey Parker)는 평가에만 쓴다. 텍스트와 값은 쓰지 않았고, 이 계획에는 형식·채널·길이의 집계 통계만 참고했다. 그래도 커버리지 목표를 그 통계에 맞춰 정했으므로 외부 데이터 점수가 실제보다 낙관적으로 나올 수 있다. 그래서 외부 데이터 결과는 "목표 분포를 참고한 평가"라고 함께 적는다. 비밀 출처 카탈로그도 이 출처들을 인용한 행(55행)이 있어 그 텍스트와 예시 값은 쓰지 않았지만, 서비스 형식(접두사, 길이, 문자 집합)은 Nosey Parker 규칙·CredSweeper와 겹치므로 Nosey Parker와 CredData 점수는 더 낙관적일 수 있다.
 
 ### 5.1 분포 이동 test (test-OOD)
