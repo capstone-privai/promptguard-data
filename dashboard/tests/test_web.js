@@ -475,3 +475,24 @@ test("read-only exports can open completed combinations without requesting evalu
   vm.runInContext("state.ensemble = null; openEnsemblePanel()", context);
   assert.equal(descendants(dialog).find((node) => node.attributes.type === "submit").disabled, true);
 });
+
+test("the default ensemble opens existing results without posting or queueing a new evaluation", async () => {
+  const { context, elements } = app({
+    URLSearchParams, location: { pathname: "/", search: "" }, history: { replaceState() {} },
+    fetch: () => { throw new Error("default must not be queued"); },
+  });
+  context.fixture = ensembleFixture();
+  context.fixture.commits[0].default_ensemble = {
+    detectors: ["credsweeper", "gitleaks", "promptguard-rules"], consensus: "majority",
+  };
+  vm.runInContext("state.index = fixture; showSelected = async () => {}; openEnsemblePanel()", context);
+  const dialog = elements.get("#ensemble-dialog");
+  assert.ok(dialog.textContent.includes("기본 구성과 같아요"));
+  const submit = descendants(dialog).find((node) => node.attributes.type === "submit");
+  assert.equal(submit.disabled, false); // Also works in read-only exports.
+  assert.equal(submit.textContent, "기본 구성 보기");
+  await descendants(dialog).find((node) => node.tag === "form").listeners.get("submit")({ preventDefault() {} });
+  assert.equal(dialog.open, false);
+  assert.equal(vm.runInContext("state.ensemble", context), null);
+  assert.equal(vm.runInContext("pick('detection').key", context), "default");
+});

@@ -659,32 +659,38 @@ function openEnsemblePanel() {
   const dialog = clear($("#ensemble-dialog"));
   const chosen = detectionRecord(commit);
   const described = !state.ensemble && !state.detection?.fallbackFrom ? state.summary?.system?.detector : null;
+  const base = commit.default_ensemble || (described ? {
+    detectors: described.adapters.map((item) => item.name), consensus: described.consensus,
+  } : null);
   const draft = {
-    detectors: chosen?.detectors?.slice() || described?.adapters?.map((item) => item.name)
+    detectors: chosen?.detectors?.slice() || base?.detectors.slice() || described?.adapters?.map((item) => item.name)
       || ENSEMBLE_MODULES.map((item) => item[0]),
-    consensus: chosen?.consensus || described?.consensus || "majority",
+    consensus: chosen?.consensus || base?.consensus || described?.consensus || "majority",
   };
   const writable = state.status?.ensemble_writable === true;
   const message = h("p", { class: "note", role: "status", "aria-live": "polite" });
   const hint = h("p", { class: "ensemble-votes", "aria-live": "polite" });
   const submit = h("button", { class: "ensemble-submit", type: "submit" });
-  const existing = () => (commit.ensembles || []).find((item) => item.consensus === draft.consensus
-    && item.detectors.length === draft.detectors.length && item.detectors.every((name) => draft.detectors.includes(name)));
+  const matches = (item) => item && item.consensus === draft.consensus
+    && item.detectors.length === draft.detectors.length && item.detectors.every((name) => draft.detectors.includes(name));
+  const existing = () => matches(base) ? { ...commit.detection, id: null, default: true }
+    : (commit.ensembles || []).find(matches);
   const update = () => {
     const count = draft.detectors.length;
     hint.textContent = count ? `${count}개 모듈 중 ${ensembleVotes(count, draft.consensus)}개가 탐지하면 가려요.` : "모듈을 한 개 이상 켜 주세요.";
     const record = existing();
     submit.disabled = !count || (!writable && !record);
-    submit.textContent = record && record.state !== "failed" ? "이 구성 보기" : record ? "다시 평가" : "이 구성으로 평가";
-    message.textContent = record ? `${ENSEMBLE_STATES[record.state]}${record.error ? `: ${record.error}` : ""}`
+    submit.textContent = record?.default ? "기본 구성 보기" : record && record.state !== "failed" ? "이 구성 보기" : record ? "다시 평가" : "이 구성으로 평가";
+    message.textContent = record?.default ? `기본 구성과 같아요. 기본 평가 결과를 그대로 사용해요. (${ENSEMBLE_STATES[record.state] || "결과 대기"})`
+      : record ? `${ENSEMBLE_STATES[record.state]}${record.error ? `: ${record.error}` : ""}`
       : writable ? "새 조합은 재평가가 필요해요. 같은 조건의 gitleaks 결과는 캐시에서 가져와요."
         : "결과 보기 전용이에요. 이미 평가한 구성은 아래에서 볼 수 있어요.";
-    if (record?.state === "failed" && !writable) submit.disabled = true;
+    if (record?.state === "failed" && !record.default && !writable) submit.disabled = true;
   };
   const form = h("form", { onsubmit: async (event) => {
     event.preventDefault();
     const record = existing();
-    if (record && record.state !== "failed") {
+    if (record && (record.default || record.state !== "failed")) {
       dialog.close();
       await selectEnsemble(record.id);
       return;
@@ -700,7 +706,7 @@ function openEnsemblePanel() {
       // Pin the request's commit even if the reader was following the latest one.
       state.sha = commit.sha;
       state.ensemble = result.id;
-      state.pendingEnsembles.set(`${commit.sha}:${result.id}`, { sha: commit.sha, ...result, state: "queued" });
+      if (result.id) state.pendingEnsembles.set(`${commit.sha}:${result.id}`, { sha: commit.sha, ...result, state: "queued" });
       writeHash();
       dialog.close();
       await refreshIndex();

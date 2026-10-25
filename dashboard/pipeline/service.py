@@ -173,6 +173,8 @@ class Service:
         self.ensemble_requests: dict[str, dict[str, Any]] = self._read("ensemble_requests.json") or {}
         self.retry = False
         self._meta_cache: dict[Path, dict[str, Any]] = {}
+        self._ensemble_cache: dict[str, dict[str, Any]] = {}
+        self._detector_configs: dict[str, dict[str, Any] | None] = {}
         self.code = code_hash()
         self.code_changed = False
         self.poll_seconds: float | None = None  # set by run_forever; also how often a running job fetches
@@ -251,6 +253,13 @@ class Service:
         if not isinstance(sha, str) or not any(item["sha"] == sha for item in index.get("commits", [])):
             raise ValueError("평가할 커밋을 찾을 수 없어요. 화면을 새로고침해 주세요.")
         identity = ensemble_id(config)
+        entry = next(item for item in index["commits"] if item["sha"] == sha)
+        default = entry.get("default_ensemble") or self.result_ensemble(entry.get("detection", {}).get("key"))
+        if config == default:
+            with self.lock:
+                self.ensemble_requests.pop(f"{sha}:{identity}", None)
+                runner.write_json(self.data / "ensemble_requests.json", self.ensemble_requests, pretty=True)
+            return {"id": None, "default": True, **config}
         with self.lock:
             self.ensemble_requests[f"{sha}:{identity}"] = {"sha": sha, "id": identity, **config}
             runner.write_json(self.data / "ensemble_requests.json", self.ensemble_requests, pretty=True)
@@ -278,6 +287,52 @@ class Service:
         return None
 
     # ------------------------------------------------------------------ results
+
+    def result_ensemble(self, key: str | None) -> dict[str, Any] | None:
+        if not key:
+            return None
+        if key not in self._ensemble_cache:
+            try:
+                summary = json.loads((self.result_dir("detection", key) / "summary.json").read_text(encoding="utf-8"))
+                detector = summary["system"]["detector"]
+                self._ensemble_cache[key] = ensemble_config(
+                    [adapter["name"] for adapter in detector["adapters"]], detector["consensus"])
+            except (OSError, ValueError, KeyError, TypeError):
+                return None
+        return self._ensemble_cache[key]
+
+    def default_ensemble(self, plan: dict[str, Any], commit: repo.Commit) -> dict[str, Any] | None:
+        key = result_key("detection", commit.fingerprint, plan["contexts"]["detection"])
+        if actual := self.result_ensemble(key):
+            return actual
+        # Before the first result exists, read this commit's own configuration. Do not assume majority or all three.
+        if commit.fingerprint not in self._detector_configs:
+            try:
+                self._detector_configs[commit.fingerprint] = json.loads(repo.git(
+                    "show", f"{commit.sha}:src/detector/detector.json", cwd=self.data / "repo.git"))
+            except (repo.RepoError, OSError, ValueError):
+                self._detector_configs[commit.fingerprint] = None
+        configured = self._detector_configs[commit.fingerprint]
+        if not isinstance(configured, dict):
+            return None
+        try:
+            adapters = [adapter for adapter in configured.get("adapters", []) if adapter.get("enabled", True)]
+            if not plan["bench"].get("gitleaks"):
+                # An optional unavailable adapter is not a voter in the default ensemble.
+                if any(adapter["name"] == "gitleaks" and adapter.get("required", True) for adapter in adapters):
+                    return None
+                adapters = [adapter for adapter in adapters if adapter["name"] != "gitleaks"]
+            policy = configured.get("consensus", "any")
+            return ensemble_config([adapter["name"] for adapter in adapters],
+                                   policy.get("mode") if isinstance(policy, dict) else policy)
+        except (KeyError, ValueError, TypeError, AttributeError):
+            return None
+
+    def requested_key(self, plan: dict[str, Any], commit: repo.Commit, config: dict[str, Any]) -> str:
+        context = plan["contexts"]["detection"]
+        if config == self.default_ensemble(plan, commit):
+            return result_key("detection", commit.fingerprint, context)
+        return ensemble_key(commit, context, config)
 
     def result_dir(self, track: str, key: str) -> Path:
         return self.data / "results" / track / key
@@ -339,7 +394,7 @@ class Service:
                 continue
             commit = by_sha[request["sha"]]
             config = ensemble_config(request["detectors"], request["consensus"])
-            key = ensemble_key(commit, plan["contexts"]["detection"], config)
+            key = self.requested_key(plan, commit, config)
             if ("detection", key) not in seen:
                 seen.add(("detection", key))
                 if not self.meta("detection", key) and f"detection:{key}" not in self.failures:
@@ -555,12 +610,13 @@ class Service:
         for commit in plan["commits"]:
             entry = commit.as_json()
             entry["fingerprint"] = commit.fingerprint[:12]
+            entry["default_ensemble"] = self.default_ensemble(plan, commit)
             entry["ensembles"] = []
             for request in self.requested_ensembles():
                 if request["sha"] != commit.sha:
                     continue
                 config = ensemble_config(request["detectors"], request["consensus"])
-                key = ensemble_key(commit, plan["contexts"]["detection"], config)
+                key = self.requested_key(plan, commit, config)
                 meta = self.meta("detection", key)
                 failure = self.failures.get(f"detection:{key}")
                 state = ("done" if meta else "running" if running == ("detection", key)

@@ -59,6 +59,63 @@ class EnsembleTest(unittest.TestCase):
         self.assertNotEqual(key, result_key(track, commit.fingerprint, "bench"))
         self.assertNotEqual(key, ensemble_key(commit, "new-benchmark", ensemble_config(first["detectors"], "any")))
 
+    def save_default(self, config):
+        key = result_key("detection", self.commit.fingerprint, "bench")
+        folder = self.service.result_dir("detection", key)
+        runner.write_json(folder / "summary.json", {"system": {"detector": {
+            "adapters": [{"name": name} for name in config["detectors"]], "consensus": config["consensus"],
+        }}})
+        runner.write_json(folder / "meta.json", {"system_fingerprint": self.commit.fingerprint,
+                          "evaluated_at": "2026-10-25", "headline": {"f1": 1}})
+        return key
+
+    def test_api_reuses_actual_default_without_creating_a_request(self):
+        # Also cover a default other than three modules / majority.
+        for detectors, policy in ((["credsweeper", "gitleaks", "promptguard-rules"], "majority"),
+                                  (["gitleaks"], "any")):
+            self.service._ensemble_cache.clear()
+            config = ensemble_config(detectors, policy)
+            self.save_default(config)
+            result = self.service.request_ensemble(self.commit.sha, list(reversed(detectors)), policy)
+            self.assertIsNone(result["id"])
+            self.assertTrue(result["default"])
+            self.assertEqual(self.service.requested_ensembles(), [])
+            self.assertEqual(self.service.jobs(self.plan), [])
+
+    def test_previously_queued_default_request_resolves_to_the_default_result(self):
+        config = ensemble_config(["credsweeper", "gitleaks", "promptguard-rules"], "majority")
+        self.request(config["detectors"], config["consensus"])
+        key = self.save_default(config)
+        self.assertEqual(self.service.jobs(self.plan), [])
+        self.service.write_index(self.plan, [], None)
+        entry = self.service._read("index.json")["commits"][0]
+        self.assertEqual(entry["default_ensemble"], config)
+        self.assertEqual(entry["ensembles"][0]["key"], key)
+        self.assertEqual(entry["ensembles"][0]["state"], "done")
+
+    def test_default_not_yet_evaluated_has_only_one_job(self):
+        self.request(["credsweeper", "gitleaks", "promptguard-rules"], "majority")
+        configured = {"adapters": [{"name": name} for name in ("credsweeper", "gitleaks", "promptguard-rules")],
+                      "consensus": {"mode": "majority"}}
+        self.plan["bench"]["gitleaks"] = "8.30.1"
+        self.service._detector_configs.clear()
+        with patch("pipeline.service.repo.git", return_value=json.dumps(configured)):
+            jobs = self.service.jobs(self.plan)
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0][2], result_key("detection", self.commit.fingerprint, "bench"))
+        self.assertIsNone(self.service.ensemble_for(self.plan, self.commit, jobs[0][2]))
+
+    def test_optional_missing_adapter_does_not_match_a_request_that_includes_it(self):
+        configured = {"adapters": [{"name": "credsweeper"}, {"name": "gitleaks", "required": False},
+                                    {"name": "promptguard-rules"}], "consensus": "majority"}
+        self.service._detector_configs.clear()
+        with patch("pipeline.service.repo.git", return_value=json.dumps(configured)):
+            default = self.service.default_ensemble(self.plan, self.commit)
+        self.assertEqual(default["detectors"], ["credsweeper", "promptguard-rules"])
+        all_three = ensemble_config(["credsweeper", "gitleaks", "promptguard-rules"], "majority")
+        self.assertNotEqual(self.service.requested_key(self.plan, self.commit, all_three),
+                            result_key("detection", self.commit.fingerprint, "bench"))
+
     def test_variant_states_retry_and_completed_result_reuse_are_isolated(self):
         requested = self.request()
         job = self.service.jobs(self.plan)[0]
