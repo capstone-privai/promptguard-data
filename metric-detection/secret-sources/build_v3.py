@@ -70,13 +70,13 @@ def _unique(snippet: str, tag: str) -> str:
     return alt
 
 
-def add(cat, sub, ref, what, host, idents, regex, posval, negval, sev, *, ctx="env", negctx=None, var=None,
+def add(cat, sub, ref, what, host, idents, regex, posval, negval, sev, *, ctx="env", negctx=None, var=None, negvar=None,
         flag="", channel=None, fmt=None, files=None, guide, rhost=None, **_ignore):
     c = CATS[cat]
     var = var or (sub.upper().split("/")[0][:40])
     rh = rhost if rhost is not None else host
     pos = _unique(RENDER[ctx](var, posval, rh, flag), sub)
-    neg = RENDER[negctx or ctx](var, negval, rh, flag)
+    neg = RENDER[negctx or ctx](negvar or var, negval, rh, flag)
     ROWS.append({
         "Macro_Category": c[0], "Sub_Category": sub, "Reference_Benchmark_or_Repo": ref,
         "Source_Description_KR": what, "Typical_File_Paths_or_Streams": files or c[1],

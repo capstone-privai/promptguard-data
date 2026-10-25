@@ -8,16 +8,16 @@ literal choices, or (alphabet, min length, max length): a value_gen.ALPHABETS na
 CATALOG_KINDS = {
     'ably_key': ('SECRET', 'API_KEY', (('B64URL', 5, 13), '.', ('B64URL', 5, 13), ':', ('=+-/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz', 20, 30))),  # SRC-211
     'activecampaign_key': ('SECRET', 'API_KEY', (('HEX', 64, 64),)),  # SRC-443
-    'adobe_oauth_client_secret': ('SECRET', 'SECRET', ('p8e-', ('ALNUM', 32, 32))),  # SRC-494
+    'adobe_oauth_client_secret': ('SECRET', 'SECRET', ('p8e-', ('ALNUM', 32, 32))),  # SRC-488
     'adyen_api_key': ('SECRET', 'API_KEY', ('AQE', ('ALNUM', 10, 18), ('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 40, 60))),  # SRC-165
     'ai21_key': ('SECRET', 'API_KEY', (('ALNUM', 32, 32),)),  # SRC-373
     'airbrake_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-339
     'airtable_pat': ('TOKEN', 'TOKEN', ('pat', ('ALNUM', 14, 14), '.', ('HEX', 64, 64))),  # SRC-199
-    'aiven_service_password': ('PASSWORD', 'PASSWORD', ('AVNS_', ('ALNUM', 15, 22))),  # SRC-588
+    'aiven_service_password': ('PASSWORD', 'PASSWORD', ('AVNS_', ('ALNUM', 15, 22))),  # SRC-553
     'aiven_token': ('TOKEN', 'TOKEN', (('=+-/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz', 40, 60),)),  # SRC-081
     'akamai_edgegrid_secret': ('SECRET', 'SECRET', (('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 40, 60),)),  # SRC-221
     'akeyless_token': ('TOKEN', 'TOKEN', ('t-', ('ALNUM', 40, 40))),  # SRC-410
-    'alchemy_access_token': ('TOKEN', 'TOKEN', ('alcht_', ('ALNUM', 30, 30))),  # SRC-523
+    'alchemy_access_token': ('TOKEN', 'TOKEN', ('alcht_', ('ALNUM', 30, 30))),  # SRC-503
     'alchemy_key': ('SECRET', 'API_KEY', (('B64URL', 32, 32),)),  # SRC-249
     'algolia_admin_key': ('SECRET', 'API_KEY', (('HEX', 32, 32),)),  # SRC-099
     'alibabacloud_accesskey_id': ('ACCESS_KEY', 'API_KEY', ('LTAI', ('ALNUM', 20, 20))),  # SRC-070
@@ -32,7 +32,7 @@ CATALOG_KINDS = {
     'assemblyai_key': ('SECRET', 'API_KEY', (('HEX', 32, 32),)),  # SRC-056
     'atlassian_token': ('TOKEN', 'TOKEN', ('ATATT3xFfGF0', ('=-0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz', 180, 270))),  # SRC-201
     'auth0_client_secret': ('SECRET', 'SECRET', (('B64URL', 48, 72),)),  # SRC-234
-    'aws_appsync_api_key': ('SECRET', 'AWS_KEY', ('da2-', ('ALNUM', 26, 26))),  # SRC-495
+    'aws_appsync_api_key': ('SECRET', 'AWS_KEY', ('da2-', ('ALNUM', 26, 26))),  # SRC-489
     'aws_ses_smtp_password': ('PASSWORD', 'PASSWORD', ('B', ('B64', 43, 64))),  # SRC-062
     'axiom_token': ('TOKEN', 'TOKEN', ('xaat-', ('B64URL', 36, 36))),  # SRC-448
     'azure_ad_client_secret': ('SECRET', 'SECRET', (('=-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~', 3, 3), ('=-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~', 34, 34), ('=-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~', 3, 3))),  # SRC-067
@@ -40,19 +40,19 @@ CATALOG_KINDS = {
     'azuredevops_pat': ('TOKEN', 'TOKEN', (('B64URL', 52, 52),)),  # SRC-400
     'baidu_qianfan_key': ('SECRET', 'API_KEY', ('bce-v3/ALTAK-', ('ALNUM', 20, 50))),  # SRC-053
     'baseten_key': ('SECRET', 'API_KEY', (('HEX', 40, 40),)),  # SRC-371
-    'besttime_api_key': ('SECRET', 'API_KEY', ('pri_', ('HEX', 32, 32))),  # SRC-525
+    'besttime_api_key': ('SECRET', 'API_KEY', ('pri_', ('HEX', 32, 32))),  # SRC-505
     'betterstack_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-449
     'binance_api_secret': ('SECRET', 'SECRET', (('ALNUM', 64, 64),)),  # SRC-179
     'bitbucket_app_password': ('PASSWORD', 'PASSWORD', ('ATBB', ('ALNUM', 32, 48))),  # SRC-115
-    'bitbucket_data_center_token': ('TOKEN', 'TOKEN', ('BBDC-', ('B64URL', 40, 40))),  # SRC-524
-    'bitbucket_repository_access_token': ('TOKEN', 'TOKEN', ('ATCTT3xFfGN0', ('ALNUM', 80, 80))),  # SRC-560
+    'bitbucket_data_center_token': ('TOKEN', 'TOKEN', ('BBDC-', ('B64URL', 40, 40))),  # SRC-504
+    'bitbucket_repository_access_token': ('TOKEN', 'TOKEN', ('ATCTT3xFfGN0', ('ALNUM', 80, 80))),  # SRC-532
     'bitget_api_secret': ('SECRET', 'SECRET', (('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 40, 40),)),  # SRC-294
     'bithumb_api_secret': ('SECRET', 'SECRET', (('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32, 32),)),  # SRC-286
     'bitrise_token': ('TOKEN', 'TOKEN', (('B64URL', 43, 43),)),  # SRC-406
     'braintree_private_key': ('SECRET', 'API_KEY', (('HEX', 32, 32),)),  # SRC-163
     'bravesearch_key': ('SECRET', 'API_KEY', ('BSA', ('B64URL', 27, 27))),  # SRC-045
     'brevo_key': ('SECRET', 'API_KEY', ('xkeysib-', ('B64URL', 64, 64))),  # SRC-433
-    'brevo_smtp_key': ('SECRET', 'API_KEY', ('xsmtpsib-', ('HEX', 64, 64), '-', ('ALNUM', 16, 16))),  # SRC-607
+    'brevo_smtp_key': ('SECRET', 'API_KEY', ('xsmtpsib-', ('HEX', 64, 64), '-', ('ALNUM', 16, 16))),  # SRC-560
     'bugsnag_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-333
     'buildkite_token': ('TOKEN', 'TOKEN', ('bkua_', ('HEX', 40, 40))),  # SRC-127
     'bunny_key': ('SECRET', 'API_KEY', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-452
@@ -67,29 +67,29 @@ CATALOG_KINDS = {
     'circleci_pat': ('TOKEN', 'TOKEN', ('CCIP', ['AT', 'RJ'], '_', ('ALNUM', 40, 60))),  # SRC-126
     'civo_token': ('TOKEN', 'TOKEN', (('ALNUM', 64, 64),)),  # SRC-390
     'clerk_secret_key': ('SECRET', 'SECRET', ('sk_live_', ('ALNUM', 40, 40))),  # SRC-367
-    'clojars_deploy_token': ('TOKEN', 'TOKEN', ('CLOJARS_', ('HEX', 60, 60))),  # SRC-558
+    'clojars_deploy_token': ('TOKEN', 'TOKEN', ('CLOJARS_', ('HEX', 60, 60))),  # SRC-531
     'close_key': ('SECRET', 'API_KEY', ('api_', ('ALNUM', 40, 40))),  # SRC-445
     'cloudsmith_key': ('SECRET', 'API_KEY', (('HEX', 40, 40),)),  # SRC-401
     'codeberg_token': ('TOKEN', 'TOKEN', (('HEX', 40, 40),)),  # SRC-408
     'codecov_token': ('TOKEN', 'TOKEN', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-128
     'cohere_key': ('SECRET', 'API_KEY', (('ALNUM', 40, 40),)),  # SRC-031
     'coinone_api_secret': ('SECRET', 'SECRET', (('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 40, 40),)),  # SRC-287
-    'contentful_personal_access_token': ('TOKEN', 'TOKEN', ('CFPAT-', ('B64URL', 43, 43))),  # SRC-531
+    'contentful_personal_access_token': ('TOKEN', 'TOKEN', ('CFPAT-', ('B64URL', 43, 43))),  # SRC-509
     'courier_key': ('SECRET', 'API_KEY', ('pk_prod_', ('B64URL', 43, 43))),  # SRC-440
     'crisp_key': ('SECRET', 'API_KEY', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-446
     'cronitor_key': ('SECRET', 'API_KEY', (('HEX', 32, 32),)),  # SRC-456
     'cursor_key': ('SECRET', 'API_KEY', ('key_', ('HEX', 64, 64))),  # SRC-039
     'cyberark_conjur_key': ('SECRET', 'API_KEY', (('B64URL', 44, 44),)),  # SRC-414
     'dashscope_qwen_key': ('SECRET', 'API_KEY', ('sk-', ('ALNUM', 48, 48))),  # SRC-052
-    'databento_api_key': ('SECRET', 'API_KEY', ('db-', ('B64URL', 29, 29))),  # SRC-463
+    'databento_api_key': ('SECRET', 'API_KEY', ('db-', ('B64URL', 29, 29))),  # SRC-462
     'databricks_pat': ('TOKEN', 'TOKEN', ('dapi', ('HEX', 32, 32))),  # SRC-098
     'datadog_app_key': ('SECRET', 'API_KEY', (('HEX', 40, 40),)),  # SRC-213
     'deepgram_key': ('SECRET', 'API_KEY', (('HEX', 40, 40),)),  # SRC-047
     'deepinfra_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-372
     'deepseek_key': ('SECRET', 'API_KEY', ('sk-', ('HEX', 32, 32))),  # SRC-026
-    'deno_organization_token': ('TOKEN', 'TOKEN', ('ddo_', ('B64URL', 36, 36))),  # SRC-485
-    'deno_personal_access_token': ('TOKEN', 'TOKEN', ('ddp_', ('B64URL', 36, 36))),  # SRC-579
-    'dependency_track_api_key': ('SECRET', 'API_KEY', ('odt_', ('B64URL', 32, 32))),  # SRC-496
+    'deno_organization_token': ('TOKEN', 'TOKEN', ('ddo_', ('B64URL', 36, 36))),  # SRC-481
+    'deno_personal_access_token': ('TOKEN', 'TOKEN', ('ddp_', ('B64URL', 36, 36))),  # SRC-547
+    'dependency_track_api_key': ('SECRET', 'API_KEY', ('odt_', ('B64URL', 32, 32))),  # SRC-490
     'descope_key': ('SECRET', 'API_KEY', ('K', ('ALNUM', 40, 40))),  # SRC-418
     'dingtalk_robot_secret': ('SECRET', 'SECRET', ('SEC', ('HEX', 64, 64))),  # SRC-206
     'directus_static_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-395
@@ -97,7 +97,7 @@ CATALOG_KINDS = {
     'django_secret_key': ('SECRET', 'SECRET', (['django-insecure-', ''], ('=abcdefghijklmnopqrstuvwxyz0123456789!@#%^&-_=+', 50, 50))),  # SRC-149
     'doppler_token': ('TOKEN', 'TOKEN', ('dp.', ['pt', 'st', 'sa', 'ct', 'scim', 'audit'], '.', ('ALNUM', 40, 60))),  # SRC-138
     'dynatrace_token': ('TOKEN', 'TOKEN', ('dt0c01.', ('UPPERNUM', 24, 24), '.', ('UPPERNUM', 64, 64))),  # SRC-216
-    'elastic_cloud_api_key_essu': ('SECRET', 'API_KEY', ('essu_', ('B64URL', 80, 80))),  # SRC-572
+    'elastic_cloud_api_key_essu': ('SECRET', 'API_KEY', ('essu_', ('B64URL', 80, 80))),  # SRC-541
     'elastic_cloud_key': ('SECRET', 'API_KEY', (('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 40, 60),)),  # SRC-100
     'elevenlabs_key': ('SECRET', 'API_KEY', ('sk_', ('ALNUM', 48, 48))),  # SRC-046
     'env0_key': ('SECRET', 'API_KEY', (('ALNUM', 40, 40),)),  # SRC-412
@@ -106,11 +106,11 @@ CATALOG_KINDS = {
     'fal_key': ('SECRET', 'API_KEY', (('=-0123456789abcdef', 36, 36), ':', ('HEX', 32, 32))),  # SRC-382
     'fastly_token': ('TOKEN', 'TOKEN', (('B64URL', 32, 32),)),  # SRC-220
     'faunadb_key': ('SECRET', 'API_KEY', ('fn', ('B64URL', 40, 40))),  # SRC-392
-    'figma_personal_access_token': ('TOKEN', 'TOKEN', ('figd_', ('ALNUM', 40, 40))),  # SRC-564
+    'figma_personal_access_token': ('TOKEN', 'TOKEN', ('figd_', ('ALNUM', 40, 40))),  # SRC-534
     'firecrawl_key': ('SECRET', 'API_KEY', ('fc-', ('ALNUM', 40, 40))),  # SRC-042
     'fireworks_account_key': ('SECRET', 'API_KEY', ('fw_', ('ALNUM', 40, 40))),  # SRC-377
     'fireworks_key': ('SECRET', 'API_KEY', ('fw_', ('ALNUM', 20, 30))),  # SRC-035
-    'flexport_api_key': ('SECRET', 'API_KEY', ('shltm_', ('ALNUM', 40, 40))),  # SRC-536
+    'flexport_api_key': ('SECRET', 'API_KEY', ('shltm_', ('ALNUM', 40, 40))),  # SRC-513
     'flutterwave_secret_key': ('SECRET', 'SECRET', ('FLWSECK', ['', '_TEST'], '-', ('HEX', 12, 20))),  # SRC-166
     'flyio_token': ('TOKEN', 'TOKEN', ('FlyV1 ', ('=,-0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz', 80, 120))),  # SRC-133
     'freshdesk_key': ('SECRET', 'API_KEY', (('ALNUM', 20, 20),)),  # SRC-444
@@ -121,21 +121,21 @@ CATALOG_KINDS = {
     'gemfury_token': ('TOKEN', 'TOKEN', (('ALNUM', 40, 40),)),  # SRC-402
     'gitea_token': ('TOKEN', 'TOKEN', (('HEX', 40, 40),)),  # SRC-116
     'gitee_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-303
-    'gitlab_agent_token': ('TOKEN', 'TOKEN', ('glagent-', ('ALNUM', 50, 50))),  # SRC-595
+    'gitlab_agent_token': ('TOKEN', 'TOKEN', ('glagent-', ('ALNUM', 50, 50))),  # SRC-556
     'gitlab_deploy_token': ('TOKEN', 'TOKEN', ('gldt-', ('B64URL', 20, 20))),  # SRC-113
     'gitlab_feature_flag': ('SECRET', 'API_KEY', ('glfeat-', ('B64URL', 20, 20))),  # SRC-114
-    'gitlab_feed_token': ('TOKEN', 'TOKEN', ('glft-', ('ALNUM', 20, 20))),  # SRC-594
-    'gitlab_incoming_mail_token': ('TOKEN', 'TOKEN', ('glimt-', ('B64URL', 25, 25))),  # SRC-575
-    'gitlab_oauth_application_secret': ('SECRET', 'SECRET', ('gloas-', ('HEX', 64, 64))),  # SRC-537
+    'gitlab_feed_token': ('TOKEN', 'TOKEN', ('glft-', ('ALNUM', 20, 20))),  # SRC-555
+    'gitlab_incoming_mail_token': ('TOKEN', 'TOKEN', ('glimt-', ('B64URL', 25, 25))),  # SRC-543
+    'gitlab_oauth_application_secret': ('SECRET', 'SECRET', ('gloas-', ('HEX', 64, 64))),  # SRC-514
     'gitlab_pipeline_trigger': ('SECRET', 'API_KEY', ('glptt-', ('B64URL', 20, 20))),  # SRC-111
-    'gitlab_runner_registration_token': ('TOKEN', 'TOKEN', ('GR1348941', ('ALNUM', 20, 20))),  # SRC-501
+    'gitlab_runner_registration_token': ('TOKEN', 'TOKEN', ('GR1348941', ('ALNUM', 20, 20))),  # SRC-491
     'gitlab_runner_token': ('TOKEN', 'TOKEN', ('glrt-', ('B64URL', 20, 20))),  # SRC-112
-    'gitlab_scim_oauth_token': ('TOKEN', 'TOKEN', ('glsoat-', ('ALNUM', 20, 20))),  # SRC-597
+    'gitlab_scim_oauth_token': ('TOKEN', 'TOKEN', ('glsoat-', ('ALNUM', 20, 20))),  # SRC-557
     'gocardless_token': ('TOKEN', 'TOKEN', ('live_', ('B64URL', 40, 40))),  # SRC-424
     'google_cloud_storage_hmac_secret': ('SECRET', 'SECRET', (('B64', 40, 40),)),  # SRC-353
     'google_oauth_access_token': ('TOKEN', 'TOKEN', ('ya29.', ('B64URL', 100, 150))),  # SRC-280
     'gopax_api_secret': ('SECRET', 'SECRET', (('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 44, 44),)),  # SRC-289
-    'grafana_cloud_api_key': ('SECRET', 'API_KEY', ('glc_', ('B64URL', 32, 32))),  # SRC-571
+    'grafana_cloud_api_key': ('SECRET', 'API_KEY', ('glc_', ('B64URL', 32, 32))),  # SRC-540
     'grafana_service_account_token': ('TOKEN', 'TOKEN', ('glsa_', ('ALNUM', 32, 32), '_', ('HEXM', 8, 8))),  # SRC-217
     'groq_key': ('SECRET', 'API_KEY', ('gsk_', ('ALNUM', 52, 52))),  # SRC-027
     'harbor_robot_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-146
@@ -153,7 +153,7 @@ CATALOG_KINDS = {
     'influxdb_token': ('TOKEN', 'TOKEN', (('B64URL', 80, 100),)),  # SRC-103
     'infobip_key': ('SECRET', 'API_KEY', (('HEX', 32, 32),)),  # SRC-439
     'intercom_token': ('TOKEN', 'TOKEN', ('dG9r', ('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 50, 75))),  # SRC-203
-    'ionic_personal_access_token': ('TOKEN', 'TOKEN', ('ion_', ('B64URL', 42, 42))),  # SRC-464
+    'ionic_personal_access_token': ('TOKEN', 'TOKEN', ('ion_', ('B64URL', 42, 42))),  # SRC-463
     'jenkins_credentials_xml': ('SECRET', 'API_KEY', ('AQAAABAAAA', ('B64', 40, 80))),  # SRC-125
     'jfrog_artifactory_token': ('TOKEN', 'TOKEN', ('cmVmdGtuOjAx', ('ALNUM', 64, 96))),  # SRC-117
     'jina_key': ('SECRET', 'API_KEY', ('jina_', ('ALNUM', 32, 32))),  # SRC-055
@@ -175,7 +175,7 @@ CATALOG_KINDS = {
     'laravel_app_key': ('SECRET', 'API_KEY', ('base64:', ('B64', 43, 43), '=')),  # SRC-152
     'laravel_sanctum_token': ('TOKEN', 'TOKEN', (('DIGITS', 8, 24), '|', ('ALNUM', 40, 64))),  # SRC-013
     'lark_feishu_app_secret': ('SECRET', 'SECRET', (('ALNUM', 32, 32),)),  # SRC-207
-    'lichess_personal_access_token': ('TOKEN', 'TOKEN', ('lip_', ('B64URL', 16, 16))),  # SRC-467
+    'lichess_personal_access_token': ('TOKEN', 'TOKEN', ('lip_', ('B64URL', 16, 16))),  # SRC-465
     'lightstep_token': ('TOKEN', 'TOKEN', (('B64URL', 44, 44),)),  # SRC-451
     'line_channel_access_token': ('TOKEN', 'TOKEN', (('B64', 160, 180),)),  # SRC-190
     'line_channel_secret': ('SECRET', 'SECRET', (('HEX', 32, 32),)),  # SRC-191
@@ -201,13 +201,13 @@ CATALOG_KINDS = {
     'ncloud_sens_access_key': ('ACCESS_KEY', 'API_KEY', ('ncp_iam_BPAMKR', ('ALNUM', 20, 20))),  # SRC-447
     'neon_api_key': ('SECRET', 'API_KEY', ('napi_', ('ALNUM', 48, 48))),  # SRC-094
     'netlify_token': ('TOKEN', 'TOKEN', ('nfp_', ('ALNUM', 36, 36))),  # SRC-129
-    'new_relic_admin_api_key': ('SECRET', 'API_KEY', ('nraa-', ('HEX', 27, 27))),  # SRC-509
-    'new_relic_browser_key_nrbr': ('SECRET', 'API_KEY', ('NRBR-', ('HEX', 19, 19))),  # SRC-539
-    'new_relic_browser_key_nrjs': ('SECRET', 'API_KEY', ('NRJS-', ('HEX', 19, 19))),  # SRC-599
-    'new_relic_eu_license_key': ('SECRET', 'API_KEY', ('eu01xx', ('HEX', 26, 26))),  # SRC-540
-    'new_relic_insights_insert_key': ('SECRET', 'API_KEY', ('nrii-', ('ALNUM', 32, 32))),  # SRC-510
-    'new_relic_insights_query_key': ('SECRET', 'API_KEY', ('nriq-', ('ALNUM', 32, 32))),  # SRC-511
-    'new_relic_rest_api_key': ('SECRET', 'API_KEY', ('nrra-', ('HEX', 42, 42))),  # SRC-512
+    'new_relic_admin_api_key': ('SECRET', 'API_KEY', ('nraa-', ('HEX', 27, 27))),  # SRC-492
+    'new_relic_browser_key_nrbr': ('SECRET', 'API_KEY', ('NRBR-', ('HEX', 19, 19))),  # SRC-515
+    'new_relic_browser_key_nrjs': ('SECRET', 'API_KEY', ('NRJS-', ('HEX', 19, 19))),  # SRC-559
+    'new_relic_eu_license_key': ('SECRET', 'API_KEY', ('eu01xx', ('HEX', 26, 26))),  # SRC-516
+    'new_relic_insights_insert_key': ('SECRET', 'API_KEY', ('nrii-', ('ALNUM', 32, 32))),  # SRC-493
+    'new_relic_insights_query_key': ('SECRET', 'API_KEY', ('nriq-', ('ALNUM', 32, 32))),  # SRC-494
+    'new_relic_rest_api_key': ('SECRET', 'API_KEY', ('nrra-', ('HEX', 42, 42))),  # SRC-495
     'newrelic_license_key': ('SECRET', 'API_KEY', (('HEX', 36, 36), 'NRAL')),  # SRC-214
     'newrelic_user_key': ('SECRET', 'API_KEY', ('NRAK-', ('ALNUM', 27, 27))),  # SRC-215
     'ngrok_token': ('TOKEN', 'TOKEN', ('2', ('ALNUM', 25, 30), '_', ('ALNUM', 20, 30))),  # SRC-225
@@ -216,7 +216,7 @@ CATALOG_KINDS = {
     'notion_token': ('TOKEN', 'TOKEN', ('ntn_', ('ALNUM', 43, 43))),  # SRC-198
     'nuget_key': ('SECRET', 'API_KEY', ('oy2', ('ALNUM', 43, 43))),  # SRC-122
     'nvidia_ngc_key': ('SECRET', 'API_KEY', ('nvapi-', ('B64URL', 64, 64))),  # SRC-058
-    'nylas_api_key': ('SECRET', 'API_KEY', ('v0_', ('ALNUM', 64, 64))),  # SRC-567
+    'nylas_api_key': ('SECRET', 'API_KEY', ('v0_', ('ALNUM', 64, 64))),  # SRC-537
     'okta_api_token': ('TOKEN', 'TOKEN', ('00', ('B64URL', 40, 40))),  # SRC-235
     'okx_api_secret': ('SECRET', 'SECRET', (('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32, 32),)),  # SRC-290
     'omise_secret_key': ('SECRET', 'SECRET', ('skey_live_', ('ALNUM', 32, 32))),  # SRC-426
@@ -236,72 +236,72 @@ CATALOG_KINDS = {
     'percy_token': ('TOKEN', 'TOKEN', ('percy_pat_', ('HEX', 64, 64))),  # SRC-405
     'perplexity_key': ('SECRET', 'API_KEY', ('pplx-', ('ALNUM', 48, 48))),  # SRC-029
     'pinecone_key': ('SECRET', 'API_KEY', ('pcsk_', ('B64URL', 40, 60))),  # SRC-048
-    'pinterest_access_token': ('TOKEN', 'TOKEN', ('pina_', ('B64URL', 20, 20))),  # SRC-473
+    'pinterest_access_token': ('TOKEN', 'TOKEN', ('pina_', ('B64URL', 20, 20))),  # SRC-469
     'pipedrive_token': ('TOKEN', 'TOKEN', (('HEX', 40, 40),)),  # SRC-442
     'plaid_secret': ('SECRET', 'SECRET', (('HEX', 30, 30),)),  # SRC-169
     'planetscale_password': ('PASSWORD', 'PASSWORD', ('pscale_pw_', ('B64URL', 40, 60))),  # SRC-092
     'planetscale_service_token': ('TOKEN', 'TOKEN', ('pscale_tkn_', ('B64URL', 40, 60))),  # SRC-093
     'plivo_auth_token': ('TOKEN', 'TOKEN', (('B64URL', 40, 40),)),  # SRC-437
     'polygon_io_key': ('SECRET', 'API_KEY', (('WORD', 32, 32),)),  # SRC-181
-    'portainer_access_token': ('TOKEN', 'TOKEN', ('ptr_', ('B64URL', 20, 20))),  # SRC-544
+    'portainer_access_token': ('TOKEN', 'TOKEN', ('ptr_', ('B64URL', 20, 20))),  # SRC-519
     'portone_v2_api_secret': ('SECRET', 'SECRET', (('ALNUM', 40, 60),)),  # SRC-175
     'portone_webhook_secret': ('SECRET', 'SECRET', ('whsec_', ('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32, 48))),  # SRC-176
-    'posthog_personal_api_key': ('SECRET', 'API_KEY', ('phx_', ('B64URL', 43, 43))),  # SRC-545
-    'posthog_project_api_key': ('ACCESS_KEY', 'API_KEY', ('phc_', ('B64URL', 43, 43))),  # SRC-577
-    'postman_collection_access_token': ('TOKEN', 'TOKEN', ('PMAT-', ('B64URL', 26, 26))),  # SRC-493
+    'posthog_personal_api_key': ('SECRET', 'API_KEY', ('phx_', ('B64URL', 43, 43))),  # SRC-520
+    'posthog_project_api_key': ('ACCESS_KEY', 'API_KEY', ('phc_', ('B64URL', 43, 43))),  # SRC-545
+    'postman_collection_access_token': ('TOKEN', 'TOKEN', ('PMAT-', ('B64URL', 26, 26))),  # SRC-487
     'postmark_token': ('TOKEN', 'TOKEN', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-197
-    'prefect_api_key': ('SECRET', 'API_KEY', ('pnu_', ('B64URL', 36, 36))),  # SRC-546
+    'prefect_api_key': ('SECRET', 'API_KEY', ('pnu_', ('B64URL', 36, 36))),  # SRC-521
     'pulumi_token': ('TOKEN', 'TOKEN', ('pul-', ('HEX', 40, 40))),  # SRC-140
     'pusher_secret': ('SECRET', 'SECRET', (('HEX', 20, 20),)),  # SRC-210
     'python_bytes_fromhex_key': ('SECRET', 'API_KEY', (('HEX', 32, 64),)),  # SRC-257
-    'pyx_api_key': ('SECRET', 'API_KEY', ('pyx-', ('B64URL', 64, 64))),  # SRC-586
+    'pyx_api_key': ('SECRET', 'API_KEY', ('pyx-', ('B64URL', 64, 64))),  # SRC-552
     'qiniu_secret_key': ('SECRET', 'SECRET', (('B64URL', 40, 40),)),  # SRC-304
     'rails_master_key': ('SECRET', 'API_KEY', (('HEX', 32, 32),)),  # SRC-150
     'railway_token': ('TOKEN', 'TOKEN', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-134
-    'ramp_oauth_client_secret': ('SECRET', 'SECRET', ('sec_', ('B64URL', 48, 48))),  # SRC-476
+    'ramp_oauth_client_secret': ('SECRET', 'SECRET', ('sec_', ('B64URL', 48, 48))),  # SRC-472
     'raygun_token': ('TOKEN', 'TOKEN', (('ALNUM', 28, 28),)),  # SRC-337
     'razorpay_key_secret': ('SECRET', 'SECRET', (('ALNUM', 24, 24),)),  # SRC-421
-    'readme_api_key': ('SECRET', 'API_KEY', ('rdme_', ('ALNUM', 70, 70))),  # SRC-548
-    'redirect_pizza_api_token': ('TOKEN', 'TOKEN', ('rpa_', ('B64URL', 30, 30))),  # SRC-477
+    'readme_api_key': ('SECRET', 'API_KEY', ('rdme_', ('ALNUM', 70, 70))),  # SRC-522
+    'redirect_pizza_api_token': ('TOKEN', 'TOKEN', ('rpa_', ('B64URL', 30, 30))),  # SRC-473
     'render_key': ('SECRET', 'API_KEY', ('rnd_', ('B64URL', 48, 48))),  # SRC-132
     'replicate_token': ('TOKEN', 'TOKEN', ('r8_', ('ALNUM', 40, 40))),  # SRC-033
     'resend_key': ('SECRET', 'API_KEY', ('re_', ('ALNUM', 24, 36))),  # SRC-196
     'revenuecat_key': ('SECRET', 'API_KEY', ('sk_', ('ALNUM', 24, 36))),  # SRC-245
     'rockset_key': ('SECRET', 'API_KEY', (('ALNUM', 40, 40),)),  # SRC-399
     'rollbar_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-332
-    'rootly_api_key': ('SECRET', 'API_KEY', ('rootly_', ('HEX', 64, 64))),  # SRC-478
+    'rootly_api_key': ('SECRET', 'API_KEY', ('rootly_', ('HEX', 64, 64))),  # SRC-474
     'rubygems_key': ('SECRET', 'API_KEY', ('rubygems_', ('HEX', 48, 48))),  # SRC-120
     'scaleway_secret_key': ('SECRET', 'SECRET', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-082
     'segmindtoken': ('TOKEN', 'TOKEN', ('sg_', ('HEX', 32, 32))),  # SRC-383
     'semaphore_token': ('TOKEN', 'TOKEN', (('ALNUM', 20, 20),)),  # SRC-407
     'sentry_auth_token': ('TOKEN', 'TOKEN', ('sntrys_', ('B64', 60, 100))),  # SRC-218
-    'sentry_user_token': ('TOKEN', 'TOKEN', ('sntryu_', ('HEX', 64, 64))),  # SRC-551
+    'sentry_user_token': ('TOKEN', 'TOKEN', ('sntryu_', ('HEX', 64, 64))),  # SRC-524
     'serpapi_key': ('SECRET', 'API_KEY', (('HEX', 64, 64),)),  # SRC-044
     'servicenow_token': ('TOKEN', 'TOKEN', (('ALNUM', 32, 32),)),  # SRC-155
     'shopify_admin_token': ('TOKEN', 'TOKEN', ('shp', ['at', 'ca', 'pa', 'ss'], '_', ('HEXM', 32, 32))),  # SRC-168
-    'shopify_partner_api_token': ('TOKEN', 'TOKEN', ('prtapi_', ('HEX', 32, 32))),  # SRC-608
+    'shopify_partner_api_token': ('TOKEN', 'TOKEN', ('prtapi_', ('HEX', 32, 32))),  # SRC-561
     'singlestore_password': ('PASSWORD', 'PASSWORD', (('ALNUM', 24, 24),)),  # SRC-398
     'slack_app_level_token': ('TOKEN', 'SLACK_TOKEN', ('xapp-1-', ('UPPERNUM', 11, 11), '-', ('DIGITS', 13, 13), '-', ('HEX', 64, 64))),  # SRC-185
     'slack_config_access_token': ('TOKEN', 'SLACK_TOKEN', ('xoxe.xoxp-1-', ('=-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 100, 150))),  # SRC-363
     'slack_config_refresh_token': ('TOKEN', 'SLACK_TOKEN', ('xoxe-1-', ('B64URL', 140, 210))),  # SRC-364
     'snowflake_pat': ('TOKEN', 'TOKEN', ('ver:', ('DIGITS', 8, 24), '-hint:', ('DIGITS', 8, 24), '-', ('=+/0123456789=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 80, 120))),  # SRC-097
     'solapi_api_secret': ('SECRET', 'SECRET', (('ALNUM', 32, 48),)),  # SRC-205
-    'sonarqube_analysis_token': ('TOKEN', 'TOKEN', ('sqa_', ('HEX', 40, 40))),  # SRC-610
-    'sonarqube_project_token': ('TOKEN', 'TOKEN', ('sqp_', ('HEX', 40, 40))),  # SRC-611
-    'sonarqube_user_token': ('TOKEN', 'TOKEN', ('squ_', ('HEX', 40, 40))),  # SRC-609
+    'sonarqube_analysis_token': ('TOKEN', 'TOKEN', ('sqa_', ('HEX', 40, 40))),  # SRC-563
+    'sonarqube_project_token': ('TOKEN', 'TOKEN', ('sqp_', ('HEX', 40, 40))),  # SRC-564
+    'sonarqube_user_token': ('TOKEN', 'TOKEN', ('squ_', ('HEX', 40, 40))),  # SRC-562
     'sops_age_private_key': ('PRIVATE_KEY', 'PRIVATE_KEY', ('AGE-SECRET-KEY-1', ('UPPERNUM', 58, 58))),  # SRC-142
-    'sourcegraph_cody_gateway_key': ('SECRET', 'API_KEY', ('slk_', ('HEX', 64, 64))),  # SRC-552
+    'sourcegraph_cody_gateway_key': ('SECRET', 'API_KEY', ('slk_', ('HEX', 64, 64))),  # SRC-525
     'sourcegraph_cody_token': ('TOKEN', 'TOKEN', ('sgp_', ('HEX', 16, 24), '_', ('HEX', 40, 40))),  # SRC-040
     'sparkpost_key': ('SECRET', 'API_KEY', (('HEX', 40, 40),)),  # SRC-435
     'splunk_hec_token': ('TOKEN', 'TOKEN', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-340
     'square_access_token': ('TOKEN', 'TOKEN', ('EAAA', ('B64URL', 60, 60))),  # SRC-164
-    'square_access_token_sq0atp': ('TOKEN', 'TOKEN', ('sq0atp-', ('ALNUM', 22, 22))),  # SRC-518
-    'square_oauth_secret': ('SECRET', 'SECRET', ('sq0csp-', ('ALNUM', 43, 43))),  # SRC-519
+    'square_access_token_sq0atp': ('TOKEN', 'TOKEN', ('sq0atp-', ('ALNUM', 22, 22))),  # SRC-501
+    'square_oauth_secret': ('SECRET', 'SECRET', ('sq0csp-', ('ALNUM', 43, 43))),  # SRC-502
     'stabilityai_key': ('SECRET', 'API_KEY', ('sk-', ('ALNUM', 48, 48))),  # SRC-057
     'statuspage_key': ('SECRET', 'API_KEY', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-457
     'stripe_webhook_secret': ('SECRET', 'SECRET', ('whsec_', ('ALNUM', 24, 99))),  # SRC-160
     'stytch_secret': ('SECRET', 'SECRET', ('secret-live-', ('B64URL', 44, 44))),  # SRC-415
-    'supabase_personal_access_token': ('TOKEN', 'TOKEN', ('sbp_', ('ALNUM', 40, 40))),  # SRC-554
+    'supabase_personal_access_token': ('TOKEN', 'TOKEN', ('sbp_', ('ALNUM', 40, 40))),  # SRC-527
     'supertokens_key': ('TOKEN', 'TOKEN', (('ALNUM', 40, 40),)),  # SRC-420
     'tailscale_key': ('SECRET', 'API_KEY', ('tskey-', ['auth', 'api', 'client'], '-', ('ALNUM', 8, 16), '-', ('ALNUM', 16, 24))),  # SRC-223
     'tavily_key': ('SECRET', 'API_KEY', ('tvly-', ('ALNUM', 32, 32))),  # SRC-043
@@ -311,7 +311,7 @@ CATALOG_KINDS = {
     'tencentcloud_secret_id': ('ACCESS_KEY', 'API_KEY', ('AKID', ('ALNUM', 32, 32))),  # SRC-071
     'tencentcloud_secret_key': ('SECRET', 'SECRET', (('ALNUM', 32, 32),)),  # SRC-072
     'terraform_cloud_token': ('TOKEN', 'TOKEN', (('ALNUM', 14, 14), '.atlasv1.', ('B64URL', 60, 90))),  # SRC-137
-    'thunderstore_api_token': ('TOKEN', 'TOKEN', ('tss_', ('B64URL', 20, 20))),  # SRC-479
+    'thunderstore_api_token': ('TOKEN', 'TOKEN', ('tss_', ('B64URL', 20, 20))),  # SRC-475
     'tidb_cloud_password': ('PASSWORD', 'PASSWORD', (('ALNUM', 24, 24),)),  # SRC-393
     'tinybird_token': ('TOKEN', 'TOKEN', ('p.eyJ', ('B64URL', 8, 24), '.eyJ', ('B64URL', 8, 24), '.', ('B64URL', 8, 24))),  # SRC-396
     'togetherai_key': ('SECRET', 'API_KEY', (('HEX', 64, 64),)),  # SRC-034
@@ -321,23 +321,23 @@ CATALOG_KINDS = {
     'tosspayments_test_secret_key': ('SECRET', 'SECRET', ('test_sk_', ('ALNUM', 20, 40))),  # SRC-170
     'tosspayments_test_widget_secret': ('SECRET', 'SECRET', ('test_gsk_', ('ALNUM', 20, 40))),  # SRC-172
     'turbo_token': ('TOKEN', 'TOKEN', (('ALNUM', 24, 24),)),  # SRC-403
-    'typeform_personal_token': ('TOKEN', 'TOKEN', ('tfp_', ('ALNUM', 56, 56))),  # SRC-568
+    'typeform_personal_token': ('TOKEN', 'TOKEN', ('tfp_', ('B64URL', 40, 40))),  # SRC-529
     'typesense_key': ('SECRET', 'API_KEY', (('ALNUM', 32, 32),)),  # SRC-102
-    'ubidots_token': ('TOKEN', 'TOKEN', ('BBFF-', ('ALNUM', 30, 30))),  # SRC-557
-    'unkey_root_key': ('SECRET', 'API_KEY', ('unkey_', ('B64URL', 20, 20))),  # SRC-480
+    'ubidots_token': ('TOKEN', 'TOKEN', ('BBFF-', ('ALNUM', 30, 30))),  # SRC-530
+    'unkey_root_key': ('SECRET', 'API_KEY', ('unkey_', ('B64URL', 20, 20))),  # SRC-476
     'upbit_open_api_secret_key': ('SECRET', 'SECRET', (('ALNUM', 40, 40),)),  # SRC-178
     'upcloud_password': ('PASSWORD', 'PASSWORD', (('ALNUM', 24, 24),)),  # SRC-386
     'upstage_key': ('SECRET', 'API_KEY', ('up_', ('ALNUM', 40, 50))),  # SRC-050
     'upstash_redis_token': ('TOKEN', 'TOKEN', (('ALNUM', 40, 60),)),  # SRC-096
     'uptimerobot_key': ('SECRET', 'API_KEY', ('u', ('ALNUM', 40, 40))),  # SRC-455
-    'val_town_api_token': ('TOKEN', 'TOKEN', ('vtwn_', ('B64URL', 20, 20))),  # SRC-481
+    'val_town_api_token': ('TOKEN', 'TOKEN', ('vtwn_', ('B64URL', 20, 20))),  # SRC-477
     'vercel_token': ('TOKEN', 'TOKEN', (['vck', 'vci', 'vca', 'vcp', 'vcr'], '_', ('ALNUM', 20, 60))),  # SRC-130
     'volcengine_accesskey_id': ('ACCESS_KEY', 'API_KEY', ('AKLT', ('ALNUM', 30, 44))),  # SRC-073
     'volcengine_ark_key': ('SECRET', 'API_KEY', (('HEX', 8, 8), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 4, 4), '-', ('HEX', 12, 12))),  # SRC-074
     'vonage_secret': ('SECRET', 'SECRET', (('ALNUM', 16, 16),)),  # SRC-438
     'voyageai_key': ('SECRET', 'API_KEY', ('pa-', ('B64URL', 43, 43))),  # SRC-054
     'vultr_key': ('SECRET', 'API_KEY', (('ALNUM', 36, 36),)),  # SRC-384
-    'wakatime_api_key': ('SECRET', 'API_KEY', ('waka_', ('ALNUM', 36, 36))),  # SRC-482
+    'wakatime_api_key': ('SECRET', 'API_KEY', ('waka_', ('ALNUM', 36, 36))),  # SRC-478
     'weaviate_cloud_key': ('SECRET', 'API_KEY', ('wcs-', ('B64URL', 40, 40))),  # SRC-378
     'web3_evm_private_key': ('PRIVATE_KEY', 'PRIVATE_KEY', ('0x', ('HEXM', 64, 64))),  # SRC-247
     'wechat_corp_secret': ('SECRET', 'SECRET', (('B64URL', 43, 43),)),  # SRC-208
@@ -347,7 +347,7 @@ CATALOG_KINDS = {
     'wordpress_auth_keys': ('SECRET', 'API_KEY', (('=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#%^&-_+~:?/|', 64, 64),)),  # SRC-151
     'workos_key': ('SECRET', 'API_KEY', ('sk_live_', ('ALNUM', 40, 40))),  # SRC-368
     'writer_key': ('SECRET', 'API_KEY', (('HEX', 40, 40),)),  # SRC-374
-    'wundergraph_cosmo_api_key': ('SECRET', 'API_KEY', ('cosmo_', ('HEX', 32, 32))),  # SRC-570
+    'wundergraph_cosmo_api_key': ('SECRET', 'API_KEY', ('cosmo_', ('HEX', 32, 32))),  # SRC-539
     'x1password_service_token': ('TOKEN', 'TOKEN', ('ops_eyJ', ('B64URL', 250, 375))),  # SRC-141
     'xai_grok_key': ('SECRET', 'API_KEY', ('xai-', ('ALNUM', 80, 80))),  # SRC-028
     'xata_key': ('SECRET', 'API_KEY', ('xau_', ('B64URL', 37, 37))),  # SRC-391
@@ -356,5 +356,5 @@ CATALOG_KINDS = {
     'zapier_webhook': ('SECRET', 'API_KEY', ('https://hooks.zapier.com/hooks/catch/', ('DIGITS', 8, 24), '/', ('LOWERNUM', 8, 24), ['', '/'])),  # SRC-156
     'zendesk_token': ('TOKEN', 'TOKEN', (('ALNUM', 40, 40),)),  # SRC-204
     'zhipu_glm_key': ('SECRET', 'API_KEY', (('HEX', 32, 32), '.', ('ALNUM', 16, 16))),  # SRC-051
-    'zuplo_consumer_api_key': ('SECRET', 'API_KEY', ('zpka_', ('ALNUM', 32, 32))),  # SRC-483
+    'zuplo_consumer_api_key': ('SECRET', 'API_KEY', ('zpka_', ('ALNUM', 32, 32))),  # SRC-479
 }

@@ -76,10 +76,10 @@ authored는 내장 코퍼스, 템플릿 예시, 에이전트 세션 v2를 합친
 
 ### 비밀 출처 카탈로그 (구현함, 2026-10-25)
 
-[secret-sources](../secret-sources/README.md)의 카탈로그(613행, "어떤 서비스·맥락에서 비밀이 어떻게 에이전트에게 들어오는가")를 카드의 장면으로 쓴다. 카탈로그 CSV는 git 밖에 두고(예시 열에 실제 형식의 가짜 키가 있다), [ml_train_catalog.py](../scripts/ml_train_catalog.py)가 행별 결정([catalog_decisions.toml](../templates/ml_train/catalog_decisions.toml))과 함께 읽어 예시 값 없는 `catalog.jsonl`과 서비스 형식 kind(`value_gen_catalog.py`)를 만든다.
+[secret-sources](../secret-sources/README.md)의 카탈로그(566행, "어떤 서비스·맥락에서 비밀이 어떻게 에이전트에게 들어오는가")를 카드의 장면으로 쓴다. 카탈로그 CSV는 git 밖에 두고(예시 열에 실제 형식의 가짜 키가 있다), [ml_train_catalog.py](../scripts/ml_train_catalog.py)가 행별 결정([catalog_decisions.toml](../templates/ml_train/catalog_decisions.toml))과 함께 읽어 예시 값 없는 `catalog.jsonl`과 서비스 형식 kind(`value_gen_catalog.py`)를 만든다.
 
 - 판정은 LABELING.md를 따른다. 카탈로그가 음성으로 둔 공개용 키(Stripe `pk_`, Supabase anon JWT, Toss `test_ck_`, Kakao JS 키), 약한 값(`changeme`), 0으로 채운 UUID는 정답으로 보고 대조군으로 쓰지 않는다. 해시·식별자를 양성으로 둔 행은 빼거나 음성 장면으로 쓴다.
-- 613행 중 학습 504, 분포 이동 test 전용 8(Twilio, Datadog 키 둘, Hugging Face, Azure 저장소 키, Terraform state, Jupyter 출력, MCP 결과), 제외 101(LABELING 판정·열린 질문, 자동 수집 행의 접두사 조각과 중복).
+- 566행 중 학습 504, 분포 이동 test 전용 8(Twilio, Datadog 키 둘, Hugging Face, Azure 저장소 키, Terraform state, Jupyter 출력, MCP 결과), 제외 54(LABELING 판정·열린 질문, 자동 수집 행의 접두사 조각과 중복).
 - 카드마다 행 하나를 받는다. 문맥 × 유형 칸의 수와 split은 그대로이고, 칸 안에서 맞는 행을 덜 쓴 것부터 돌린다. 행이 주 비밀의 kind, 장면 힌트(경로, 포맷, 짝 자산, 주변 이름, 학습 포인트), 대조군(`{{neg:…}}`)을 준다. 대조군은 카드의 어려운 음성에 하나 더 들어간다.
 - 평가 전용 출처(CredData, SecretBench, Nemotron-PII, SWE-Gym, openhands-feedback, Nosey Parker)를 인용한 행은 서비스 이름과 값 형식만 쓰고 장면 힌트와 대조군을 넣지 않는다. 그래도 형식 지식(접두사, 길이, 문자 집합)은 공유하므로 Nosey Parker와 CredData 점수는 낙관적일 수 있다(5절).
 

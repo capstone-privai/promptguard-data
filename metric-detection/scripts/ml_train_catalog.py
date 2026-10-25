@@ -270,6 +270,12 @@ def mask_of(kind: str, kind_type: str, sample: str) -> str:
     return "SECRET" if kind_type == "SECRET" and "secret" in kind else "API_KEY"
 
 
+def changed_lines(pos: str, neg: str) -> str:
+    """The lines of column 13 that column 12 does not share: the value, without a frame such as a js `${x}`."""
+    shared = set(pos.split("\n"))
+    return "\n".join(line for line in neg.split("\n") if line not in shared) or neg
+
+
 def default_contrast(neg: str, prefix: tuple[str, ...]) -> str | None:
     """The {{neg:KIND}} that plays the part of column 13, from its shape (the value itself is never copied)."""
     p = any(x in neg for x in prefix)
@@ -383,7 +389,8 @@ def record(row: dict, dec: dict, new_kinds: dict, problems: list[str]) -> dict:
         if key in over:
             h[key] = over[key] or (None if key in ("format", "asset", "learning_point") else [])
     rec["hints"] = h
-    contrast = over.get("contrast", default_contrast(row["Hard_Negative_Counterpart_Example"], prefix))
+    contrast = over.get("contrast", default_contrast(changed_lines(row["Synthetic_Positive_Example_Raw"],
+                                                                  row["Hard_Negative_Counterpart_Example"]), prefix))
     if contrast in (None, "none", False):
         rec["contrast"] = None
     else:

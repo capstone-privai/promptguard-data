@@ -19,6 +19,10 @@ _PAT = re.compile(
     r"\[(?P<cls>[^\]]{1,50})\]"
     r"\{(?P<lo>\d{1,3})(?:,(?P<hi>\d{1,3}))?\}")
 
+# escapes like \b and \s are not literal letters: without this, `\bAVNS_` reads as the prefix `bAVNS_`
+def _unescape(rx):
+    return re.sub(r"\\[A-Za-z]", " ", rx)
+
 # fragments that are mid-pattern pieces, not real token prefixes
 _FRAGMENTS = {"api03-", "admin01-", "v1_", "v2_", "fo1_", "ba3-", "ico-", "pub_", "key-", "pubkey-", "api-",
               "oauth_", "bglpat-", "bearer", "token", "secret", "x-", "0x"}
@@ -80,7 +84,7 @@ def populate(B, limit=400):
         return 0
     covered = set()  # prefixes already hand-authored
     for r in B.ROWS:
-        for m in re.findall(r"\b([A-Za-z][A-Za-z0-9]{1,14}[._-])", r["Regex_or_Structural_Signature"] or ""):
+        for m in re.findall(r"\b([A-Za-z][A-Za-z0-9]{1,14}[._-])", _unescape(r["Regex_or_Structural_Signature"] or "")):
             covered.add(m.lower())
     seen_prefix = set(covered)
     added = 0
@@ -91,7 +95,7 @@ def populate(B, limit=400):
         name = rule.get("name") or rule.get("id") or ""
         if not rx or not name or len(name) > 60:
             continue
-        m = _PAT.search(rx)
+        m = _PAT.search(_unescape(rx))
         if not m:
             continue
         prefix_full = m.group("prefix")
