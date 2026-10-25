@@ -1,0 +1,4 @@
+# Generated output: fake credentials in real formats (push protection); regenerate with build_v3.py
+coding_agent_secret_sources_master_v3.csv
+coding_agent_secret_sources_master_v*.csv
+__pycache__/
