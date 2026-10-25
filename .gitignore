@@ -33,3 +33,7 @@ metric-detection/**/labels_ml_*.jsonl
 metric-detection/templates/ml_train/raw/
 # Cards are rebuilt byte for byte from card_config.toml (ml_train_cards.py); batches/ records the sha256 used
 metric-detection/templates/ml_train/cards*.jsonl
+
+
+# 비밀값 소스 파일
+frame.csv
