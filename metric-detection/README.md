@@ -10,7 +10,7 @@
 |---|---|
 | `data_test/` | 평가기 입력(세션). 정답은 들어 있지 않다 |
 | `data_answer/` | 정답 span(gold) |
-| `scripts/` | 생성(`dataset_build.py`, `convert_*.py`), 학습용 합성 데이터의 템플릿 작성(`ml_train_cards.py`, `ml_train_write.py`)과 생성·검증(`ml_train_build.py`, `value_gen.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), 전체 조합 채점(`run_all.py`), gitleaks 탐지(`run_gitleaks.py`), 후보 검토(`review_candidates.py`) |
+| `scripts/` | 생성(`dataset_build.py`, `convert_*.py`), 학습용 합성 데이터의 템플릿 작성(`ml_train_cards.py`, `ml_train_write.py`)과 생성·검증(`ml_train_build.py`, `value_gen.py`), 학습·평가 분할 내보내기(`ml_train_export.py`), 검증(`dataset_verify.py`), 용도 정책(`dataset_policy.py`), 채점(`evaluate.py`), 전체 조합 채점(`run_all.py`), gitleaks 탐지(`run_gitleaks.py`), 후보 검토(`review_candidates.py`) |
 | [`evaluation/`](evaluation/README.md) | 채점기: 시스템 어댑터, span 채점, 지표 집계, 결과 파일 |
 | `templates/` | placeholder로 세션을 쓰는 템플릿과 [작성법](templates/README.md) |
 | [`README_CredData.md`](README_CredData.md) | CredData 변환 방법, 변환 규칙, 우리 라벨 기준과 다른 점 |
@@ -31,15 +31,27 @@
 | 템플릿 예시 | `sessions_from_example.jsonl` | `gold_from_example.jsonl` | 2 | 9 | 10 | authored | [templates/example.jsonl](templates/example.jsonl)의 placeholder를 채워 만든 세션이다. |
 | 에이전트 세션 v2 | `sessions_2.jsonl` | `gold_2.jsonl` | 43 | 152 | 78 | authored | [templates/agent_sessions_2.jsonl](templates/agent_sessions_2.jsonl)로 만든 세션이다. 설정 파일 읽기, 명령 출력, 로그, 에이전트가 쓴 명령(`tool_input`), 자연어 속 비밀, 약한·테스트 비밀번호, 비밀 없는 고엔트로피 출력의 7개 범주(`meta.category`)로 나뉜다. `python metric-detection/scripts/dataset_build.py --template metric-detection/templates/agent_sessions_2.jsonl --origin authored --name 2`로 다시 만든다. |
 | CredData | `sessions_from_CredData.jsonl` | `gold_from_CredData.jsonl` | 11,030 | 25,345 | 15,596 | external | [Samsung CredData](https://github.com/Samsung/CredData)의 파일 조각을 세션 형식으로 바꾼 것이다. **평가 전용이며 학습에 쓰지 않는다.** 파일 본문은 원본 저장소의 라이선스를 따르므로 git에 올리지 않고 각자 다시 만든다([README_CredData.md](README_CredData.md)). |
-| privesc-llm-data | `sessions_from_privesc-llm-data.jsonl` | `gold_from_privesc-llm-data.jsonl` | 2,200 | 122,286 | 10,624 | recorded | [sailab-vienna/privesc-llm-data](https://huggingface.co/datasets/sailab-vienna/privesc-llm-data)의 리눅스 권한 상승 에이전트 궤적을 세션 형식으로 바꾼 것이다. 실행 전에 환경에 심어 둔 비밀번호와 SSH 키를 원본 metadata에서 가져와, 텍스트에서 그 위치를 찾아 정답을 자동으로 만든다. 정답 유형은 PASSWORD와 PRIVATE_KEY뿐이다. 용량 때문에 git에 올리지 않고 각자 다시 만든다([README_privesc-llm-data.md](README_privesc-llm-data.md)). |
+| privesc-llm-data | `sessions_from_privesc-llm-data.jsonl` | `gold_from_privesc-llm-data.jsonl` | 2,200 | 122,286 | 10,624 | recorded | [sailab-vienna/privesc-llm-data](https://huggingface.co/datasets/sailab-vienna/privesc-llm-data)의 리눅스 권한 상승 에이전트 궤적을 세션 형식으로 바꾼 것이다. 실행 전에 환경에 심어 둔 비밀번호와 SSH 키를 원본 metadata에서 가져와, 텍스트에서 그 위치를 찾아 정답을 자동으로 만든다. 정답 유형은 PASSWORD와 PRIVATE_KEY뿐이다. 용량 때문에 git에 올리지 않고 각자 다시 만든다([README_privesc-llm-data.md](README_privesc-llm-data.md)). **평가에서 뺀다(2026-10-25)**: ML 학습에 쓰는 시나리오 8개가 들어 있다. privesc는 학습에 쓰지 않은 시나리오 2개(`sessions_mleval_privesc_test_ood`, 아래)로 채점하고, 이 파일은 `data_test/`에 두지 않는다. |
 | Nemotron-PII | `sessions_from_Nemotron-PII.jsonl` | `gold_from_Nemotron-PII.jsonl` | 6,000 | 6,000 | 3,866 | external | [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII)의 합성 업무 문서(설정 파일, API 문서, 비밀번호 안내 메일, 양식 등). `password`, `api_key`, 인증 쿠키 값을 정답으로 쓴다. 정답 있는 문서와 없는 문서가 3,000개씩이고, 비정형 문서는 `prompt`(사용자가 붙여 넣은 글), 정형 문서는 `tool_output`에 둔다([README_Nemotron-PII.md](README_Nemotron-PII.md)). |
 | openhands-feedback | `sessions_from_openhands-feedback.jsonl` | `gold_from_openhands-feedback.jsonl` | 275 | 12,526 | 47 | external | [all-hands/openhands-feedback](https://huggingface.co/datasets/all-hands/openhands-feedback)의 실제 사용자 세션. 업스트림이 민감정보를 지워 거의 음성이다. 정답은 후보를 검토해 정했다([README_openhands-feedback.md](README_openhands-feedback.md), [reviews/](reviews/README.md)). |
 | SWE-Gym | `sessions_from_SWE-Gym.jsonl` | `gold_from_SWE-Gym.jsonl` | 491 | 18,900 | 2 | external | [SWE-Gym/OpenHands-SFT-Trajectories](https://huggingface.co/datasets/SWE-Gym/OpenHands-SFT-Trajectories)의 코딩 에이전트 궤적(moto, MONAI, pandas …). 실제 코딩 트래픽의 과잉 마스킹을 재는 음성 데이터다([README_SWE-Gym.md](README_SWE-Gym.md)). |
 | Nosey Parker | `sessions_from_noseyparker.jsonl` | `gold_from_noseyparker.jsonl` | 573 | 573 | 351 | external | [Nosey Parker](https://github.com/praetorian-inc/noseyparker) 내장 규칙 189개의 예시와 음성 예시. 수백 종 서비스의 토큰 형식을 시험한다([README_noseyparker.md](README_noseyparker.md)). |
+| ML 평가 (test) | `sessions_mleval_<입력>_test.jsonl` | `gold_mleval_<입력>_test.jsonl` | 생성 전 | | | authored | ML 학습 데이터([계획](docs/README_ml-train-plan.md))의 test split. 학습과 같은 분포의 다른 맥락 원형(group)이다. `<입력>`은 LLM 템플릿(`v1`), 손 템플릿(`hand_v1`)처럼 빌드한 입력 파일 이름이다([ML 평가 데이터](#ml-평가-데이터)) |
+| ML 평가 (분포 이동) | `sessions_mleval_<입력>_test_ood.jsonl` | `gold_mleval_<입력>_test_ood.jsonl` | 생성 전 | | | authored, recorded | test_ood split. 학습에 없는 문맥(Jupyter 출력, Terraform state), 서비스 형식(Twilio, Datadog, Hugging Face, Azure 저장소 키), 도구 형식(MCP 결과)과 다른 생성 모델로 쓴 합성 세션, 그리고 privesc-llm-data의 `password_reuse`, `ssh_key_reuse` 시나리오(`sessions_mleval_privesc_test_ood`, 440세션) |
 
 합성 데이터의 비밀값은 모두 결정적으로 만든 가짜 값이다. 정답은 탐지기 결과와 상관없이, 값을 끼워 넣는 순간에 위치를 기록해 만든다.
 
 gold span 열은 데이터에 든 정답 수다. 이 중 `tool_input` 채널의 정답(에이전트 세션 v2 6개, privesc-llm-data 3,820개, openhands-feedback 2개)은 데이터에 그대로 두지만 채점하지 않는다([단위](#단위)). 채점하는 정답은 데이터셋 9개를 합쳐 30,606개 중 26,778개다.
+
+### ML 평가 데이터
+
+ML 학습 데이터는 [ml_train_export.py](scripts/ml_train_export.py)가 둘로 나눈다. train과 val은 ML 담당에게 그대로 넘기는 `metric-detection/ml_handoff/`로, test와 test_ood는 위 표의 `sessions_mleval_*`로 `data_test/`, `data_answer/`에 간다. 입력 파일 하나와 split 하나가 데이터셋 하나다(`dataset_verify`가 파일마다 출처를 하나로 본다). 나누기 전에 group 누수, 값 누수, tool_input 정답, 분포 이동 특징의 누수를 검사하고, 하나라도 걸리면 아무것도 쓰지 않는다. 학습 쪽과 문맥이 거의 같은(값과 숫자를 가린 item의 유사도 0.8 이상) test group은 train으로 옮기고, test_ood group은 뺀다. 무엇을 옮겼는지와 학습에 쓴 group 목록은 `metric-detection/manifest_mleval.json`에 남는다.
+
+이 데이터의 점수를 읽을 때 주의할 점:
+
+- 학습 데이터의 서비스 형식은 비밀 출처 카탈로그에서 왔고, 그 형식(접두사, 길이, 문자 집합)은 Nosey Parker 규칙·CredSweeper와 겹친다. 그래서 이 데이터에서 그 규칙을 쓰는 시스템의 점수가 낙관적일 수 있고, 반대로 이 데이터로 학습한 모델의 Nosey Parker·CredData 점수도 낙관적일 수 있다([계획](docs/README_ml-train-plan.md) 5절).
+- privesc의 test_ood는 시나리오만 다르다. 같은 VM에서 돌린 기록이라 사용자 메시지와 명령 출력 수천 item이 학습 시나리오와 같고, 에이전트가 시도한 추측 비밀번호 11개(`toor`, `changeme` 등)도 양쪽에 정답으로 나온다. 둘 다 내보내기에서 옮기지 않고 manifest에 기록만 한다.
+- ML 모델은 `sessions_mleval_*`로만 평가한다. 다른 데이터셋에 학습에 쓴 group이 들어 있으면(`manifest_mleval.json`의 `training_side_groups`) 그 점수는 학습한 데이터로 채점한 것이다. 내보내기는 `data_test/`에 그런 파일이 남아 있으면 경고한다.
 
 `data_test/`와 `data_answer/`는 git에 올리지 않는다(`.gitignore`). 저장소를 받은 뒤 [생성과 검증](#생성과-검증)의 명령으로 각자 만든다. 합성 데이터도 올리지 않는 이유는, 비밀값이 실제 형식(예: AWS 키 ID와 시크릿 키 쌍)을 따르는 가짜 값이라 GitHub push protection이 진짜 비밀로 보고 push를 막기 때문이다. 생성은 결정적이므로 누가 만들어도 바이트 단위로 같은 파일이 나온다.
 
@@ -94,6 +106,8 @@ gold span 열은 데이터에 든 정답 수다. 이 중 `tool_input` 채널의 
 | `injected` | 비밀용으로 쓰지 않은 궤적에 비밀을 끼워 넣은 세션 | rule_eval |
 | `external` | 외부 벤치마크(CredData) | rule_eval, ml_eval |
 
+ML 학습 데이터는 `meta.split`도 본다(2026-10-25, `dataset_policy.allowed_use`). `train`, `val` 세션은 `ml_train`만, `test`, `test_ood` 세션은 `ml_train`을 뺀 용도만 받는다. 그 밖의 split(privesc 원본의 `training`/`validation`, Nemotron의 `test`)과 split이 없는 세션은 위 표 그대로다. 채점기는 `meta.allowed_use`와 상관없이 split이 `train`, `val`인 세션이 하나라도 있으면 실행하지 않는다(종료 코드 1). 그래서 train이 섞인 빌드 파일(`sessions_ml_*.jsonl`)을 `data_test/`에 두면 `run_all.py`는 그 데이터셋을 건너뛰고, 평가 대시보드는 그 커밋의 평가 전체를 실패로 남긴다. 빌드 파일은 `--out metric-detection/ml_build`처럼 `data_test/` 밖에 쓴다.
+
 `ml_eval`에는 CredSweeper의 ML 검증을 켠 평가(`credsweeper --ml on`)도 포함한다. `injected`는 `rule_eval`만 허용한다.
 
 ## 생성과 검증
@@ -108,11 +122,14 @@ python metric-detection/scripts/dataset_build.py --template metric-detection/tem
 
 # 외부 데이터 (원본을 먼저 받는다: 각 README_<소스>.md)
 python metric-detection/scripts/convert_creddata.py --creddata ../CredData
-python metric-detection/scripts/convert_privesc.py --privesc ../privesc-llm-data
+python metric-detection/scripts/convert_privesc.py --privesc ../privesc-llm-data --out metric-detection/ml_build  # 평가 데이터가 아니다(위 표)
 python metric-detection/scripts/convert_nemotron_pii.py --nemotron ../Nemotron-PII                         # pyarrow 필요
 python metric-detection/scripts/convert_openhands_feedback.py --openhands ../openhands-feedback            # pyarrow 필요
 python metric-detection/scripts/convert_swe_gym.py --swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories        # pyarrow 필요
 python metric-detection/scripts/convert_noseyparker.py --noseyparker ../noseyparker
+
+# ML 평가 데이터: 학습 데이터를 빌드한 뒤(templates/README.md, README_privesc-llm-data.md) 나눈다. datasketch==2.0.0 필요
+python metric-detection/scripts/ml_train_export.py <sessions_ml_v1.jsonl> <sessions_ml_hand_v1.jsonl> <sessions_ml_privesc.jsonl>
 
 python metric-detection/scripts/dataset_verify.py <sessions 파일> [--gold <gold 파일>] [--creddata ../CredData] [--privesc ../privesc-llm-data] \
     [--nemotron ../Nemotron-PII] [--openhands ../openhands-feedback] [--swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories] [--noseyparker ../noseyparker]

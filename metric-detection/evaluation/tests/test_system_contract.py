@@ -15,7 +15,7 @@ from typing import Any
 from evaluation.adapters.promptguard_adapter import CHANNEL_MAP, ModFailure, ModSession
 from evaluation.adapters.system_root import MOD, load_worker
 from evaluation.dataset.io import load_sessions
-from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, SCORED_CHANNELS, USES
+from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, SCORED_CHANNELS, TRAINING_SPLITS, USES
 from evaluation.tests.support import (CREDSWEEPER_REASON, GOLD, HAS_CREDSWEEPER, HAS_PROMPTGUARD, SESSIONS,
                                       SYSTEM_ROOT, finding, found)
 
@@ -110,6 +110,7 @@ class DataContractTests(unittest.TestCase):
         dataset_policy = _script("dataset_policy")
         self.assertEqual(set(USES), set(dataset_policy.USES) - {"ml_train"})
         self.assertEqual(set(dataset_policy.USES), {"rule_eval", "ml_eval", "ml_train"})
+        self.assertEqual(TRAINING_SPLITS, dataset_policy.TRAIN_SPLITS)
         for origin in ("authored", "recorded", "external"):
             dataset_policy.require_use([{"session_id": origin, "meta": {
                 "allowed_use": dataset_policy.ALLOWED_USE[origin]}}], "ml_eval")

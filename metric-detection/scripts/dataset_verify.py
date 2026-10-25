@@ -12,7 +12,7 @@ Run from the repository root:
 
 Checks:
   1. sessions schema: unique session_id, item_id = 0..n-1, known channel, no gold fields
-  2. meta: one source per file; allowed_use matches dataset_policy.ALLOWED_USE[origin]
+  2. meta: one source per file; allowed_use matches dataset_policy.allowed_use(origin, split)
   3. gold schema: one span per row, span_id = 0..k-1 per item, items without spans omitted
   4. span bounds: 0 <= start < end <= len(text), no overlap within an item, known type
   5. LABELING.md "검증" (every dataset):
@@ -37,7 +37,7 @@ import sys
 import tempfile
 
 from dataset_build import CHANNELS, REPO_ROOT, TYPES, build, from_template, write_jsonl
-from dataset_policy import ALLOWED_USE
+from dataset_policy import ALLOWED_USE, allowed_use
 from label_rules import exclusion_kind, expected_type, is_common, judge_occurrence, normalize_span, occurrences
 
 SESSION_KEYS = {"session_id", "items", "meta"}
@@ -97,8 +97,9 @@ def check_meta(sessions: list[dict], name: str, errors: list[str]) -> tuple[str 
         origin = meta.get("origin")
         if origin not in ALLOWED_USE:
             errors.append(f"{name}:{n}: meta.origin {origin!r} not in {sorted(ALLOWED_USE)}")
-        elif meta.get("allowed_use") != ALLOWED_USE[origin]:
-            errors.append(f"{name}:{n}: meta.allowed_use {meta.get('allowed_use')!r} != {ALLOWED_USE[origin]!r} for origin {origin}")
+        elif meta.get("allowed_use") != (want := allowed_use(origin, meta.get("split"))):
+            errors.append(f"{name}:{n}: meta.allowed_use {meta.get('allowed_use')!r} != {want!r} for origin {origin}, "
+                          f"split {meta.get('split')!r}")
         sources[(meta.get("source"), origin, meta.get("template"))] += 1
     if len(sources) > 1:
         errors.append(f"{name}: mixes sources/origins {sorted(sources, key=str)}; keep one per file")
@@ -321,7 +322,10 @@ def main():
         "files": [args.sessions.name, gold_path.name],
         "source": source,
         "origin": origin,
-        "allowed_use": ALLOWED_USE.get(origin),
+        # one list, or every distinct one when the file mixes splits
+        "allowed_use": uses[0] if len(uses := sorted({tuple(s["meta"].get("allowed_use") or [])
+                                                       for s in sessions if isinstance(s.get("meta"), dict)})) == 1
+        else [list(u) for u in uses],
         "sessions": len(sessions),
         "items": len(texts),
         "items_with_spans": len(positive),

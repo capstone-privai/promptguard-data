@@ -8,7 +8,7 @@ from typing import Any
 
 from evaluation.adapters.base import ItemOutput, SystemUnderTest
 from evaluation.dataset.io import load_sessions
-from evaluation.dataset.schema import Session
+from evaluation.dataset.schema import TRAINING_SPLITS, Session
 from evaluation.dataset.validate import ValidationIssue, validate_dataset
 from evaluation.report.aggregate import aggregate
 from evaluation.scorer.edits import EditError, VerificationError
@@ -43,9 +43,16 @@ class RunResult:
 
 
 def check_use(sessions: list[Session], use: str) -> list[ValidationIssue]:
-    """Sessions whose meta.allowed_use does not include `use` (scripts/dataset_policy.py)."""
-    return [ValidationIssue(session.session_id, None, f"meta.allowed_use does not include {use!r}")
-            for session in sessions if use not in (session.meta.get("allowed_use") or [])]
+    """Sessions whose meta.allowed_use does not include `use` (scripts/dataset_policy.py), and ML training sessions:
+    a model must not be scored on what it was trained on, even if meta.allowed_use was edited."""
+    issues = []
+    for session in sessions:
+        if session.meta.get("split") in TRAINING_SPLITS:
+            issues.append(ValidationIssue(session.session_id, None, f"meta.split {session.meta['split']!r} is ML "
+                                          "training data; evaluate on test or test_ood"))
+        elif use not in (session.meta.get("allowed_use") or []):
+            issues.append(ValidationIssue(session.session_id, None, f"meta.allowed_use does not include {use!r}"))
+    return issues
 
 
 def load_dataset(sessions_path: str | Path, gold_path: str | Path, use: str | None = None) -> list[Session]:

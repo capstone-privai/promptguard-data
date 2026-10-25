@@ -181,6 +181,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, EXIT_DATASET)
         self.assertIn("nothing was run", output)
 
+    def test_ml_training_split_exits_1(self) -> None:
+        sessions = Path(self._tmp.name) / "sessions_ml_train.jsonl"
+        records = [json.loads(line) for line in SESSIONS.read_text(encoding="utf-8").splitlines()]
+        for split, allowed in (("train", ["ml_train"]), ("val", ["rule_eval", "ml_eval", "ml_train"])):
+            records[0]["meta"].update(split=split, allowed_use=allowed)  # an edited allowed_use is no way around
+            sessions.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+            code, output = self._main("run", "--sessions", str(sessions), "--gold", str(GOLD), "--system", "oracle",
+                                      "--out", str(self.out_dir))
+            self.assertEqual(code, EXIT_DATASET, split)
+            self.assertIn(f"s-0001 / - / meta.split '{split}' is ML training data", output)
+            self.assertFalse(self.out_dir.exists())
+
     def test_disallowed_use_exits_1(self) -> None:
         sessions = Path(self._tmp.name) / "sessions_injected.jsonl"
         records = [json.loads(line) for line in SESSIONS.read_text(encoding="utf-8").splitlines()]
