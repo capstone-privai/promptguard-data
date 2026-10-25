@@ -4,7 +4,9 @@
 
 | 파일 | 내용 | git |
 |---|---|---|
-| `card_config.toml` | 카드의 목표 분포(계획 3절): 문맥 유형 × 비밀 유형, kind, 채널, 반복, 언어, 도구 형식, 크기, 어려운 음성, 경계 규칙, 분포 이동 test | 올림 |
+| `card_config.toml` | 카드의 목표 분포(계획 3절): 문맥 유형 × 비밀 유형, kind, 채널, 반복, 언어, 도구 형식, 크기, 어려운 음성, 경계 규칙, 분포 이동 test, 카탈로그 | 올림 |
+| `catalog_decisions.toml` | 비밀 출처 카탈로그의 행별 결정: 제외와 사유, 평가 전용 행, 분포 이동 test 전용 행, kind·type·문맥·대조군 | 올림 |
+| `catalog.jsonl` | 카드의 장면이 되는 카탈로그 행(`ml_train_catalog.py`가 만든다). 예시 값은 없다 | 올림 |
 | `prompt_v1.md` | Claude에 주는 시스템 프롬프트. 고치면 파일 이름과 `ml_train_write.PROMPT_VERSION`을 함께 올린다 | 올림 |
 | `cards.jsonl`, `cards_pilot.jsonl` | 뽑은 카드. 설정과 코드에서 바이트 단위로 다시 만들어진다 | 안 올림 |
 | `batches/NAME.json` | batch id, 카드 파일 sha256, 프롬프트 버전, 요청 custom_id. 본문은 없다 | 올림 |
@@ -18,6 +20,10 @@
 파일럿과 본 생성은 **같은 이름**(아래 예의 `v1`)을 쓴다. `submit`은 그 이름으로 이미 통과한 카드를 건너뛰므로, 본 생성은 파일럿에서 통과한 카드를 다시 만들지 않는다. 파일럿 뒤에 프롬프트를 고쳤다면 `prompt_v2.md`를 만들고(`ml_train_write.PROMPT_VERSION`도 올린다) 이름도 `v2`로 바꿔 처음부터 다시 한다. 한 이름 안에 다른 프롬프트로 쓴 템플릿이 섞이지 않게 하기 위해서다.
 
 ```bash
+# 0. 카탈로그를 고쳤을 때만: CSV를 다시 만들고 catalog.jsonl과 scripts/value_gen_catalog.py를 새로 쓴다
+(cd metric-detection/secret-sources && python3 build_v3.py frame.csv)
+python metric-detection/scripts/ml_train_catalog.py          # --check: 커밋된 두 파일이 최신인지만 본다
+
 # 1. 카드: 전체 2,490장과, 그중 split·문맥 비율을 지킨 파일럿 100장
 python metric-detection/scripts/ml_train_cards.py
 python metric-detection/scripts/ml_train_cards.py --limit 100 --out metric-detection/templates/ml_train/cards_pilot.jsonl
@@ -43,13 +49,15 @@ python metric-detection/scripts/ml_train_write.py process v1
 
 split은 카드를 뽑을 때 정해진다. 문맥 × 비밀 유형 칸마다 train 80, val 10, test 10으로 나누고(전체 수는 정확히 1,792, 224, 224), 분포 이동 test 250장은 따로 뽑는다. 템플릿은 카드의 split과 group_id를 그대로 meta에 받고, 그 템플릿의 variants도 모두 같은 split에 남는다.
 
+카드마다 카탈로그 행 하나가 장면으로 붙는다(`source_id`, `scene`). 칸 안에서 문맥과 유형이 맞는 행을 덜 쓴 것부터 돌리므로 칸의 수와 split은 그대로다. 행이 주 비밀의 kind(`*` 행은 `[kinds]`에서 뽑는다)와 대조군을 정하고, 대조군은 `negatives`에 `"contrast": true`로 하나 더 들어간다. 분포 이동 test 전용 행은 test_ood 카드에만 붙는다. `--by-source`를 주면 요약에 행별 카드 수가 나온다. 템플릿 meta에는 `source_id`가 남는다.
+
 `process`가 템플릿을 받아들이는 조건은 다섯 가지다.
 - 응답이 끝까지 나왔다(`stop_reason`이 `end_turn`).
 - JSON이 스키마에 맞는다.
 - 카드를 따랐다.
   - item 수가 ±1, 턴 수가 +1 안이다.
   - 카드의 placeholder가 모두 지정 채널과 반복 조건대로 있다.
-  - 어려운 음성이 모두 있다.
+  - 어려운 음성이 모두 있다. 카드가 요구한 대조군도 그대로 있다.
   - 카드에 없는 placeholder가 없고, tool_input에는 비밀 placeholder 대신 카드의 `{{mask:NAME}}`이 있다.
   - `ko`·`mixed` 카드는 개발자 메시지에 한국어가 있다.
 - placeholder 밖에 비밀이 없다. 형식만으로 자격증명인 값, 자격증명 키 뒤의 리터럴, gitleaks 탐지를 본다.
@@ -63,7 +71,7 @@ split은 카드를 뽑을 때 정해진다. 문맥 × 비밀 유형 칸마다 tr
 | effort | `medium`, adaptive thinking | `ml_train_write.EFFORT` |
 | max_tokens | 32,000 | `ml_train_write.MAX_TOKENS` |
 | 출력 | JSON 스키마로 강제(`output_config.format`) | `ml_train_write.SCHEMA` |
-| 캐시 | 시스템 프롬프트에 `cache_control`. 프롬프트가 약 2,100토큰이라 모델의 최소 캐시 길이보다 짧으면 캐시되지 않는다 | |
+| 캐시 | 시스템 프롬프트에 `cache_control`. 프롬프트가 약 3,000토큰(12,000자)이라 모델의 최소 캐시 길이보다 짧으면 캐시되지 않는다 | |
 
 Batch API는 서버 측 `fallbacks`를 받지 않는다. 안전 분류기가 거절한 요청(`stop_reason: refusal`)은 `process`가 거절로 기록하고, 다시 `submit`하면 새로 시도한다.
 

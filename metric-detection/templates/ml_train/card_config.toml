@@ -19,6 +19,13 @@ variants_ood = 2
 model = "claude-opus-5-5"
 model_ood = "claude-sonnet-5-5"   # a different writer, to see whether the model learned the writer's style
 
+# Scenes from the secret-source catalog (catalog.jsonl, built by ml_train_catalog.py). Every card takes one row:
+# within each context x type cell the rows that fit it take turns, so the cell counts and splits above stay exact.
+# A row gives the primary secret's kind (or "*": drawn from [kinds] below), scene hints and a contrast.
+[catalog]
+path = "catalog.jsonl"
+contrast_share = 1.0    # share of cards whose row contrast is added to the hard negatives
+
 # Session context x primary secret type, in sessions (3.2절). "none" is a session without secrets.
 [contexts.config]
 label = "설정 파일"
@@ -210,5 +217,6 @@ tool_output_format = "mcp_result"
 twilio_auth_token = "SECRET"
 twilio_api_key = "SECRET"
 datadog_api_key = "SECRET"
+datadog_app_key = "SECRET"
 huggingface_token = "TOKEN"
 azure_storage_key = "SECRET"
