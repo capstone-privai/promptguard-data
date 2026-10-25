@@ -4,6 +4,8 @@
 
 | 파일 | 내용 | git |
 |---|---|---|
+| `hand_v1.jsonl` | 직접 작성한 경계·퍼뜨림 템플릿 160개. variants 5로 800세션([작성·검증](HAND.md)) | 올림 |
+| `hand_coverage.md` | 빌드된 gold·labels로 집계한 손 템플릿의 규칙별 목표·정답·음성 수 | 올림 |
 | `card_config.toml` | 카드의 목표 분포(계획 3절): 문맥 유형 × 비밀 유형, kind, 채널, 반복, 언어, 도구 형식, 크기, 어려운 음성, 경계 규칙, 분포 이동 test, 카탈로그 | 올림 |
 | `catalog_decisions.toml` | 비밀 출처 카탈로그의 행별 결정: 제외와 사유, 평가 전용 행, 분포 이동 test 전용 행, kind·type·문맥·대조군 | 올림 |
 | `catalog.jsonl` | 카드의 장면이 되는 카탈로그 행(`ml_train_catalog.py`가 만든다). 예시 값은 없다 | 올림 |
