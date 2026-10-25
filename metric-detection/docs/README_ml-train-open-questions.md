@@ -38,7 +38,7 @@
 |---|---|---|
 | 공백으로 이은 패스프레이즈 (`correct horse battery staple`) | 원칙("자격증명 자리에 들어간 리터럴")으로는 정답이다. 그런데 `label_rules.is_phrase`가 흔한 영어 단어 여럿이 공백으로 이어진 값을 `descriptor`(`new password` 같은 설명 문구)로 읽어 정답에서 뺀다 | (a) `is_phrase`가 자격증명 자리(`passphrase:` 등)의 값은 문구로 보지 않게 고친다. (b) 지금처럼 생성하지 않는다. 생성기는 `-`, `_`, `.`로 잇거나 붙인 패스프레이즈만 만든다 |
 | PuTTY 개인키 (`PuTTY-User-Key-File-3:` 블록) | LABELING.md "경계"에는 PEM 형식(BEGIN 줄부터 END 줄까지)만 있다. PuTTY 형식은 머리글, 공개 부분, 개인 부분, MAC이 여러 줄로 이어진다 | (a) 블록 전체, (b) `Private-Lines:` 아래 본문만, (c) 다루지 않는다 |
-| 자리표시인데 label_rules가 정답으로 읽는 값 (비밀 출처 카탈로그 검토에서 찾음) | LABELING.md로는 template·reference인데 `exclusion_kind`가 None을 돌려준다: `<generate-with-openssl-rand-hex-32>`(LABELING.md의 template 예), `<base64-encoded>`, `django-insecure-change-me-in-production`, `${MAILCHIMP_API_KEY}-us1`. 앞의 것은 `value_gen.neg_template`이 1/15 확률로 만들어, 그 값이 나온 LLM 템플릿은 `neg:` 검사에서 거절된다 | (a) `label_rules.EXCLUDED_VALUE`를 넓힌다(평가 데이터 정답이 바뀔 수 있다). (b) `neg_template`에서 그 값을 빼고 새 kind로 둔다. (c) 지금처럼 거절되면 다시 쓴다 |
+| 자리표시인데 label_rules가 정답으로 읽는 값 (비밀 출처 카탈로그 검토에서 찾음) | LABELING.md로는 template·reference인데 `exclusion_kind`가 None을 돌려준다: `<generate-with-openssl-rand-hex-32>`(LABELING.md의 template 예), `<base64-encoded>`, `django-insecure-change-me-in-production`, `${MAILCHIMP_API_KEY}-us1`. `value_gen.neg_template`은 앞의 것 대신 label_rules가 template으로 읽는 `<generate-a-key-with-openssl-rand-hex-32>`를 만든다(2026-10-25) | (a) `label_rules.EXCLUDED_VALUE`를 넓힌다(평가 데이터 정답이 바뀔 수 있다). (b) 지금처럼 이런 값은 대조군으로 만들지 않는다 |
 | Sentry DSN 안의 공개 키 (`https://⟦키⟧@o1.ingest.sentry.io/1`) | URL의 사용자 자리에 키만 있고 비밀번호 자리가 없어 LABELING.md "URL 속 자격증명"에 맞는 경우가 없다. 카탈로그는 공개 키라 음성으로 둔다 | (a) 공개용 키처럼 정답(ACCESS_KEY), (b) 식별자. 정할 때까지 생성하지 않는다 |
 
 ## 4. 기존 v2 템플릿의 두 정답

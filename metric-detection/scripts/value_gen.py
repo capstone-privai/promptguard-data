@@ -445,7 +445,7 @@ def neg_template(d: Draw) -> str:
     thing = d.choice(("token", "api-key", "password", "secret", "access-key", "key"))
     return d.weighted([(f"<your-{thing}>", 3), (f"<{thing}>", 2), (f"YOUR_{thing.upper().replace('-', '_')}", 3),
                        (f"your-{thing}-here", 2), (f"{{{{ .Values.{thing.replace('-', '')} }}}}", 1),
-                       (f"<generate-with-openssl-rand-hex-{d.choice(('32', '64'))}>", 1),
+                       (f"<generate-a-key-with-openssl-rand-hex-{d.choice(('32', '64'))}>", 1),
                        (f"your-{thing}-change-this-in-production", 1), ("REPLACE_ME_PLACEHOLDER", 1),
                        (f"{{{{ secrets.{thing.upper().replace('-', '_')} }}}}", 1)])
 
