@@ -1,0 +1,85 @@
+{
+  "description": "시연용 정답 비밀. demo/showcase/.env와 PromptGuard 샘플 프로젝트(sample-protected-project)의 다른 파일에 들어 있는 합성 비밀 전부다. 성능 수치가 아니라 시연 화면의 정답 대조용이다.",
+  "secrets": [
+    {
+      "name": "DB_PASSWORD",
+      "value": "PgDemoOnly!84qSynthetic",
+      "file": ".env"
+    },
+    {
+      "name": "API_KEY",
+      "value": "sk_test_PGDEMO_ONLY_7qM2vK9pR5xN8sL4",
+      "file": ".env"
+    },
+    {
+      "name": "SESSION_TOKEN",
+      "value": "DemoSessionToken_8qN3vK7pR2xM5sL9",
+      "file": ".env"
+    },
+    {
+      "name": "DATABASE_URL 비밀번호",
+      "value": "EnvUriDemo!41kSynthetic",
+      "file": ".env"
+    },
+    {
+      "name": "SMTP_PASSWORD (공백 포함)",
+      "value": "mail relay pass 2026 synthetic",
+      "file": ".env"
+    },
+    {
+      "name": "주석 속 옛 API 키",
+      "value": "Old_ShowcaseKey_4tR8wQ2zL6xP",
+      "file": ".env"
+    },
+    {
+      "name": "명령어 속 mysql 비밀번호",
+      "value": "ShowcaseDeploy_91xQ",
+      "file": ".env"
+    },
+    {
+      "name": "문장 속 관리자 비밀번호",
+      "value": "Showcase_Admin_58kdTq",
+      "file": ".env"
+    },
+    {
+      "name": "PROJECT_PASSWORD",
+      "value": "ProjectDemoOnly!72qSynthetic",
+      "file": "CLAUDE.md"
+    },
+    {
+      "name": "database.json password",
+      "value": "JsonDemoOnly!62qSynthetic",
+      "file": "config/database.json"
+    },
+    {
+      "name": "database.json URI 비밀번호",
+      "value": "UriDemoOnly!53zSynthetic",
+      "file": "config/database.json"
+    },
+    {
+      "name": "로그 속 password",
+      "value": "LogDemoOnly!73mSynthetic",
+      "file": "logs/app.log"
+    },
+    {
+      "name": "로그 속 token",
+      "value": "LogDemoToken_8qM3vK7pR2xN5sL9",
+      "file": "logs/app.log"
+    },
+    {
+      "name": "integration.yaml token",
+      "value": "YamlDemoToken_7qM2vK9pR5xN8sL4",
+      "file": "config/integration.yaml"
+    },
+    {
+      "name": "MCP 응답 password",
+      "value": "McpDemoOnly!52rSynthetic",
+      "file": "fixtures/mcp-response.json"
+    },
+    {
+      "name": "MCP 응답 token",
+      "value": "McpDemoToken_6qN2vK8pR4xM7sL9",
+      "file": "fixtures/mcp-response.json"
+    }
+  ]
+}

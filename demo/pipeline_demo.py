@@ -11,6 +11,7 @@ to rebuild the text the Mod forwards, and pushes each step to the browser.
 
   python3 demo/pipeline_demo.py play                 # a copy of the sample project + Claude Code with the Mod, opens the page
   python3 demo/pipeline_demo.py play --project DIR   # in DIR instead
+  python3 demo/pipeline_demo.py play --showcase      # the showcase .env, graded against its real secrets
   python3 demo/pipeline_demo.py serve                # detector + page only; point a Mod's bridge at it
 
 Open http://127.0.0.1:18790. The page shows raw secret values: it listens on 127.0.0.1 only, so use synthetic
@@ -163,6 +164,77 @@ class ModReplica:
         return [s[0] if isinstance(s, tuple) else s for s in segments]
 
 
+# ---- grading against the secrets a showcase file really holds ------------------------------------------------
+
+SHOWCASE = HERE / "showcase"
+# Worst first: one leaked copy of a secret means it reached the model, whatever happened to its other copies.
+TRUTH_RANK = {"leaked": 3, "partial": 2, "error": 1, "masked": 0}
+
+
+class Truth:
+    """The secrets (synthetic) a showcase project really holds, read from a truth file:
+    {"secrets": [{"name": "DB_PASSWORD", "value": "..."}, ...]}. Every text the Mod sends is graded by what it
+    forwards: each copy of a secret is masked (wholly inside placeholders), partial (some of it still readable),
+    leaked (not masked at all) or error (the detector failed, so the Mod raised instead of masking). Masked
+    stretches that hold no secret are over-masking (fp). Values, not file offsets, so it works on whatever channel
+    the text arrives through (a Read result, a Bash output, a prompt)."""
+
+    def __init__(self, path: Path) -> None:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entries = data.get("secrets") if isinstance(data, dict) else None
+        if not isinstance(entries, list) or not entries:
+            raise SystemExit(f"{path}: expected {{\"secrets\": [{{\"name\", \"value\"}}, ...]}}")
+        self.file = path.name
+        self.secrets: dict[str, str] = {}  # value -> name
+        for entry in entries:
+            value = entry.get("value") if isinstance(entry, dict) else None
+            if not isinstance(value, str) or len(value) < 4:
+                raise SystemExit(f"{path}: every secret needs a value of 4 or more characters")
+            self.secrets.setdefault(value, str(entry.get("name") or "secret"))
+        self.longest_first = sorted(self.secrets, key=len, reverse=True)
+        self.worst: dict[str, str] = {}  # value -> worst status seen this session
+        self.fp: set[str] = set()        # masked text that is no secret
+
+    def describe(self) -> dict:
+        return {"file": self.file, "total": len(self.secrets)}
+
+    def occurrences(self, text: str) -> list[tuple[int, int, str]]:
+        """(start, end, value) of every copy, code point offsets; a value inside a longer one counts once."""
+        found: list[tuple[int, int, str]] = []
+        for value in self.longest_first:
+            at = text.find(value)
+            while at >= 0:
+                end = at + len(value)
+                if not any(s < end and at < e for s, e, _ in found):
+                    found.append((at, end, value))
+                at = text.find(value, at + 1)
+        return sorted(found)
+
+    def grade(self, text: str, segments: list, ok: bool) -> dict | None:
+        table = utf16_table(text)
+        to16 = (lambda i: i) if table is None else (lambda i: table[i])
+        copies = [(to16(s), to16(e), value) for s, e, value in self.occurrences(text)]
+        masks = sorted((s["start"], s["end"], s["raw"]) for s in segments if ok and not isinstance(s, str))
+        if not copies and not masks:
+            return None
+        spans = []
+        for start, end, value in copies:
+            covered = sum(max(0, min(end, e) - max(start, s)) for s, e, _ in masks)
+            status = "error" if not ok else "masked" if covered >= end - start else "partial" if covered else "leaked"
+            spans.append({"start": start, "end": end, "name": self.secrets[value], "status": status})
+            if TRUTH_RANK[status] >= TRUTH_RANK.get(self.worst.get(value, "masked"), 0):
+                self.worst[value] = status
+        fp = [{"start": s, "end": e} for s, e, raw in masks if not any(cs < e and s < ce for cs, ce, _ in copies)]
+        self.fp.update(raw for s, e, raw in masks if not any(cs < e and s < ce for cs, ce, _ in copies))
+        return {"spans": spans, "fp": fp}
+
+    def summary(self) -> dict:
+        counts = {status: 0 for status in TRUTH_RANK}
+        for status in self.worst.values():
+            counts[status] += 1
+        return {"total": len(self.secrets), "seen": len(self.worst), **counts, "fp": len(self.fp)}
+
+
 # ---- the detector stand-in -----------------------------------------------------------------------------------
 
 def regions(text: str, ballots: dict, findings: list[dict], adapters: list[str]) -> list[dict]:
@@ -196,8 +268,9 @@ def regions(text: str, ballots: dict, findings: list[dict], adapters: list[str])
 class Tap:
     """Serves the checkout's ensemble to the Mod and records each batch for the page."""
 
-    def __init__(self, detector) -> None:
+    def __init__(self, detector, truth: Truth | None = None) -> None:
         self.detector = detector
+        self.truth = truth
         self.local = threading.local()
         collect = detector.collect
 
@@ -223,7 +296,8 @@ class Tap:
         # (shell-aware) still scan but do not vote. Checkouts without candidate_policy vote with every module.
         return {"boot": self.boot, "policy": info.get("candidate_policy", "majority"), "consensus": info["consensus"],
                 "required": info["required_votes"], "adapters": adapters,
-                "voters": info.get("protection_adapters", adapters), "skipped": [s["name"] for s in info["skipped"]]}
+                "voters": info.get("protection_adapters", adapters), "skipped": [s["name"] for s in info["skipped"]],
+                "truth": self.truth.describe() if self.truth else None}
 
     def scan_many(self, items: list[tuple[str, str]]) -> list[dict]:
         self.local.ballots = None
@@ -259,9 +333,13 @@ class Tap:
                     continue
                 found = regions(text, ballot, result.get("findings", []), adapters)
                 changed = segments != [text]
-                quiet = not found and not changed and not result.get("errors")
+                graded = self.truth.grade(text, segments, ok) if self.truth else None
+                # A text holding a secret is never folded away, least of all when nothing masked it.
+                quiet = not found and not changed and not result.get("errors") and not graded
                 row = {"text": text[:PREVIEW_CHARS] if quiet else text, "length": len(text),
                        "regions": found, "output": None if quiet else segments, "errors": result.get("errors") or []}
+                if graded:
+                    row["truth"] = graded
                 if not quiet and ok:
                     row["repeat_of"] = self.repeat_of(source, text, segments)
                     if row["repeat_of"] is None:
@@ -272,6 +350,8 @@ class Tap:
             self.seq = seq
             event = {"seq": self.seq, "time": time.time(), "source": items[0][1], "ok": ok, "items": shown,
                      "latency_ms": results[0].get("latency_ms") if results else None}
+            if self.truth:
+                event["truth_summary"] = self.truth.summary()
             self.events.append(event)
             for listener in list(self.listeners):
                 listener.put(event)
@@ -392,13 +472,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {"ok": False, "error": "DETECTOR_EXCEPTION"})
 
 
-def start_server(pg_root: Path, port: int, consensus: str | None, policy: str | None) -> tuple[ThreadingHTTPServer, Tap]:
+def truth_file(args) -> Path | None:
+    """--truth FILE, or with --showcase the showcase's own truth file."""
+    if getattr(args, "truth", None):
+        return Path(args.truth).resolve()
+    return SHOWCASE / "truth.json" if getattr(args, "showcase", False) else None
+
+
+def start_server(pg_root: Path, port: int, consensus: str | None, policy: str | None,
+                 truth: Path | None = None) -> tuple[ThreadingHTTPServer, Tap]:
     sys.path.insert(0, str(pg_root / "src" / "detector"))
     from pgdetector import load_detector
 
     if policy:
         os.environ["PG_DETECTOR_CANDIDATE_POLICY"] = policy  # load_detector() reads it over detector.json's
-    tap = Tap(load_detector(consensus=consensus))
+    tap = Tap(load_detector(consensus=consensus), Truth(truth) if truth else None)
     handler = type("BoundHandler", (Handler,), {"tap": tap, "port": port})
     server = ThreadingHTTPServer((HOST, port), handler)
     server.daemon_threads = True
@@ -407,6 +495,8 @@ def start_server(pg_root: Path, port: int, consensus: str | None, policy: str | 
     rule = "union" if info["policy"] == "union" else f"majority vote: consensus {info['consensus']}"
     print(f"detectors: {', '.join(info['adapters'])} ({rule}, {info['required']} vote(s) to mask)"
           + (f"; skipped: {', '.join(info['skipped'])}" if info["skipped"] else ""))
+    if tap.truth:
+        print(f"truth:     {truth} ({len(tap.truth.secrets)} secrets graded on the page)")
     print(f"page:      http://{HOST}:{port}")
     return server, tap
 
@@ -414,7 +504,7 @@ def start_server(pg_root: Path, port: int, consensus: str | None, policy: str | 
 # ---- commands ------------------------------------------------------------------------------------------------
 
 def cmd_serve(args, pg_root: Path) -> None:
-    server, _ = start_server(pg_root, args.port, args.consensus, args.policy)
+    server, _ = start_server(pg_root, args.port, args.consensus, args.policy, truth_file(args))
     print(f"detector:  point the Mod's bridge here with PG_MOD_DETECTOR_URL=http://{HOST}:{args.port}")
     try:
         threading.Event().wait()
@@ -423,7 +513,9 @@ def cmd_serve(args, pg_root: Path) -> None:
 
 
 def cmd_play(args, pg_root: Path) -> None:
-    server, _ = start_server(pg_root, args.port, args.consensus, args.policy)
+    if args.showcase and args.project:
+        raise SystemExit("--showcase sets up its own copy of the sample project; for another folder use --truth")
+    server, _ = start_server(pg_root, args.port, args.consensus, args.policy, truth_file(args))
     url = f"http://{HOST}:{args.port}"
     work = Path(tempfile.mkdtemp(prefix="pg-pipeline-demo-"))
     if args.project:
@@ -432,6 +524,9 @@ def cmd_play(args, pg_root: Path) -> None:
         # A copy, so whatever Claude edits stays out of the checkout.
         project = work / "sample-protected-project"
         shutil.copytree(pg_root / "sample-protected-project", project)
+        if args.showcase:
+            # The showcase .env: the sample's lines plus secrets in harder places and values that only look secret.
+            shutil.copyfile(SHOWCASE / ".env", project / ".env")
     mcp = work / "mcp.json"
     mcp.write_text(json.dumps({"mcpServers": {"pgdetector": {
         "command": "node", "args": [str(pg_root / "src" / "detector" / "mcp-bridge.cjs")],
@@ -466,6 +561,10 @@ def main() -> None:
                        help="mask the union of every module's spans, or only what the vote accepts (default: detector.json's candidate_policy)")
         p.add_argument("--consensus",
                        help="vote rule under --policy majority: any, majority, unanimous or at_least:N (default: detector.json's)")
+        p.add_argument("--truth", help="JSON of the secrets the project really holds; the page grades each one "
+                                       "as masked, partial or leaked and counts over-masking")
+        p.add_argument("--showcase", action="store_true",
+                       help="grade against demo/showcase/truth.json" + (" and put demo/showcase/.env in the project copy" if name == "play" else ""))
         if name == "play":
             p.add_argument("--project", help="folder Claude Code works in (default: a copy of sample-protected-project)")
             p.add_argument("claude_args", nargs=argparse.REMAINDER, help="after --: extra arguments for claude")

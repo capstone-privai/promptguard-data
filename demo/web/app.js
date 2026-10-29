@@ -358,6 +358,61 @@ function drawLinks(lane, entering = false) {
   lane.append(svg)
 }
 
+// ---- grading against the showcase's real secrets (--truth / --showcase) ----
+
+const TRUTH_WORDS = { masked: '가림', partial: '부분 노출', leaked: '그대로 나감', error: '탐지기 오류' }
+const FULL_CHARS = 6000  // shorter texts (a .env, a config) are shown whole; longer ones as excerpts
+
+// The whole text with every real secret painted by what happened to it, and masked text that holds no secret.
+function truthPanel(item) {
+  const marks = [
+    ...item.truth.spans.map(span => ({ ...span, className: `t-${span.status}` })),
+    ...item.truth.fp.map(span => ({ ...span, className: 't-fp', name: '비밀 아님' })),
+  ].sort((a, b) => a.start - b.start)
+  const panel = el('div', 'truth')
+  const counts = {}
+  for (const span of item.truth.spans) counts[span.status] = (counts[span.status] || 0) + 1
+  const head = el('div', 'truth-head')
+  head.append(el('span', 'truth-title', `정답 대조 · 진짜 비밀 ${item.truth.spans.length}곳`))
+  for (const status of ['masked', 'partial', 'leaked', 'error']) {
+    if (counts[status]) head.append(el('span', `chip t-${status}`, `${TRUTH_WORDS[status]} ${counts[status]}`))
+  }
+  if (item.truth.fp.length) head.append(el('span', 'chip t-fp', `비밀 아닌데 가림 ${item.truth.fp.length}`))
+  const box = el('pre', 'textbox truth-text')
+  const draw = (span, start, end) => {
+    const mark = el('mark', span.className, item.text.slice(start, end))
+    mark.title = span.className === 't-fp' ? '비밀이 아닌데 가린 자리' : `${span.name} · ${TRUTH_WORDS[span.status]}`
+    return mark
+  }
+  if (item.text.length <= FULL_CHARS) {
+    let cursor = 0
+    for (const span of marks) {
+      box.append(item.text.slice(cursor, span.start), draw(span, span.start, span.end))
+      cursor = span.end
+    }
+    box.append(item.text.slice(cursor))
+  } else excerpt(box, item.text, marks, draw)
+  panel.append(head, box)
+  return panel
+}
+
+// The session so far, one line under the top bar: each real secret counted once, by the worst thing that
+// happened to any of its copies.
+function showTruthSummary(summary) {
+  const bar = document.getElementById('truth-bar')
+  if (!summary) { bar.hidden = true; return }
+  bar.hidden = false
+  bar.replaceChildren(
+    el('span', 'truth-title', `정답 비밀 ${summary.total}개 중 지금까지 나온 ${summary.seen}개`),
+    el('span', 'chip t-masked', `가림 ${summary.masked}`),
+    el('span', 'chip t-partial', `부분 노출 ${summary.partial}`),
+    el('span', 'chip t-leaked', `그대로 나감 ${summary.leaked}`),
+    ...(summary.error ? [el('span', 'chip t-error', `탐지기 오류 ${summary.error}`)] : []),
+    el('span', 'chip t-fp', `비밀 아닌데 가림 ${summary.fp}`),
+    el('span', 'soft', `시연용 예시(${setup.truth.file}) · 성능 수치는 평가셋 결과 참고`),
+  )
+}
+
 function lane(item, ok) {
   const row = el('div', 'lane')
   row.append(
@@ -390,7 +445,11 @@ function render(event) {
   if (flagged.length || !event.ok || always) {
     card.append(head)
     const shown = always || !event.ok ? event.items : flagged
-    for (const item of shown) card.append(lane(item, event.ok))
+    for (const item of shown) {
+      // The graded text comes first: on a .env read it is the answer to "what got out", the flows explain why.
+      if (item.truth) card.append(truthPanel(item))
+      card.append(lane(item, event.ok))
+    }
     const folded = repeats.filter(item => !shown.includes(item))
     if (folded.length) card.append(el('div', 'pass', repeatNote(folded)))
     const rest = event.items.length - shown.length - folded.length
@@ -424,6 +483,7 @@ function add(event) {
   if (event.seq <= lastSeq) return
   lastSeq = event.seq
   seen.set(event.seq, event.time)
+  if (event.truth_summary) showTruthSummary(event.truth_summary)
   if (seen.size > KEEP) seen.delete(seen.keys().next().value)
   const card = render(event)
   if (live && !card.classList.contains('quiet')) card.classList.add('fresh')
@@ -455,6 +515,8 @@ function connect() {
     setup = info
     live = false
     document.getElementById('rule').textContent = consensusText(info)
+    if (!info.truth) showTruthSummary(null)
+    else if (lastSeq === 0) showTruthSummary({ total: info.truth.total, seen: 0, masked: 0, partial: 0, leaked: 0, error: 0, fp: 0 })
     setStatus('live', '연결됨')
   })
   source.addEventListener('scan', message => add(JSON.parse(message.data)))
