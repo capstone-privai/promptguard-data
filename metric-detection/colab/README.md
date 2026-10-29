@@ -35,5 +35,7 @@ tar -czf runs/colab/pg-data-full.tar.gz -C metric-detection data_test data_answe
 - 이미 따로 분석한 구성은 ① `ALREADY_DONE`에 넣어 빼고, 그 결과가 필요한 칸은 —와 이유로 남는다(기본: CredSweeper ML off, gitleaks 단독, 어댑터: 자체 규칙).
 - 원본 받기(CredData 수십 분)와 채점은 백그라운드로 돌고 로그를 남긴다. 만든 데이터와 끝난 채점 조각은 Drive에 남아 런타임이 끊겨도 이어서 한다.
 - "시스템" 행은 실제 worker의 HTTP 결과와 채점기 안 결과를 비교하고 Mod 치환 계약 테스트가 통과해야 채운다.
-- ML 평가셋 중 LLM 템플릿(v1) 부분은 git에 없어 만들지 않는다. 파일이 있으면 ① `V1_TEMPLATES`에 경로를 넣는다.
+- "시스템 + v9", "시스템 + Qwen"은 시스템 기본 설정에 ML 모듈 하나를 플러그인 스위치(`PG_DETECTOR_ENABLE`)로 켠 구성이다. 모듈이 실제로 돌지 않으면 그 실행은 점수를 내지 않고 멈추고, ⑥에서 먼저 작은 조각으로 확인한다. Qwen 때문에 GPU 런타임을 쓴다.
+- ML 평가 test는 ML 학습 데이터 빌드 전체(손 템플릿 hand_v1 800세션, v1이 있으면 v1 전체), ML 평가 test_ood는 privesc 10개 시나리오 전체 2,200세션이다(split을 나누지 않음). 채점기가 train·val split을 거부하므로 평가용 사본에서 split을 `test`로 바꾸고 원래 값은 `meta.ml_split`에 남긴다.
+- LLM 템플릿(v1)은 git에 없다. 파일이 있으면 ① `V1_TEMPLATES`에 경로를 넣는다.
 - 분류 검수(무작위 30개)는 사람이 ⑨에서 판정을 넣는다. 넣기 전까지 보고서에는 "검수 미완료"로 나온다.
