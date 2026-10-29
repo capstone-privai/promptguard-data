@@ -49,6 +49,8 @@ PromptGuard는 체크아웃에 설정된 그대로 한 가지로만 돌린다. �
 | `--gold PATH` | 전부 | 정답 파일 (기본: 위의 짝짓기 규칙) |
 | `--use rule_eval\|ml_eval` | run | 모든 세션의 `meta.allowed_use`에 이 용도가 있어야 실행한다. 기본은 `credsweeper --ml on`이면 `ml_eval`, 그 밖에는 `rule_eval` |
 | `--system-root DIR` | promptguard | promptguard-claude-demoV0 체크아웃 경로 |
+| `--require-adapters LIST` | promptguard | 반드시 돌아야 하는 탐지 모듈(쉼표 구분, 예: `ml-v9`). 시스템이 그 모듈을 건너뛰면(패키지·가중치 없음 등) 이유를 출력하고 설정 오류(종료 코드 3)로 멈춘다. ML 모듈은 시스템에서 선택 모듈이라, 이 옵션 없이는 빠져도 점수가 정상처럼 나온다 |
+| `--on-detector-failure block\|pass` | promptguard | 탐지기 호출이 실패한 item의 처리. `block`(기본)은 Runtime V1처럼 Final Guard가 요청을 막은 것으로 보고 item 전체를 가린 것으로 채점한다(정답은 과잉 마스킹 `over`, 노출 아님). `pass`는 Final Guard 없는 옛 launcher처럼 원문 그대로 나간 것으로 채점한다 |
 | `--ml on\|off` | credsweeper | CredSweeper ML 검증 (기본 off, PromptGuard worker 설정과 같음) |
 | `--channels LIST\|all` | credsweeper | 검사할 채널(쉼표 구분). 기본은 채점하는 세 채널 `prompt,instructions,tool_output`. 진단용이며, 어떤 채널을 검사하든 채점은 세 채널만 한다 |
 | `--findings PATH` | gitleaks (필수) | `scripts/run_gitleaks.py`가 쓴 탐지 결과. 채점하는 세션 파일에서 만든 것이어야 한다(SHA-256 확인) |
@@ -83,7 +85,7 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 - `source`는 탐지 결과에 붙는 이름일 뿐이고 탐지 방식은 채널과 상관없이 같다. Mod는 도구마다 `bash_stdout`, `read_result` 같은 이름을 쓰지만 데이터의 `tool_output`은 도구를 구분하지 않으므로 `tool_result`로 넘긴다.
 - `tool_input`은 어느 시스템에서도 채점하지 않는다([채점](#채점)). 처리 채널(`CHANNEL_MAP`)이 채점 채널(`SCORED_CHANNELS`)과 같다.
 - `--append-system-prompt`로 넣은 지침은 Mod 훅에 보이지 않는다(시스템 README의 제한 사항). `instructions`는 CLAUDE.md로 들어간다고 본다.
-- **fail-open.** worker 결과가 안전하지 않거나(오류 목록, 잘못된 오프셋 단위, 범위 밖이거나 겹치는 span) worker가 예외를 내면 Mod의 훅이 예외를 던진다. Mod의 훅에는 `.catch`가 없어 Claude Code가 그 훅을 건너뛰므로, 그 텍스트는 원문 그대로 모델에 간다. 채점기도 그 item을 원문 그대로 두고, 그런 item 수를 `run_meta.json`의 `system.failed_open_items`에 남긴다. 실패 전에 매긴 placeholder 번호는 Mod처럼 장부에 남는다. 예: CredSweeper의 `PEM Private Key` 규칙이 빈 span을 내면 worker가 결과 전체를 `INVALID_OFFSET_RANGE`로 거부하고, 개인 키가 든 텍스트가 통째로 나간다(`sessions_from_CredData.jsonl`에서 item 6개).
+- **탐지기 실패.** worker 결과가 안전하지 않거나(오류 목록, 잘못된 오프셋 단위, 범위 밖이거나 겹치는 span, ML 모듈의 timeout·오류인 `ADAPTER_FAILURE:<이름>`) worker가 예외를 내면 Mod의 훅이 예외를 던지고 Claude Code가 그 훅을 건너뛴다. Runtime V1(`promptguard run`)에서는 Final Guard가 요청을 다시 검사하고 탐지기 실패에 요청을 막으므로(fail-closed) 아무것도 모델에 가지 않는다. 기본(`--on-detector-failure block`)은 그 item을 `[PROMPTGUARD_BLOCKED]` 하나로 통째로 가린 것으로 채점하고 수를 `system.blocked_items`에 남긴다. 정답은 노출되지 않지만 정확히 가린 것도 아니라 `over`가 된다. `pass`는 Final Guard 없는 옛 launcher처럼 원문 그대로 두고 수를 `system.failed_open_items`에 남긴다. 실행이 끝나면 두 수가 0이 아닐 때 한 줄로 출력한다. 실패 전에 매긴 placeholder 번호는 Mod처럼 장부에 남는다. 예: CredSweeper의 `PEM Private Key` 규칙이 빈 span을 내면 worker가 결과 전체를 `INVALID_OFFSET_RANGE`로 거부한다(`sessions_from_CredData.jsonl`에서 item 6개). 옛 launcher에서는 개인 키가 든 텍스트가 통째로 나가고, Runtime V1에서는 그 요청이 막힌다.
 
 ## 데이터셋별 해석
 
@@ -156,12 +158,12 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 
 | 파일 | 내용 |
 |---|---|
-| `run_meta.json` | 시작 시각, 이 저장소의 git commit·branch(`git`), 평가한 PromptGuard 체크아웃의 경로·commit·branch(`system_git`), 시스템 설정(PromptGuard는 처리 채널과 `failed_open_items` 포함), 채점 채널(`scored_channels`), 세션·정답 파일의 경로와 SHA-256, 용도(`use`), 세션·item·정답 수(정답 수는 데이터 전체), meta 요약, 버전, 플랫폼 |
+| `run_meta.json` | 시작 시각, 이 저장소의 git commit·branch(`git`), 평가한 PromptGuard 체크아웃의 경로·commit·branch(`system_git`), 시스템 설정(PromptGuard는 처리 채널, `on_detector_failure`, `blocked_items`, `failed_open_items` 포함), 채점 채널(`scored_channels`), 세션·정답 파일의 경로와 SHA-256, 용도(`use`), 세션·item·정답 수(정답 수는 데이터 전체), meta 요약, 버전, 플랫폼 |
 | `metrics.json` | 위 지표 |
 | `per_span.jsonl` | 정답 span 하나당 한 줄: `session_id`, `item_id`, `span_id`, `start`, `end`, `type`, `channel`, `scored`, `status`, `exposed_chars` |
 | `per_edit.jsonl` | edit 하나당 한 줄: `session_id`, `item_id`, `start`, `end`, `channel`, `scored`, `overlaps_gold`, `within_gold` |
 | `report.md` | 위 내용을 사람이 읽기 좋게 정리한 요약 |
-| `debug/items.jsonl` | `--debug` 전용. PromptGuard는 item마다 worker 결과(위치, 유형, 규칙, 값의 HMAC)와 fail-open 이유. 원문 위치를 알려 주므로 공유하지 않는다 |
+| `debug/items.jsonl` | `--debug` 전용. PromptGuard는 item마다 worker 결과(위치, 유형, 규칙, 값의 HMAC)와 탐지기 실패 이유. 원문 위치를 알려 주므로 공유하지 않는다 |
 
 `per_span.jsonl`과 `per_edit.jsonl`에는 채점하지 않는 `tool_input`의 행도 `scored: false`로 남는다(진단용). 지표는 `scored: true`인 행만으로 계산한다. `debug/` 밖의 파일에는 원문 텍스트가 들어가지 않는다. git 정보는 `git`을 실행하지 않고 `.git`에서 직접 읽으므로 `dirty`는 항상 `null`이다.
 

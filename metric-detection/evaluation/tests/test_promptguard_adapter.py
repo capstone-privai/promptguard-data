@@ -6,12 +6,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from evaluation.adapters.promptguard_adapter import CHANNEL_MAP, PromptGuardAdapter
+from evaluation.adapters.promptguard_adapter import BLOCKED, CHANNEL_MAP, PromptGuardAdapter
 from evaluation.dataset.io import load_sessions
-from evaluation.dataset.schema import Item, Session
+from evaluation.dataset.schema import GoldSpan, Item, Session
 from evaluation.run import evaluate, evaluate_sessions
 from evaluation.scorer.edits import verify
-from evaluation.scorer.span_scoring import SpanStatus
+from evaluation.scorer.span_scoring import SpanStatus, score_item
 from evaluation.tests.support import (GOLD, HAS_PROMPTGUARD, SESSIONS, SKIP_REASON, TOOL_INPUT_ITEM, ScriptedWorker,
                                       finding, found, write_tool_input_fixture)
 
@@ -93,16 +93,17 @@ class PromptGuardAdapterTests(unittest.TestCase):
 
 
 class FailOpenTests(unittest.TestCase):
-    """When the mod's hook throws, Claude Code skips it and the model gets the text unchanged."""
+    """on_failure="pass" (legacy launcher): when the mod's hook throws, Claude Code skips it and the model gets
+    the text unchanged."""
 
     TEXT = "DB_PASSWORD=mysecret123\n"
 
     def _assert_failed_open(self, result) -> None:
-        adapter = PromptGuardAdapter(ScriptedWorker({self.TEXT: result}))
+        adapter = PromptGuardAdapter(ScriptedWorker({self.TEXT: result}), on_failure="pass")
         output = adapter.run_session(_session(self.TEXT))[0]
         self.assertEqual((output.text, output.edits), (self.TEXT, []))
         self.assertIsInstance(output.elapsed_ms, float)
-        self.assertEqual(adapter.describe()["failed_open_items"], 1)
+        self.assertEqual((adapter.describe()["failed_open_items"], adapter.describe()["blocked_items"]), (1, 0))
 
     def test_unsafe_result(self) -> None:
         self._assert_failed_open({"ok": False, "findings": [], "errors": ["SPAN_TOO_LARGE"]})
@@ -120,7 +121,7 @@ class FailOpenTests(unittest.TestCase):
         # The later finding is numbered first; the earlier one then overlaps it and the hook throws.
         worker = ScriptedWorker({first: found(finding(first, "abcdef", value_hash="a"), finding(first, "efgh")),
                                  second: found(finding(second, "zzzzzzzz"))})
-        outputs = PromptGuardAdapter(worker).run_session(_session(first, second))
+        outputs = PromptGuardAdapter(worker, on_failure="pass").run_session(_session(first, second))
         self.assertEqual(outputs[0].text, first)
         self.assertEqual(outputs[1].text, "other=[PASSWORD_2]\n")
 
@@ -148,3 +149,60 @@ class FailOpenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlockOnFailureTests(unittest.TestCase):
+    """The default, Runtime V1: the Final Guard blocks a request whose detector call fails, so the item reaches
+    the model as nothing; scored as one edit over the whole text."""
+
+    TEXT = "DB_PASSWORD=mysecret123\n"
+
+    def _run(self, result):
+        adapter = PromptGuardAdapter(ScriptedWorker({self.TEXT: result}))
+        return adapter, adapter.run_session(_session(self.TEXT))[0]
+
+    def test_failure_masks_the_whole_item(self) -> None:
+        adapter, output = self._run(RuntimeError("ml-v9 timed out"))
+        self.assertEqual(output.text, BLOCKED)
+        self.assertEqual(verify(self.TEXT, output.text, output.edits), output.edits)
+        described = adapter.describe()
+        self.assertEqual((described["on_detector_failure"], described["blocked_items"],
+                          described["failed_open_items"]), ("block", 1, 0))
+
+    def test_gold_in_a_blocked_item_is_over_masked_not_exposed(self) -> None:
+        _adapter, output = self._run({"ok": False, "findings": [], "errors": ["ADAPTER_FAILURE:ml-v9"]})
+        start = self.TEXT.index("mysecret123")
+        gold = [GoldSpan(0, 0, start, start + len("mysecret123"), "PASSWORD")]
+        score = score_item("x", 0, "tool_output", self.TEXT, output.text, output.edits, gold)
+        self.assertEqual([result.status for result in score.gold_results], [SpanStatus.OVER])
+
+    def test_unknown_mode(self) -> None:
+        with self.assertRaises(ValueError):
+            PromptGuardAdapter(ScriptedWorker({}), on_failure="ignore")
+
+
+class RequiredAdaptersTests(unittest.TestCase):
+    @staticmethod
+    def _worker(description):
+        worker = ScriptedWorker({})
+        make = worker.load_detector
+
+        def load_detector():
+            detector = make()
+            detector.describe = lambda: description
+            return detector
+
+        worker.load_detector = load_detector
+        return worker
+
+    def test_running_adapter_passes(self) -> None:
+        worker = self._worker({"adapters": [{"name": "credsweeper"}, {"name": "ml-v9"}], "skipped": []})
+        PromptGuardAdapter(worker, required_adapters=["ml-v9"])
+
+    def test_skipped_adapter_stops_with_the_system_reason(self) -> None:
+        worker = self._worker({"adapters": [{"name": "credsweeper"}],
+                               "skipped": [{"name": "ml-v9", "reason": "v9 dependencies are not installed"}]})
+        with self.assertRaisesRegex(ValueError, r"ml-v9 \(v9 dependencies are not installed\)"):
+            PromptGuardAdapter(worker, required_adapters=["ml-v9"])
+        with self.assertRaisesRegex(ValueError, r"ml-qwen \(not configured\)"):
+            PromptGuardAdapter(worker, required_adapters=["ml-qwen"])

@@ -655,6 +655,8 @@ function commitPopover() {
       ((sample.changed || []).length ? ` · 표본 이후 원본 변경: ${sample.changed.join(", ")}` : "")]);
     const failedOpen = summary.datasets.reduce((total, item) => total + item.failed_open, 0);
     if (failedOpen) rows.push(["fail-open", `${int(failedOpen)}개 item (탐지기 결과가 거부돼 원문 그대로 나감)`]);
+    const blocked = summary.datasets.reduce((total, item) => total + (item.blocked || 0), 0);
+    if (blocked) rows.push(["요청 차단", `${int(blocked)}개 item (탐지기 오류로 Final Guard가 막음, 통째로 가린 것으로 채점)`]);
   }
   const failures = commit ? tracks().filter((track) => commit[track] && commit[track].state === "failed") : [];
   return [
@@ -901,6 +903,7 @@ function datasetInfo(dataset) {
       h("dt", null, "시스템이 가린 곳"), h("dd", null, int(dataset.edits)),
       h("dt", null, "채점 줄 수"), h("dd", null, int(dataset.lines)),
       dataset.failed_open ? [h("dt", null, "fail-open"), h("dd", null, `${int(dataset.failed_open)}개 item`)] : null,
+      dataset.blocked ? [h("dt", null, "요청 차단"), h("dd", null, `${int(dataset.blocked)}개 item`)] : null,
       h("dt", null, "파일"), h("dd", { class: "mono" }, `${dataset.key}.jsonl · ${dataset.sessions_sha256.slice(0, 12)}`)),
   ];
 }

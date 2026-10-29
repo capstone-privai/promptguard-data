@@ -358,10 +358,11 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
                 "sessions": sum(payload["sessions"] for payload in payloads),
                 "items": sum(payload["item_count"] for payload in payloads),
                 "failed_open": sum(payload["system"].get("failed_open_items", 0) for payload in payloads),
+                "blocked": sum(payload["system"].get("blocked_items", 0) for payload in payloads),
                 "seconds": round(sum(payload["seconds"] for payload in payloads), 1),
             }
             if system is None and payloads:
-                system = {key: value for key, value in payloads[0]["system"].items() if key != "failed_open_items"}
+                system = {key: value for key, value in payloads[0]["system"].items() if key not in ("failed_open_items", "blocked_items")}
 
         tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
         shutil.rmtree(tmp_dir, ignore_errors=True)
