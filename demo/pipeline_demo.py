@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import queue
+import re
 import secrets
 import shutil
 import subprocess
@@ -265,6 +266,15 @@ def regions(text: str, ballots: dict, findings: list[dict], adapters: list[str])
     return out
 
 
+# Claude Code hands a file to the model as a Read result with line numbers ("     1\t..."), and the Mod also scans
+# the same file without them, so two copies of one file differ only in those prefixes.
+LINE_NUMBER = re.compile(r"(?m)^ *\d+(?:\t|\u2192)")
+
+
+def plain(text: str) -> str:
+    return LINE_NUMBER.sub("", text)
+
+
 class Tap:
     """Serves the checkout's ensemble to the Mod and records each batch for the page."""
 
@@ -313,10 +323,10 @@ class Tap:
         sends CLAUDE.md inside its prompt block and again as the instruction file), and content it already scanned
         comes back through another channel (a file read again as conversation history). The second copy is masked
         with the same placeholders, so the page folds it instead of drawing the same flows again."""
-        body = text.strip()
+        body = plain(text).strip()
         masks = {s["mask"] for s in segments if not isinstance(s, str)}
         for seq, _seen_source, seen_text, seen_masks in reversed(self.shown):
-            if body in seen_text and masks <= seen_masks:
+            if body in plain(seen_text) and masks <= seen_masks:
                 return seq
         return None
 

@@ -14,7 +14,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from pipeline_demo import SHOWCASE, ModReplica, Truth  # noqa: E402
+from pipeline_demo import SHOWCASE, ModReplica, Truth, plain  # noqa: E402
 
 
 def truth(*values: str) -> Truth:
@@ -72,6 +72,10 @@ class TruthTests(unittest.TestCase):
 
     def test_nothing_to_grade(self) -> None:
         self.assertIsNone(truth("SynthNone_00").grade("tests passed", ["tests passed"], ok=True))
+
+    def test_read_line_numbers_do_not_make_a_new_text(self) -> None:
+        self.assertEqual(plain("     1\tA=1\n     2\tB=2"), "A=1\nB=2")
+        self.assertEqual(plain("A=1 and 12 apples"), "A=1 and 12 apples")
 
     def test_showcase_truth_matches_its_env(self) -> None:
         data = json.loads((SHOWCASE / "truth.json").read_text(encoding="utf-8"))
