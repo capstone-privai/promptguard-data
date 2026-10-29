@@ -532,12 +532,16 @@ function add(event) {
     else showTruthSummary(event.truth_summary)
   }
   empty.remove()
-  feed.prepend(card)
+  // Oldest at the top, like a log: the session reads top to bottom, and each new row arrives under the last.
+  feed.append(card)
   scrollToFirstMark(card)
   for (const row of card.querySelectorAll('.lane')) drawLinks(row)
   // Done arriving: a later redraw (scroll, resize) must not replay the entrance.
   if (fresh) setTimeout(() => card.classList.remove('fresh'), (done + 0.8) * 1000)
-  while (feed.childElementCount > KEEP) feed.lastElementChild.remove()
+  while (feed.childElementCount > KEEP) feed.firstElementChild.remove()
+  // Follow the session: a new row that shows something scrolls into view (under the sticky column heads, see
+  // scroll-margin-top) so the presenter does not have to.
+  if (fresh) card.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function clear() {

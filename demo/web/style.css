@@ -180,6 +180,7 @@ main { padding: 16px 24px 64px; display: flex; flex-direction: column; gap: 14px
 .empty p { margin: 4px 0; }
 
 .event {
+  scroll-margin-top: 64px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
