@@ -87,43 +87,18 @@ def evaluate_range(args: argparse.Namespace) -> int:
     started = time.perf_counter()
     low, high = (int(part) for part in args.lines.split(":"))
     sessions = load_range(Path(args.sessions), Path(args.gold), low, high)
-    classifier = None
     try:
         from evaluation.adapters.promptguard_adapter import PromptGuardAdapter
 
-        worker = load_worker(args.system_root)
-        if args.ml_config:
-            from pipeline.ml import inference, load_spec
-            from evaluation.adapters.two_stage_adapter import TwoStageAdapter
-            from evaluation.adapters.span_union_adapter import SpanUnionAdapter
-            issues = check_use(sessions, "ml_eval")
-            if issues:
-                print(f"dataset policy error: {issues[0]}", file=sys.stderr)
-                return EXIT_DATASET
-            spec = load_spec(args.ml_config)
-            if spec.datasets and args.dataset not in spec.datasets:
-                raise ValueError("dataset is not in the ML evaluation allowlist")
-            classifier = inference(spec)
-            adapter = (SpanUnionAdapter if spec.mode == "span_union" else TwoStageAdapter)(classifier, worker)
-        else:
-            adapter = PromptGuardAdapter(worker)
+        adapter = PromptGuardAdapter(load_worker(args.system_root))
     except (SystemRootError, ValueError) as exc:
-        if classifier is not None:
-            classifier.close()
         print(f"configuration error: {exc}", file=sys.stderr)
         return EXIT_CONFIG
-    except BaseException:
-        if classifier is not None:
-            classifier.close()
-        raise
     try:
         result = evaluate_sessions(sessions, adapter)
     except ScoringError as exc:
         print(f"scoring failed: {exc}", file=sys.stderr)
         return EXIT_SCORING
-    finally:
-        if classifier is not None:
-            classifier.close()
 
     collector = Collector(args.dataset, group_of(args.dataset))
     lookup = {(session.session_id, item.item_id): (session, item) for session in sessions for item in session.items}
@@ -147,7 +122,6 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--gold", required=True)
         command.add_argument("--out", required=True)
     validate.add_argument("--use", choices=("rule_eval", "ml_eval"), default=USE)
-    run.add_argument("--ml-config", help="KEEP/MASK model config; enables ml_eval policy")
     run.add_argument("--dataset", required=True, help="sessions file stem, e.g. sessions_from_CredData")
     run.add_argument("--lines", required=True, help="session range low:high in file order")
     run.add_argument("--system-root", required=True, help="PromptGuard checkout (src/detector, the mod's register.mjs)")

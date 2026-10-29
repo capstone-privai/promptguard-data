@@ -14,9 +14,9 @@
 
 설명 문구는 숫자를 누를 때(지표 타일, 데이터셋 옆 `i`, 예시 펼치기, 위쪽 커밋 버튼)만 보인다. 화면의 필터와 커밋은 주소의 `#` 뒤에 남으므로, 보고 있는 조각을 링크로 공유할 수 있다.
 
-대시보드는 각 커밋에 설정된 탐지기 전체를 **`any` 합의(탐지기 하나만 반응해도 MASK)**로 평가한다. 탐지 성능과 지연에 같은 합의를 적용한다. ML을 켜면 `any`로 모은 후보를 2차 ML이 KEEP/MASK로 최종 판정한다. 화면에서 모듈이나 투표 방식을 선택하는 기능은 제공하지 않으며, 과거 `ensemble_requests.json`의 요청도 실행하지 않는다. 기존 링크의 `e` 값은 무시한다. 과거 결과 파일은 보존하고, `any` 합의가 포함된 새 결과 키로 재평가한다.
+대시보드는 각 커밋을 **체크아웃에 설정된 그대로** 평가한다. 어떤 탐지 모듈(ML 모듈 포함)이 켜지고 어떻게 합치는지는 PromptGuard 저장소(`src/detector/detector.json`)가 정하며, 이 저장소는 그 안의 로직을 바꾸거나 다시 조합하지 않는다. 바깥 환경의 `PG_*` 변수도 평가 프로세스에 넘기지 않는다. 화면에서 모듈이나 투표 방식을 선택하는 기능은 없고, 과거 `ensemble_requests.json`의 요청도 실행하지 않는다. 기존 링크의 `e` 값은 무시한다. 과거 결과(`any` 합의를 강제하던 결과, 이 저장소의 2차 ML 결과)는 보존하지만 새 결과 키로 재평가한다.
 
-탐지 성능은 탐지기 최종 출력과 Mod 치환 규칙을 채점한 결과이고, 탐지 지연은 worker 호출 측정이다. `--ml-config`를 지정하면 모델 설정에 따라 **규칙 + ML 원문 탐지의 합집합**(`span_union`, 공개된 v9 모델) 또는 **detector 후보 → ML KEEP/MASK**(`candidate`)를 채점하고, 지연에도 ML 추론과 최종 구간 결정까지 포함한다. 모델 전달 형식과 JSONL 계약은 [ML 연결 지침](ML_INFERENCE.md)에 있다. Claude 전체 실행의 작업 성공 평가는 사람이 실행한 metric-task 배치를 사용한다.
+탐지 성능은 탐지기 최종 출력과 Mod 치환 규칙을 채점한 결과이고, 탐지 지연은 worker 호출 측정이다. Claude 전체 실행의 작업 성공 평가는 사람이 실행한 metric-task 배치를 사용한다.
 
 ## 서버에서 돌리기
 
@@ -40,7 +40,6 @@ python3 dashboard/serve.py --host 0.0.0.0 --port 8765 --auth team:비밀번호
 | `--poll-minutes` | `10` | 브랜치를 확인하는 간격 |
 | `--jobs` | CPU 수 − 1 | 탐지 성능 평가에서 동시에 도는 샤드 프로세스 수 |
 | `--data-test DIR` | `$DASHBOARD_DATA_TEST` | 전체 `metric-detection/data_test` 대신 평가할 sessions 폴더(옆에 `data_answer/`). 예: 1만 개 표본 `runs/ml-evaluations/sample-10k-v1/data_test` |
-| `--ml-config FILE` | `$DASHBOARD_ML_CONFIG` | 모델 bundle·JSONL 추론 명령·heldout 평가 목록. 모델 변경 시 성능과 지연을 다시 평가한다 |
 | `--python` | 이 Python | 평가기를 돌릴 Python |
 | `--data-dir` | `runs/dashboard` | 결과와 작업 파일을 두는 곳 (git에 올리지 않는다) |
 | `--no-latency` | | metric-latency를 재지 않는다 |

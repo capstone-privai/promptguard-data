@@ -17,11 +17,10 @@ from pipeline import catalog, runner  # noqa: E402
 
 
 class BenchmarkTest(unittest.TestCase):
-    def test_dashboard_forces_any_without_inheriting_other_pg_overrides(self):
+    def test_checkout_runs_as_configured_without_inherited_pg_overrides(self):
         with patch.dict(os.environ, {"PG_DETECTOR_CONSENSUS": "unanimous", "PG_DETECTOR_MODE": "crash"}):
             env = runner.child_env()
-        self.assertEqual(env["PG_DETECTOR_CONSENSUS"], "any")
-        self.assertNotIn("PG_DETECTOR_MODE", env)
+        self.assertFalse([key for key in env if key.startswith("PG_")])
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -146,7 +145,7 @@ class EvaluateSnapshotTest(unittest.TestCase):
                 return weights
 
             def fake_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, *, shard_script,
-                            gitleaks_cache):
+                            gitleaks_cache, checkpoint_dir):
                 self.assertNotEqual(shard_script, runner.SHARD_SCRIPT)
                 for shard in shards:
                     self.assertEqual(shard.dataset.sessions.read_bytes(), original)

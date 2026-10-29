@@ -79,12 +79,12 @@ class E2ETest(unittest.TestCase):
                 patch("pipeline.service.runner.benchmark", return_value=self.plan["bench"]), \
                 patch("pipeline.service.latency.environment", return_value={"fingerprint": "env"}) as environment:
             plan = self.service.plan()
-        self.assertEqual(environment.call_args.args[0], "ensemble")
+        environment.assert_called_once()
         job = next(job for job in self.service.jobs(plan) if job[0] == "latency")
         with patch("pipeline.service.repo.export"), patch("pipeline.service.repo.python_for", return_value="python"), \
                 patch("pipeline.service.latency.evaluate") as evaluate, contextlib.redirect_stdout(io.StringIO()):
             self.service.run_job(plan, *job, [job])
-        self.assertEqual(evaluate.call_args.kwargs["adapters"], "ensemble")
+        self.assertNotIn("adapters", evaluate.call_args.kwargs)
 
     def test_shard_command_keeps_cache_without_module_or_consensus_overrides(self):
         dataset = runner.Dataset("sessions", self.data / "sessions.jsonl", self.data / "gold.jsonl", "s", "g")

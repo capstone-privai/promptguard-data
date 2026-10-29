@@ -39,9 +39,8 @@ SHARD_SCRIPT = DASHBOARD_ROOT / "pipeline" / "shard.py"
 SCORING_CODE = [*sorted((METRIC_DETECTION / "evaluation").rglob("*.py")),
                 *(DASHBOARD_ROOT / "pipeline" / name
                   for name in ("__init__.py", "paths.py", "runner.py", "taxonomy.py", "collect.py", "shard.py",
-                              "gitleaks_cache.py", "ml.py"))]
+                              "gitleaks_cache.py"))]
 SUMMARY_VERSION = 2  # earlier results did not pin the evaluated inputs to their key
-CONSENSUS = "any"  # dashboard: one detector's finding is enough to become a MASK/candidate
 
 
 class EvaluationError(Exception):
@@ -131,8 +130,9 @@ def tool_version(command: Sequence[str]) -> str | None:
     return completed.stdout.strip() or None
 
 
-def benchmark(datasets: Sequence[Dataset], second_stage: dict[str, Any] | None = None) -> dict[str, Any]:
-    """What the numbers depend on besides the system: datasets, scoring code and the gitleaks binary on PATH."""
+def benchmark(datasets: Sequence[Dataset]) -> dict[str, Any]:
+    """What the numbers depend on besides the system: datasets, scoring code and the gitleaks binary on PATH.
+    The system runs as its checkout configures it (detectors, vote, ML modules); that is part of the system."""
     gitleaks = tool_version(["gitleaks", "version"])
     parts = {
         # sorted: the order the UI lists datasets in comes from catalog.py, which is display only
@@ -140,23 +140,18 @@ def benchmark(datasets: Sequence[Dataset], second_stage: dict[str, Any] | None =
         "code": code_fingerprint(),
         "gitleaks": gitleaks,
         "summary_version": SUMMARY_VERSION,
-        "consensus": CONSENSUS,
+        "system_config": "checkout",  # earlier results overrode the checkout's vote with PG_DETECTOR_CONSENSUS=any
     }
-    if second_stage is not None:
-        parts["second_stage"] = second_stage
     fingerprint = hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()
     return {"fingerprint": fingerprint, "code": parts["code"], "gitleaks": gitleaks,
-            "consensus": CONSENSUS,
-            **({"second_stage": second_stage} if second_stage is not None else {}),
             "datasets": [{"stem": dataset.stem, "label": dataset_info(dataset.stem).label,
                           "sessions_sha256": dataset.sessions_sha256, "gold_sha256": dataset.gold_sha256}
                          for dataset in datasets]}
 
 
 def child_env() -> dict[str, str]:
-    """Ignore inherited PG_* overrides and explicitly run the dashboard's any-vote policy."""
-    return {**{key: value for key, value in os.environ.items() if not key.startswith("PG_")},
-            "PG_DETECTOR_CONSENSUS": CONSENSUS}
+    """Ignore inherited PG_* overrides, so each commit runs as its checkout configures it."""
+    return {key: value for key, value in os.environ.items() if not key.startswith("PG_")}
 
 
 def write_json(path: Path, payload: Any, *, pretty: bool = False) -> None:
@@ -225,10 +220,8 @@ def plan(datasets: Sequence[Dataset], weights: dict[str, list[int]], jobs: int) 
 def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, python: str, jobs: int,
                progress: Callable[[int, int], None], cancelled: Callable[[], bool], *,
                shard_script: Path = SHARD_SCRIPT, gitleaks_cache: Path | None = None,
-               ml_config: Path | None = None, checkpoint_dir: Path | None = None) -> None:
+               checkpoint_dir: Path | None = None) -> None:
     cache_args = ["--gitleaks-cache", str(gitleaks_cache)] if gitleaks_cache else []
-    if ml_config is not None:
-        cache_args += ["--ml-config", str(ml_config)]
     total = sum(shard.weight for shard in shards)
     done = 0
     pending = list(shards)
@@ -332,7 +325,7 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
              cache_dir: Path, commit: dict[str, Any], system_fingerprint: str, bench: dict[str, Any],
              progress: Callable[[int, int], None] = lambda done, total: None,
              cancelled: Callable[[], bool] = lambda: False, gitleaks_cache: Path | None = None,
-             ml_spec=None, resume_dir: Path | None = None) -> dict[str, Any]:
+             resume_dir: Path | None = None) -> dict[str, Any]:
     """Evaluate, merge and write out_dir; return the headline numbers (overall and per dataset).
 
     gitleaks_cache: SQLite file the shards share for gitleaks runs (gitleaks_cache.py); None runs gitleaks per text."""
@@ -343,33 +336,20 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
         (work_dir / "logs").mkdir(parents=True)
         (work_dir / "shards").mkdir()
         datasets, shard_script = snapshot_inputs(datasets, work_dir / "inputs", bench)
-        ml_args = {}
-        if ml_spec is not None:
-            from pipeline.ml import snapshot
-            if ml_spec.metadata() != bench.get("second_stage"):
-                raise InputsChanged("ML model does not match the planned benchmark")
-            try:
-                ml_args["ml_config"] = snapshot(ml_spec, work_dir / "model")
-            except (OSError, ValueError) as exc:
-                raise InputsChanged("ML bundle changed before it could be pinned") from exc
-        elif bench.get("second_stage"):
-            raise InputsChanged("ML benchmark requires its configured model")
-        weights = validate(datasets, cache_dir, python, work_dir / "logs", shard_script=shard_script,
-                           **({"use": "ml_eval"} if ml_spec is not None else {}))
+        weights = validate(datasets, cache_dir, python, work_dir / "logs", shard_script=shard_script)
         shards = plan(datasets, weights, jobs)
+        checkpoint_dir = None
         if resume_dir is not None:
             namespace = hashlib.sha256(f'{system_fingerprint}|{bench["fingerprint"]}'.encode()).hexdigest()
-            ml_args["checkpoint_dir"] = resume_dir / namespace
+            checkpoint_dir = resume_dir / namespace
         try:
             run_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, shard_script=shard_script,
-                       gitleaks_cache=gitleaks_cache, **ml_args)
+                       gitleaks_cache=gitleaks_cache, checkpoint_dir=checkpoint_dir)
         except (EvaluationError, KeyboardInterrupt, SystemExit):
             shutil.copytree(work_dir / "logs", out_dir.with_name(out_dir.name + ".failed-logs"), dirs_exist_ok=True)
             raise
 
         merged, system = {}, None
-        candidate_counts = dict.fromkeys(("candidates", "keep", "mask"), 0)
-        span_counts = dict.fromkeys(("rule", "ml", "final", "ml_only"), 0)
         for dataset in datasets:
             payloads = [json.loads((work_dir / "shards" / f"{shard.name}.json").read_text(encoding="utf-8"))
                         for shard in sorted(shards, key=lambda shard: shard.low) if shard.dataset is dataset]
@@ -382,16 +362,6 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
             }
             if system is None and payloads:
                 system = {key: value for key, value in payloads[0]["system"].items() if key != "failed_open_items"}
-            for payload in payloads:
-                for name in candidate_counts:
-                    candidate_counts[name] += payload["system"].get("candidate_counts", {}).get(name, 0)
-                for name in span_counts:
-                    span_counts[name] += payload["system"].get("span_counts", {}).get(name, 0)
-        if ml_spec is not None and system is not None:
-            if ml_spec.mode == "span_union":
-                system["span_counts"] = span_counts
-            else:
-                system["candidate_counts"] = candidate_counts
 
         tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -445,9 +415,7 @@ def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, d
         "wall_seconds": round(wall_seconds, 1),
         "commit": commit,
         "system": {"fingerprint": system_fingerprint, **system},
-        "benchmark": {"fingerprint": bench["fingerprint"], "code": bench["code"], "gitleaks": bench["gitleaks"],
-                      "consensus": bench.get("consensus"),
-                      **({"second_stage": bench["second_stage"]} if bench.get("second_stage") else {})},
+        "benchmark": {"fingerprint": bench["fingerprint"], "code": bench["code"], "gitleaks": bench["gitleaks"]},
         "datasets": facts,
         "channels": [{"key": channel, "label": CHANNEL_LABELS[channel]} for channel in CHANNELS],
         "types": [{"key": type_, "label": TYPE_LABELS[type_]} for type_ in TYPES],
@@ -459,7 +427,6 @@ def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, d
     })
     write_json(out_dir / "meta.json", {"commit": commit, "system_fingerprint": system_fingerprint,
                                        "benchmark_fingerprint": bench["fingerprint"], "evaluated_at": evaluated_at,
-                                       **({"second_stage": bench["second_stage"]} if bench.get("second_stage") else {}),
                                        "wall_seconds": round(wall_seconds, 1), "headline": headline,
                                        "python": sys.version.split()[0]}, pretty=True)
     return headline

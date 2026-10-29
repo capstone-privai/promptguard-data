@@ -11,21 +11,18 @@ import hashlib
 import json
 import os
 import platform
-import shlex
 import shutil
 import signal
 import subprocess
 import sys
-import tempfile
-from contextlib import ExitStack
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from pipeline.repo import detector_timeout
-from pipeline.paths import METRIC_DETECTION, METRIC_LATENCY, REPO_ROOT
-from pipeline.runner import CONSENSUS, EvaluationError, InputsChanged, child_env, tool_version, write_json
+from pipeline.paths import METRIC_LATENCY, REPO_ROOT
+from pipeline.runner import EvaluationError, child_env, tool_version, write_json
 
 SCRIPTS = METRIC_LATENCY / "scripts"
 M4 = SCRIPTS / "m4.py"
@@ -42,30 +39,21 @@ def capture_files(paths: Sequence[str]) -> list[Path]:
     return workloads.capture_paths(list(paths), workloads.CAPTURE_FILE)
 
 
-def environment(adapters: str, guard: Sequence[str], repeat: int, warmup: int,
-                second_stage: dict[str, Any] | None = None) -> dict[str, Any]:
-    """What latency numbers depend on besides the system: the evaluator, its options, the machine, gitleaks."""
+def environment(guard: Sequence[str], repeat: int, warmup: int) -> dict[str, Any]:
+    """What latency numbers depend on besides the system: the evaluator, its options, the machine, gitleaks.
+    The system runs as its checkout configures it."""
     digest = hashlib.sha256()
     for path in (M4, SCRIPTS / "m4_workloads.py"):
         digest.update(path.read_bytes())
     captures = capture_files(guard)
     machine = {"platform": platform.platform(), "machine": platform.machine(), "cpu_count": os.cpu_count()}
-    parts = {"code": digest.hexdigest(), "adapters": adapters, "consensus": CONSENSUS, "repeat": repeat, "warmup": warmup,
+    parts = {"code": digest.hexdigest(), "system_config": "checkout", "repeat": repeat, "warmup": warmup,
              "guard": [{"capture": workloads.capture_identity(path),
                         "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in captures],
              "machine": machine, "gitleaks": tool_version(["gitleaks", "version"]), "version": LATENCY_VERSION}
-    if second_stage is not None:
-        ml_code = hashlib.sha256()
-        for path in [Path(__file__), Path(__file__).with_name("ml.py"), Path(__file__).with_name("ml_worker.py"),
-                     *sorted((METRIC_DETECTION / "evaluation").rglob("*.py"))]:
-            if "tests" not in path.relative_to(REPO_ROOT).parts:
-                ml_code.update(path.relative_to(REPO_ROOT).as_posix().encode() + b"\0" + path.read_bytes())
-        parts.update(second_stage=second_stage, ml_code=ml_code.hexdigest())
     return {"fingerprint": hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest(),
-            "consensus": CONSENSUS,
-            "adapters": adapters, "repeat": repeat, "warmup": warmup, "guard_captures": len(captures),
-            "machine": machine, "gitleaks": parts["gitleaks"],
-            **({"second_stage": second_stage} if second_stage is not None else {})}
+            "repeat": repeat, "warmup": warmup, "guard_captures": len(captures),
+            "machine": machine, "gitleaks": parts["gitleaks"]}
 
 
 def _stats(values: list[float]) -> dict[str, Any]:
@@ -101,7 +89,6 @@ def condense(run_dir: Path) -> dict[str, Any]:
             "versions": {adapter.get("name"): adapter.get("version") for adapter in describe.get("adapters", [])},
             "consensus": describe.get("consensus"),
             "skipped": describe.get("skipped", []),
-            **({"second_stage": describe["second_stage"]} if describe.get("second_stage") else {}),
             "startup_ms": detector.get("startup_ms"),
             "cold": detector.get("cold"),
             "single_1k": _stats(synth_ms(size=1024, batch=single)),
@@ -136,9 +123,9 @@ def headline(data: dict[str, Any]) -> dict[str, Any]:
             "startup_ms": ensemble["startup_ms"]}
 
 
-def evaluate(system_root: Path, out_dir: Path, *, python: str, adapters: str, guard: Sequence[str], repeat: int,
+def evaluate(system_root: Path, out_dir: Path, *, python: str, guard: Sequence[str], repeat: int,
              warmup: int, commit: dict[str, Any], system_fingerprint: str, env: dict[str, Any],
-             cancelled: Callable[[], bool] = lambda: False, ml_spec=None) -> dict[str, Any]:
+             cancelled: Callable[[], bool] = lambda: False) -> dict[str, Any]:
     """Measure, condense and write out_dir (latency.json, meta.json, m4/ with the raw samples)."""
     tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
     shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -149,27 +136,10 @@ def evaluate(system_root: Path, out_dir: Path, *, python: str, adapters: str, gu
         config = "{}"
     timeout_ms = detector_timeout(config)
     command = [sys.executable, str(M4), "run", "--out", str(tmp_dir / "m4"), "--detector", "promptguard",
-               "--consensus", CONSENSUS,
-               "--system-root", str(system_root), "--python", python, "--synth", "--adapters", adapters,
+               "--system-root", str(system_root), "--python", python, "--synth",
                "--repeat", str(repeat), "--warmup", str(warmup), "--timeout-ms", str(timeout_ms),
                *(["--guard", *guard] if guard else [])]
-    with ExitStack() as stack:
-        if ml_spec is not None:
-            from pipeline.ml import snapshot
-            if ml_spec.metadata() != env.get("second_stage"):
-                raise InputsChanged("ML model does not match the planned latency environment")
-            model_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="pg-latency-ml-"))) / "model"
-            try:
-                ml_config = snapshot(ml_spec, model_dir)
-            except (OSError, ValueError) as exc:
-                raise InputsChanged("ML bundle changed before latency measurement") from exc
-            worker = [python, str(Path(__file__).with_name("ml_worker.py")), "--system-root", str(system_root),
-                      "--ml-config", str(ml_config)]
-            command[command.index("--detector") + 1] = "cmd:" + shlex.join(worker)
-            command += ["--label", "ensemble", "--client-timeout", str(max(120, ml_spec.timeout_seconds + 10))]
-        elif env.get("second_stage"):
-            raise InputsChanged("ML latency environment requires its configured model")
-        log = stack.enter_context((tmp_dir / "m4.log").open("w", encoding="utf-8"))
+    with (tmp_dir / "m4.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, env=child_env(), cwd=REPO_ROOT)
         while True:
             try:
@@ -195,7 +165,6 @@ def evaluate(system_root: Path, out_dir: Path, *, python: str, adapters: str, gu
                                           "system": {"fingerprint": system_fingerprint}, "environment": env, **data})
     write_json(tmp_dir / "meta.json", {"commit": commit, "system_fingerprint": system_fingerprint,
                                        "environment_fingerprint": env["fingerprint"], "evaluated_at": evaluated_at,
-                                       **({"second_stage": env["second_stage"]} if env.get("second_stage") else {}),
                                        "headline": summary}, pretty=True)
     shutil.rmtree(out_dir, ignore_errors=True)
     os.replace(tmp_dir, out_dir)

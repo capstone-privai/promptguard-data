@@ -230,9 +230,8 @@ class CliTests(unittest.TestCase):
                  ["--system", "oracle", "--use", "train"],
                  ["--system", "promptguard", "--system-root", str(self._tmp.name)],
                  ["--system", "promptguard", "--threshold", "0.5"],
-                 ["--system", "oracle", "--detectors", "credsweeper"],
-                 ["--system", "oracle", "--consensus", "any"],
-                 ["--system", "promptguard", "--detectors", "credsweeper,"]]
+                 ["--system", "promptguard", "--detectors", "credsweeper"],
+                 ["--system", "promptguard", "--consensus", "any"]]
         for extra in cases:
             code, _output = self._main("run", *DATA, "--out", str(self.out_dir), *extra)
             self.assertEqual(code, EXIT_CONFIG, extra)

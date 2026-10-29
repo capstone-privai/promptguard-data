@@ -53,7 +53,7 @@ python3 metric-task/scripts/m2.py run --tasks core --conditions promptguard --re
 
 | `--detector` | 무엇 |
 |---|---|
-| `promptguard` (기본) | 시스템 체크아웃의 worker(`src/detector/worker.py`)를 그 `.venv` Python으로 띄운다. `--adapters each`면 앙상블 다음에 `detector.json`의 어댑터마다 그 어댑터 하나만 든 설정(합의 `any`)으로 worker를 하나씩 더 띄워 잰다 |
+| `promptguard` (기본) | 시스템 체크아웃의 worker(`src/detector/worker.py`)를 그 `.venv` Python으로, 체크아웃에 설정된 그대로 띄운다 |
 | `null` | 평가기에 든 탐지기. 아무것도 찾지 않는다. `call_ms`의 바닥(로컬 HTTP와 JSON 비용)을 본다 |
 | `cmd:명령` | 아무 명령. `{port}`와 환경 변수 `PG_DETECTOR_PORT`에 포트가 들어간다. 예: `cmd:python3 my_detector.py --port {port}` |
 | `url:주소` | 이미 떠 있는 탐지기. 예: Runtime V1의 `url:http://127.0.0.1:18771` |
@@ -63,8 +63,8 @@ python3 metric-task/scripts/m2.py run --tasks core --conditions promptguard --re
 ## 실행
 
 ```bash
-# 시스템 앙상블과 어댑터별, 합성 입력과 Guard 재생
-python3 metric-latency/scripts/m4.py run --name pg --detector promptguard --adapters each --synth --guard runs/metric-task/capture_trial
+# 시스템 탐지기, 합성 입력과 Guard 재생
+python3 metric-latency/scripts/m4.py run --name pg --detector promptguard --synth --guard runs/metric-task/capture_trial
 # 비교용 바닥값
 python3 metric-latency/scripts/m4.py run --name null --detector null --synth --guard runs/metric-task/capture_trial
 # 여러 실행을 한 표로
@@ -85,7 +85,6 @@ python3 -m unittest discover -s metric-latency/tests
 - **timeout 초과**는 `call_ms`가 `--timeout-ms`(기본 5,000ms, 시스템의 `detectorTimeoutMs`)를 넘은 표본 수다. 시스템은 fail-closed라서 실제로는 그 호출의 텍스트가 막힌다. 평가기는 끊지 않고 끝까지 잰다.
 - **기울기**는 `detector_ms = 고정 비용 + 기울기 × KB`를 최소제곱으로 맞춘 값이다. 고정 비용은 크기와 상관없이 호출마다 드는 비용(하위 프로세스 시작 등)이다.
 - **Guard 요청 시간**은 그 요청에서 보낸 모든 batch의 유효한 성공 `detector_ms`(반복 중앙값) 합이다. 실패한 요청과 batch 하나라도 시간이 없는 요청은 각각 실패·미측정으로 세고 요청 시간 백분위수에서 제외한다. 첫 반복의 실패로 차단된 요청은 이후 반복에 성공해도 실패로 유지한다. 검사 호출이 0개인 정상 요청은 0ms이며, 문자열이 전부 캐시에 있어 호출하지 않은 요청 수는 ‘캐시 통과’로 표시한다. 대시보드와 보고서는 같은 집계 함수를 사용한다.
-- **어댑터별 숫자**는 그 어댑터 하나만 든 worker로 잰 것이다. 앙상블은 어댑터를 병렬 스레드로 돌리므로 앙상블 시간은 대략 가장 느린 어댑터 시간에 투표 시간을 더한 값이다.
 
 ## 시스템에 기대는 것
 
@@ -93,9 +92,8 @@ python3 -m unittest discover -s metric-latency/tests
 
 1. **HTTP 프로토콜.** `GET /health`가 200이면 준비된 것이다. `POST /scan-batch`의 본문은 `{"request_id", "items": [{"id", "text", "source"}]}`이고, 응답은 `{"ok", "items": [{"id", "ok", "findings": [...], "latency_ms"}]}`이다. `GET /status`가 있으면 그 내용(어댑터 이름, 버전, 합의)을 탐지기 설명으로 남긴다. `url:`과 `cmd:` 탐지기는 이것만 맞으면 된다.
 2. **worker를 띄우는 법** (`--detector promptguard`만): 체크아웃의 `src/detector/worker.py`, `.venv`의 Python, 환경 변수 `PG_DETECTOR_PORT`, `PG_DETECTOR_MODE=normal`.
-3. **어댑터별 설정** (`--adapters each`만): `src/detector/detector.json`의 `adapters[]` 항목 모양(`name`, `options`, `enabled`, `required`), 합의 `"any"`, `PG_DETECTOR_CONFIG`. 옵션 값 중 원래 설정 폴더 기준으로 파일이 있는 것은 절대 경로로 바꾼다(시스템이 설정 파일의 폴더를 기준으로 경로를 푼다).
-4. **Final Guard의 캐시 규칙** (`--guard`만): 위 [워크로드](#워크로드)에 적은 것. 상수는 batch 256개다. 출처는 시스템의 `src/guard/lib.cjs`(`collectStringLeaves`, `scanLeaves`, `CleanScanCache`).
-5. **timeout 기준**: `promptguard.config.json`의 `detectorTimeoutMs` 기본값 5,000ms.
+3. **Final Guard의 캐시 규칙** (`--guard`만): 위 [워크로드](#워크로드)에 적은 것. 상수는 batch 256개다. 출처는 시스템의 `src/guard/lib.cjs`(`collectStringLeaves`, `scanLeaves`, `CleanScanCache`).
+4. **timeout 기준**: `promptguard.config.json`의 `detectorTimeoutMs` 기본값 5,000ms.
 
 ## 재지 않는 것
 

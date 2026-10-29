@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import lzma
 import sys
 import tempfile
@@ -177,31 +178,15 @@ class StatisticsTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
-    def test_explicit_any_reaches_both_checkout_worker_and_ml_command(self):
-        args = SimpleNamespace(detector="promptguard", system_root="unused", python=sys.executable,
-                               adapters="ensemble", consensus="any", label="ensemble")
-        with tempfile.TemporaryDirectory() as tmp, patch.object(m4, "system_root", return_value=Path(tmp)):
-            worker = m4.detectors_from_args(args, Path(tmp))[0]
-            args.detector = "cmd:python example-ml-worker.py"
-            ml_worker = m4.detectors_from_args(args, Path(tmp))[0]
-        self.assertEqual(worker.env["PG_DETECTOR_CONSENSUS"], "any")
-        self.assertEqual(ml_worker.env["PG_DETECTOR_CONSENSUS"], "any")
-
-    def test_single_adapter_config_makes_file_options_absolute(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "rules").mkdir()
-            (root / "rules" / "extra.yaml").write_text("x", encoding="utf-8")
-            config = root / "detector.json"
-            entry = {"name": "cs", "type": "credsweeper", "required": False,
-                     "options": {"extra_rules": ["rules/extra.yaml"], "severity": "medium", "binary": "gitleaks"}}
-            config.write_text(json.dumps({"consensus": {"mode": "majority"}, "adapters": [entry]}), encoding="utf-8")
-            out = json.loads(m4.single_adapter_config(config, entry, root).read_text(encoding="utf-8"))
-        self.assertEqual(out["consensus"], "any")
-        options = out["adapters"][0]["options"]
-        self.assertEqual(options["extra_rules"], [str((root / "rules" / "extra.yaml").resolve())])
-        self.assertEqual((options["severity"], options["binary"]), ("medium", "gitleaks"))
-        self.assertTrue(out["adapters"][0]["required"])
+    def test_checkout_worker_runs_as_configured(self):
+        args = SimpleNamespace(detector="promptguard", system_root="unused", python=sys.executable, label=None)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m4, "system_root", return_value=Path(tmp)), \
+                patch.dict(os.environ, {"PG_DETECTOR_CONSENSUS": "any", "PG_DETECTOR_ENABLE": "ml-v9"}):
+            detectors = m4.detectors_from_args(args, Path(tmp))
+        self.assertEqual([detector.label for detector in detectors], ["ensemble"])
+        self.assertEqual(detectors[0].env["PG_DETECTOR_MODE"], "normal")
+        self.assertNotIn("PG_DETECTOR_CONSENSUS", detectors[0].env)
+        self.assertNotIn("PG_DETECTOR_ENABLE", detectors[0].env)
 
 
 class EndToEndTests(unittest.TestCase):
