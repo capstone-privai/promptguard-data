@@ -463,6 +463,11 @@ function render(event) {
   const card = el('article', 'event')
   const head = el('div', 'event-head')
   head.append(channelChip(event.source), el('span', 'time', clock(event.time)))
+  // The detector's wall time for this batch: how much of a slow turn is PromptGuard and how much is the model.
+  if (typeof event.latency_ms === 'number') {
+    const ms = event.latency_ms
+    head.append(el('span', `time${ms >= 1000 ? ' slow' : ''}`, `탐지 ${ms >= 1000 ? `${(ms / 1000).toFixed(1)}초` : `${Math.round(ms)}ms`}`))
+  }
   const flagged = event.items.filter(interesting)
   const repeats = event.items.filter(item => item.repeat_of)
   const always = ALWAYS_SHOWN.has(event.source)
