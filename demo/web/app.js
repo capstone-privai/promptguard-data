@@ -573,6 +573,17 @@ window.addEventListener('resize', () => {
   cancelAnimationFrame(resizing)
   resizing = requestAnimationFrame(() => { for (const row of feed.querySelectorAll('.lane')) drawLinks(row) })
 })
+// The input and forwarded text boxes stick while a tall row scrolls, so the rows on screen are redrawn with them.
+let scrolling = 0
+window.addEventListener('scroll', () => {
+  cancelAnimationFrame(scrolling)
+  scrolling = requestAnimationFrame(() => {
+    for (const row of feed.querySelectorAll('.lane')) {
+      const box = row.getBoundingClientRect()
+      if (box.bottom > 0 && box.top < window.innerHeight && box.height > window.innerHeight * 0.6) drawLinks(row)
+    }
+  })
+}, { passive: true })
 quietToggle.addEventListener('change', () => document.body.classList.toggle('show-quiet', quietToggle.checked))
 document.getElementById('clear').addEventListener('click', clear)
 connect()

@@ -160,6 +160,13 @@ body {
 .truth[open] .truth-open { display: none; }
 .truth[open] > .truth-head { margin-bottom: 8px; }
 .textbox.truth-text { max-height: none; }
+/* the input and the forwarded text run the full height of their row: a .env with eight flagged lines is shown
+   whole beside its eight flows instead of in a 280px window */
+.lane > .col.input .textbox, .lane > .col.output .textbox { max-height: none; }
+/* ...and they stay in view while the flows of a tall row scroll past (below the sticky column heads) */
+.lane > .col.input, .lane > .col.output { align-self: stretch; }
+.lane > .col.output > div { height: 100%; }
+.lane > .col.input > .textbox, .lane > .col.output > div > .textbox { position: sticky; top: 72px; }
 mark.t-masked { background: color-mix(in srgb, var(--good) 20%, transparent); box-shadow: inset 0 -2px 0 var(--good); }
 mark.t-leaked { background: color-mix(in srgb, var(--critical) 28%, transparent); box-shadow: inset 0 -3px 0 var(--critical); }
 mark.t-partial { background: var(--secret); outline: 1.5px dashed var(--critical); outline-offset: -1px; }
@@ -356,5 +363,6 @@ body:not(.show-quiet) .event.quiet { display: none; }
   .top, main, .truth-bar { padding-left: 16px; padding-right: 16px; }
   .heads { display: none; }
   .lane { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .lane > .col.input > .textbox, .lane > .col.output > div > .textbox { position: static; }
   .col::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
 }
