@@ -204,6 +204,7 @@ function bracketArm(found, i) {
 function flow(item, region, index) {
   const wrap = el('div', 'flow')
   wrap.dataset.region = index
+  wrap.style.setProperty('--r', index)  // its place in the entrance, one region after another
   const head = el('div', 'flow-head')
   head.append(el('span', 'value', clip(item.text.slice(region.start, region.end), 40)))
   const active = setup.adapters.length
@@ -268,7 +269,7 @@ function outputColumn(item, ok) {
   }
   excerpt(box, text, masks, span => {
     const chip = el('span', `placeholder${span.how === 'remask' ? ' remask' : ''}`, span.mask)
-    if (span.region >= 0) chip.dataset.region = span.region
+    if (span.region >= 0) { chip.dataset.region = span.region; chip.style.setProperty('--r', span.region) }
     chip.title = span.how === 'remask'
       ? `앞에서 가린 값이 다시 나와 같은 자리표시자로 가림 (원래 값: ${span.raw})`
       : `원래 값: ${span.raw}`
@@ -292,8 +293,17 @@ const SVG = 'http://www.w3.org/2000/svg'
 // the height of the region's mark (clamped to the visible part when the box is scrolled) and splits into a curve
 // per module just before the modules. The verdict then goes on as an arrow from the panel to the region's
 // placeholder in the forwarded text. Drawn from the laid-out positions, so it is redrawn on scroll and resize.
-function drawLinks(lane, entering = false) {
+// While the card is still arriving every drawing keeps to the card's clock (regions one after another, the same
+// delays as the CSS), so a redraw in the middle (the input box scrolling to its first mark, a resize) picks the
+// entrance up where it is instead of showing every line at once.
+const ENTRANCE = { stem: 0.25, branch: 0.6, out: 1.8, tip: 2.1 }
+
+function drawLinks(lane) {
   if (!lane) return
+  const card = lane.closest('.event')
+  const entering = card?.classList.contains('fresh')
+  const elapsed = entering ? (performance.now() - Number(card.dataset.born)) / 1000 : 0
+  const step = entering ? Number(card.dataset.step) : 0
   lane.querySelector(':scope > svg.links')?.remove()
   const box = lane.querySelector('.col.input .textbox')
   const flows = lane.querySelectorAll('.flow')
@@ -312,7 +322,9 @@ function drawLinks(lane, entering = false) {
     svg.append(path)
     return path
   }
+  const delay = (node, at, region) => { if (entering) node.style.animationDelay = `${at + region * step - elapsed}s` }
   for (const flow of flows) {
+    const region = Number(flow.dataset.region)
     const modules = [...flow.querySelectorAll('.module:not(.off)')].map(module => module.getBoundingClientRect())
     if (!modules.length) continue
     const mark = box.querySelector(`mark[data-region="${flow.dataset.region}"]`)?.getBoundingClientRect()
@@ -323,8 +335,12 @@ function drawLinks(lane, entering = false) {
     if (x1 - x0 < 16) continue  // stacked layout on narrow screens: nothing to join
     // The split point: a third of the way over, level with the middle of the region's modules.
     const hub = [x0 + (x1 - x0) * 0.35, (modules[0].top + modules.at(-1).bottom) / 2 - base.top]
-    curve(x0, y0, ...hub)
-    for (const to of modules) curve(...hub, x1, to.top + to.height / 2 - base.top).classList.add('branch')
+    delay(curve(x0, y0, ...hub), ENTRANCE.stem, region)
+    for (const to of modules) {
+      const branch = curve(...hub, x1, to.top + to.height / 2 - base.top)
+      branch.classList.add('branch')
+      delay(branch, ENTRANCE.branch, region)
+    }
     const panel = flow.querySelector('.panel').getBoundingClientRect()
     const out = lane.querySelector('.col.output .textbox')?.getBoundingClientRect()
     if (!out || out.left - panel.right < 12) continue
@@ -349,10 +365,12 @@ function drawLinks(lane, entering = false) {
     arrow.setAttribute('d', y2 === y3 ? `M${x2},${y2} H${x3}` : `M${x2},${y2} C${x2 + pull},${y2} ${x3 - pull},${y3} ${x3},${y3}`)
     arrow.setAttribute('pathLength', '1')
     arrow.classList.add('out', kind)
+    delay(arrow, ENTRANCE.out, region)
     svg.append(arrow)
     const tip = document.createElementNS(SVG, 'path')
     tip.setAttribute('d', `M${x3 - 6},${y3 - 4} L${x3},${y3} L${x3 - 6},${y3 + 4}`)
     tip.classList.add('tip', kind)
+    delay(tip, ENTRANCE.tip, region)
     svg.append(tip)
   }
   lane.append(svg)
@@ -485,20 +503,40 @@ function scrollToFirstMark(card) {
   }
 }
 
+// One region after another: each starts this much later than the one above it, so a .env with eight secrets reads
+// like a scan going down the file. Kept to about four seconds in all.
+function entranceStep(regions) {
+  return regions > 1 ? Math.min(0.45, 4 / (regions - 1)) : 0
+}
+
 function add(event) {
   if (event.seq <= lastSeq) return
   lastSeq = event.seq
   seen.set(event.seq, event.time)
-  if (event.truth_summary) showTruthSummary(event.truth_summary)
   if (seen.size > KEEP) seen.delete(seen.keys().next().value)
   const card = render(event)
-  if (live && !card.classList.contains('quiet')) card.classList.add('fresh')
+  const fresh = live && !card.classList.contains('quiet')
+  // The last region's arrow lands at about 2.4s after its own start; the graded counts come after that.
+  const regions = Math.max(1, ...[...card.querySelectorAll('.lane')].map(row => row.querySelectorAll('.flow').length))
+  const step = entranceStep(regions)
+  const done = 2.4 + (regions - 1) * step
+  if (fresh) {
+    card.classList.add('fresh')
+    card.dataset.born = String(performance.now())
+    card.dataset.step = String(step)
+    card.style.setProperty('--step', `${step}s`)
+    card.style.setProperty('--done', `${done}s`)
+  }
+  if (event.truth_summary) {
+    if (fresh) setTimeout(() => showTruthSummary(event.truth_summary), done * 1000)
+    else showTruthSummary(event.truth_summary)
+  }
   empty.remove()
   feed.prepend(card)
   scrollToFirstMark(card)
-  for (const row of card.querySelectorAll('.lane')) drawLinks(row, live)
+  for (const row of card.querySelectorAll('.lane')) drawLinks(row)
   // Done arriving: a later redraw (scroll, resize) must not replay the entrance.
-  if (live) setTimeout(() => card.classList.remove('fresh'), 3000)
+  if (fresh) setTimeout(() => card.classList.remove('fresh'), (done + 0.8) * 1000)
   while (feed.childElementCount > KEEP) feed.lastElementChild.remove()
 }
 

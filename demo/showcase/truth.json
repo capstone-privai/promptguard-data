@@ -1,5 +1,5 @@
 {
-  "description": "시연용 정답 비밀. demo/showcase/.env와 PromptGuard 샘플 프로젝트(sample-protected-project)의 다른 파일에 들어 있는 합성 비밀 전부다. 성능 수치가 아니라 시연 화면의 정답 대조용이다.",
+  "description": "시연용 정답 비밀. demo/showcase/.env와 PromptGuard 샘플 프로젝트(sample-protected-project)의 다른 파일에 들어 있는 합성 비밀 전부다. CLAUDE.md는 --showcase가 비밀 없는 판(demo/showcase/CLAUDE.md)으로 바꾼다. 성능 수치가 아니라 시연 화면의 정답 대조용이다.",
   "secrets": [
     {
       "name": "DB_PASSWORD",
@@ -40,11 +40,6 @@
       "name": "문장 속 관리자 비밀번호",
       "value": "Showcase_Admin_58kdTq",
       "file": ".env"
-    },
-    {
-      "name": "PROJECT_PASSWORD",
-      "value": "ProjectDemoOnly!72qSynthetic",
-      "file": "CLAUDE.md"
     },
     {
       "name": "database.json password",

@@ -328,14 +328,20 @@ body:not(.show-quiet) .event.quiet { display: none; }
 /* fade only: the wires are measured from the input box as it lands */
 .event.fresh .col.input { animation: fade 0.4s ease-out both; }
 /* fade only, like the input: the curves are measured to the modules as they land */
-.event.fresh .module { animation: fade 0.35s ease-out both; animation-delay: calc(0.55s + var(--i, 0) * 0.1s); }
-.event.fresh .wire { transform-origin: left; animation: draw 0.35s ease-out both; animation-delay: calc(0.8s + var(--i) * 0.15s); }
-.event.fresh .track { animation: reveal 0.3s ease-out both; animation-delay: calc(1.1s + var(--i, 0) * 0.15s); }
-.event.fresh .panel { animation: fade 0.3s ease-out both; animation-delay: 0.7s; }
-.event.fresh .arm, .event.fresh .trunk.out { animation: fade 0.3s ease-out both; animation-delay: 1.45s; }
-.event.fresh .final { animation: reveal 0.4s ease-out both; animation-delay: 1.65s; }
+.event.fresh .module { animation: fade 0.35s ease-out both; animation-delay: calc(0.55s + var(--i, 0) * 0.1s + var(--r, 0) * var(--step, 0s)); }
+.event.fresh .wire { transform-origin: left; animation: draw 0.35s ease-out both; animation-delay: calc(0.8s + var(--i) * 0.15s + var(--r, 0) * var(--step, 0s)); }
+.event.fresh .track { animation: reveal 0.3s ease-out both; animation-delay: calc(1.1s + var(--i, 0) * 0.15s + var(--r, 0) * var(--step, 0s)); }
+.event.fresh .panel { animation: fade 0.3s ease-out both; animation-delay: calc(0.7s + var(--r, 0) * var(--step, 0s)); }
+.event.fresh .arm, .event.fresh .trunk.out { animation: fade 0.3s ease-out both; animation-delay: calc(1.45s + var(--r, 0) * var(--step, 0s)); }
+.event.fresh .final { animation: reveal 0.4s ease-out both; animation-delay: calc(1.65s + var(--r, 0) * var(--step, 0s)); }
+.event.fresh .flow-head { animation: fade 0.3s ease-out both; animation-delay: calc(0.4s + var(--r, 0) * var(--step, 0s)); }
 .event.fresh .final .track { animation: none; }
 .event.fresh .col.output { animation: reveal 0.4s ease-out both; animation-delay: 2s; }
+/* each placeholder lands with its region's arrow */
+.event.fresh .col.output .placeholder { animation: pop 0.3s ease-out both; animation-delay: calc(2.1s + var(--r, 0) * var(--step, 0s)); }
+/* the graded counts, once every region is through */
+.event.fresh .truth { animation: fade 0.4s ease-out both; animation-delay: var(--done, 2.4s); }
+@keyframes pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
 .event.fresh { animation: arrive 2.4s ease-out; }
 @keyframes reveal { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
 @keyframes fade { from { opacity: 0; } }

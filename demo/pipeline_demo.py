@@ -548,6 +548,9 @@ def cmd_play(args, pg_root: Path) -> None:
         if args.showcase:
             # The showcase .env: the sample's lines plus secrets in harder places and values that only look secret.
             shutil.copyfile(SHOWCASE / ".env", project / ".env")
+            # Claude Code reads CLAUDE.md before anything is asked; without a secret in it, that read passes
+            # quietly instead of opening the demo with a row nobody asked for.
+            shutil.copyfile(SHOWCASE / "CLAUDE.md", project / "CLAUDE.md")
     mcp = work / "mcp.json"
     mcp.write_text(json.dumps({"mcpServers": {"pgdetector": {
         "command": "node", "args": [str(pg_root / "src" / "detector" / "mcp-bridge.cjs")],
@@ -585,7 +588,7 @@ def main() -> None:
         p.add_argument("--truth", help="JSON of the secrets the project really holds; the page grades each one "
                                        "as masked, partial or leaked and counts over-masking")
         p.add_argument("--showcase", action="store_true",
-                       help="grade against demo/showcase/truth.json" + (" and put demo/showcase/.env in the project copy" if name == "play" else ""))
+                       help="grade against demo/showcase/truth.json" + (" and put demo/showcase/.env and CLAUDE.md in the project copy" if name == "play" else ""))
         if name == "play":
             p.add_argument("--project", help="folder Claude Code works in (default: a copy of sample-protected-project)")
             p.add_argument("claude_args", nargs=argparse.REMAINDER, help="after --: extra arguments for claude")
