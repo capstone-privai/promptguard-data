@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipeline.paths import DEFAULT_DATA_DIR, WEB_ROOT  # noqa: E402
 from pipeline.runner import tool_version  # noqa: E402
 from pipeline.service import Config, DataDirBusy, Service  # noqa: E402
+from pipeline.external import Evaluations  # noqa: E402
 
 DEFAULT_REPO = "https://github.com/capstone-privai/promptguard-claude-demoV0.git"
 RESTART = 75  # exit status when the code changed on disk: run again to load it (systemd Restart=on-failure)
@@ -100,11 +101,25 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             return
         path = urlsplit(self.path).path
+        if path == "/api/evaluations":
+            return self._json(200, Evaluations(self.data_dir).catalog())
         if path == "/api/status":
-            status = self.service.snapshot() if self.service else {"state": "serve-only", "ensemble_writable": False}
+            selected = parse_qs(urlsplit(self.path).query).get("evaluation", [None])[0]
+            if selected:
+                view = Evaluations(self.data_dir).snapshot(selected)
+                return self._json(200, view["status"]) if view else self._json(404, {"error": "unknown evaluation"})
+            status = self.service.snapshot() if self.service else {"state": "serve-only"}
             return self._json(200, status)
         if path in ("/", "/index.html"):
             return self._file(WEB_ROOT / "index.html")
+        external = re.fullmatch(r"/data/evaluations/([A-Za-z0-9_-]+)/(.*)", path)
+        if external:
+            evaluations = Evaluations(self.data_dir)
+            if external[2] == "index.json":
+                view = evaluations.snapshot(external[1])
+                return self._json(200, view["index"]) if view else self._json(404, {"error": "unknown evaluation"})
+            result = evaluations.file(external[1], external[2])
+            return self._file(result) if result else self._send(404, b"not found", "text/plain")
         if path.startswith("/data/") and DATA.fullmatch(path[len("/data/"):]):
             relative = path[len("/data/"):]
             return self._file(self.data_dir / relative, "no-cache" if relative == "index.json" else "max-age=3600")
@@ -118,24 +133,6 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             return
         parts = urlsplit(self.path)
-        if parts.path == "/api/ensemble":
-            if not self.service:
-                return self._json(409, {"error": "결과 보기 전용 서버에서는 새 평가를 요청할 수 없어요."})
-            origin = self.headers.get("Origin")
-            if origin and urlsplit(origin).netloc != self.headers.get("Host"):
-                return self._json(403, {"error": "같은 대시보드에서 평가를 요청해 주세요."})
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 4096:
-                    raise ValueError("평가 요청 크기가 올바르지 않아요.")
-                payload = json.loads(self.rfile.read(length))
-                if not isinstance(payload, dict):
-                    raise ValueError("평가 요청 형식이 올바르지 않아요.")
-                config = self.service.request_ensemble(payload.get("sha"), payload.get("detectors"),
-                                                       payload.get("consensus"))
-            except (ValueError, UnicodeDecodeError) as exc:
-                return self._json(400, {"error": str(exc)})
-            return self._json(202, config)
         if parts.path == "/api/refresh" and self.service:
             retry = parse_qs(parts.query).get("retry") == ["1"]
             self.service.request_refresh(retry=retry)
@@ -176,6 +173,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default=os.environ.get("PROMPTGUARD_REPO", DEFAULT_REPO),
                         help="PromptGuard repository to clone (URL or path; default $PROMPTGUARD_REPO, else the "
                              "GitHub repository)")
+    parser.add_argument("--data-test", default=os.environ.get("DASHBOARD_DATA_TEST"),
+                        help="sessions/gold folder to evaluate instead of metric-detection/data_test, e.g. a fixed "
+                             "sample (default $DASHBOARD_DATA_TEST)")
+    parser.add_argument("--ml-config", default=os.environ.get("DASHBOARD_ML_CONFIG"),
+                        help="KEEP/MASK inference config; model bundle changes trigger quality and latency reevaluation")
     parser.add_argument("--branch", default="main")
     parser.add_argument("--poll-minutes", type=float, default=10.0, help="how often to fetch the branch (default 10)")
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1),
@@ -185,8 +187,6 @@ def main(argv: list[str] | None = None) -> int:
                              "virtual environment is made per requirements.txt (default: this Python)")
     parser.add_argument("--no-auto-venv", action="store_true", help="fail instead of making a virtual environment")
     parser.add_argument("--no-latency", action="store_true", help="skip metric-latency")
-    parser.add_argument("--latency-adapters", choices=("ensemble", "each"), default="each",
-                        help="also time each detector adapter alone (default each)")
     parser.add_argument("--latency-guard", nargs="+", default=[], metavar="PATH",
                         help="metric-task run folders whose API captures to replay as Final Guard calls")
     parser.add_argument("--task-runs", nargs="+", metavar="DIR", default=None,
@@ -213,8 +213,10 @@ def main(argv: list[str] | None = None) -> int:
             print("warning: gitleaks is not on PATH; the detector will run without its gitleaks adapter, unlike "
                   "the deployed system", file=sys.stderr)
         config = Config(data_dir=data_dir, repo_url=args.repo, branch=args.branch, jobs=args.jobs,
+                        ml_config=args.ml_config,
+                        **({"data_test": Path(args.data_test).resolve()} if args.data_test else {}),
                         python=args.python, auto_venv=not args.no_auto_venv, latency=not args.no_latency,
-                        latency_adapters=args.latency_adapters, latency_guard=args.latency_guard,
+                        latency_guard=args.latency_guard,
                         task=not args.no_task, notify_url=args.notify_url, dashboard_url=args.dashboard_url,
                         overdue_hours=args.overdue_hours)
         if args.task_runs:

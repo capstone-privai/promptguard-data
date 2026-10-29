@@ -99,6 +99,8 @@ function hash32(text) {
 }
 
 async function getJSON(url) {
+  if (state.evaluation && url.startsWith("data/")) url = `data/evaluations/${encodeURIComponent(state.evaluation)}/${url.slice(5)}`;
+  if (state.evaluation && url === "api/status") url += `?evaluation=${encodeURIComponent(state.evaluation)}`;
   const response = await fetch(url, { cache: "no-cache" });
   if (!response.ok) throw Object.assign(new Error(`${url}: HTTP ${response.status}`), { status: response.status });
   return response.json();
@@ -143,12 +145,14 @@ const PAGE = 6;
 // ------------------------------------------------------------------ state
 
 const state = {
+  evaluation: null,
+  evaluationOptions: [],
+  evaluationCatalogError: false,
+  indexError: false,
   index: null,
   status: null,
   statusPolling: true,
   sha: null, // commit chosen by the reader; null follows the newest commit
-  ensemble: null, // selected combination id; null uses the commit's default configuration
-  pendingEnsembles: new Map(), // accepted requests not indexed by the worker yet
   detection: null, // { commit, key, stale, fallbackFrom }
   summary: null,
   summaryKey: null,
@@ -188,7 +192,6 @@ const VIEWS = [
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
   state.sha = params.get("c");
-  state.ensemble = params.get("e");
   state.view = VIEWS.some((view) => view.key === params.get("v")) ? params.get("v") : "detection";
   state.filters = { d: params.get("d"), t: params.get("t"), c: params.get("ch"), g: params.get("g") };
   state.outcome = params.get("o");
@@ -199,7 +202,6 @@ function readHash() {
 function writeHash() {
   const params = new URLSearchParams();
   if (state.sha) params.set("c", state.sha.slice(0, 12));
-  if (state.ensemble) params.set("e", state.ensemble);
   const { d, t, c, g } = state.filters;
   if (d) params.set("d", d);
   if (t) params.set("t", t);
@@ -237,10 +239,6 @@ function isLatest(commit) {
 function pick(track) {
   const list = commits();
   const target = selectedCommit();
-  if (track === "detection" && state.ensemble) {
-    const record = detectionRecord(target);
-    return { commit: target, key: record?.state === "done" ? record.key : null, record };
-  }
   if (!target || !target[track]) return { commit: target, key: null, record: target && target[track] };
   const record = target[track];
   if (record.state === "done") return { commit: target, key: record.key, record };
@@ -254,24 +252,14 @@ function pick(track) {
   return { commit: target, key: null, record };
 }
 
-function detectionRecord(commit) {
-  if (!state.ensemble) return commit?.detection;
-  const record = (commit?.ensembles || []).find((item) => item.id === state.ensemble);
-  if (record) return record;
-  const pending = state.pendingEnsembles.get(`${commit?.sha}:${state.ensemble}`)
-    || state.status?.ensemble_requests?.find((item) => item.sha === commit?.sha && item.id === state.ensemble);
-  return pending ? { ...pending, state: "queued" } : undefined;
-}
-
 function doneCommits(track) {
-  return commits().map((commit) => track === "detection" ? { ...commit, detection: detectionRecord(commit) } : commit)
-    .filter((commit) => commit[track] && commit[track].state === "done");
+  return commits().filter((commit) => commit[track] && commit[track].state === "done");
 }
 
 function previousDistinct(track, commit, key) {
   const list = commits();
   for (let index = list.findIndex((item) => item.sha === commit.sha) - 1; index >= 0; index--) {
-    const record = track === "detection" ? detectionRecord(list[index]) : list[index][track];
+    const record = list[index][track];
     if (record && record.state === "done" && record.key !== key) return { commit: list[index], record };
   }
   return null;
@@ -530,12 +518,13 @@ function statusText() {
   }
   if (status.state === "syncing") return status.message || "저장소를 받는 중";
   if (status.state === "waiting") return status.message || "다른 프로세스가 평가하는 중";
-  if (status.state === "error") return `서비스 오류: ${status.message || ""}`;
+  if (status.state === "error") return `${state.evaluation ? "평가 오류" : "서비스 오류"}: ${status.message || ""}`;
   if (status.state === "serve-only") return "평가는 돌리지 않고 결과만 보여 주는 중";
   return status.last_sync ? `최신 상태 · ${dateTimeLabel(status.last_sync)}에 확인` : "";
 }
 
 function renderChip() {
+  renderEvaluationStatus();
   const chip = $("#commit-chip");
   clear(chip);
   const commit = selectedCommit();
@@ -548,7 +537,73 @@ function renderChip() {
     h("span", { class: statusDot() }),
     h("span", null, isLatest(commit) ? branch : "과거 커밋"),
     h("span", { class: "mono" }, commit.short),
-    h("span", { class: "soft" }, dateLabel(commit.date)));
+    h("span", { class: "soft" }, dateLabel(commit.date)),
+    state.index.benchmark?.second_stage
+      ? h("span", { class: "soft" }, `ML · ${state.index.benchmark.second_stage.model_id}`) : null,
+    sampleChip());
+}
+
+/** The service evaluates a fixed sample of data_test instead of all of it. */
+function sampleChip() {
+  const sample = state.index && state.index.sample;
+  if (!sample) return null;
+  const changed = sample.changed || [];
+  return h("span", {
+    class: changed.length ? "soft bad" : "soft",
+    title: changed.length ? `표본을 뽑은 뒤 원본이 바뀐 데이터셋: ${changed.join(", ")}. 표본을 다시 뽑아야 반영돼요.` : null,
+  }, `표본 ${int(sample.items)}개` + (changed.length ? " · 원본 변경됨" : ""));
+}
+
+function renderEvaluationStatus() {
+  const controls = $("#evaluation-controls");
+  controls.hidden = !state.evaluationOptions.length && !state.evaluation && !state.evaluationCatalogError;
+  const progress = clear($("#evaluation-progress"));
+  if (state.evaluationCatalogError || state.indexError) {
+    progress.append(requestFailure(state.evaluationCatalogError ? "평가 목록을 불러오지 못했어요." : "선택한 평가 정보를 불러오지 못했어요.",
+      async () => { if (state.evaluationCatalogError && !(await setupEvaluations())) return; await refreshIndex(); }));
+    return;
+  }
+  const view = state.index?.evaluation;
+  const status = state.status || state.index?.status;
+  progress.textContent = view
+    ? `${view.label} · ${status?.progress ? `${int(status.progress.done)}/${int(status.progress.total)}개` : "불러오는 중"} · job ${view.jobs}` +
+      (view.state === "done" ? " · 완료" : status?.state === "error" ? " · 실패" : " · 평가 중")
+    : state.evaluation ? "선택한 평가를 불러오는 중" : "기본 규칙 평가";
+}
+
+async function setupEvaluations() {
+  const requested = new URLSearchParams(location.search).get("run");
+  if (requested !== null) state.evaluation = requested === "default" ? null : requested;
+  let available;
+  try { available = await getJSON("api/evaluations"); } catch (error) {
+    // Static exports have no catalogue API. Only an explicit ML selection must stay on its own source.
+    if (requested === "default" || (!requested && [404, 405].includes(error.status))) {
+      state.evaluation = null;
+      state.evaluationOptions = [];
+      state.evaluationCatalogError = false;
+      return true;
+    }
+    state.evaluationCatalogError = true;
+    renderEvaluationStatus();
+    return false;
+  }
+  state.evaluationCatalogError = false;
+  state.evaluationOptions = available.runs || [];
+  const selected = requested === "default" ? null : requested || available.default;
+  state.evaluation = selected || null;
+  const selector = clear($("#evaluation-select"));
+  selector.append(h("option", { value: "default" }, "기본 규칙 평가"));
+  for (const item of state.evaluationOptions) selector.append(h("option", { value: item.id }, item.label));
+  if (state.evaluation && !state.evaluationOptions.some(item => item.id === state.evaluation))
+    selector.append(h("option", { value: state.evaluation }, "지정한 평가 · 목록에 없음"));
+  selector.value = state.evaluation || "default";
+  selector.onchange = () => {
+    const params = new URLSearchParams(location.search);
+    params.set("run", selector.value);
+    location.href = location.pathname + "?" + params.toString();
+  };
+  renderEvaluationStatus();
+  return true;
 }
 
 function openPopover(anchor, build) {
@@ -591,15 +646,15 @@ function commitPopover() {
     rows.push(["탐지기 지문", h("span", { class: "mono" }, commit.fingerprint)]);
   }
   if (summary) {
-    const detector = summary.system.detector || {};
-    const adapters = (detector.adapters || []).map((adapter) => `${adapter.name} ${adapter.version}`).join(", ");
-    rows.push(["앙상블", `${adapters || "—"} · ${detector.consensus || ""}`]);
-    if ((detector.skipped || []).length) rows.push(["빠진 어댑터", detector.skipped.map((item) => `${item.name} (${item.reason})`).join(", ")]);
+    if (summary.benchmark?.second_stage) rows.push([summary.benchmark.second_stage.mode === "span_union"
+      ? "ML 합집합 탐지 모델" : "2차 KEEP/MASK 모델", summary.benchmark.second_stage.model_id]);
     rows.push(["탐지 평가", `${state.detection.commit.short} · ${dateTimeLabel(summary.evaluated_at)} · ${duration(summary.wall_seconds)}`]);
     rows.push(["데이터셋", `${summary.datasets.length}개 · 정답 ${int(summary.datasets.reduce((total, item) => total + item.gold, 0))}개`]);
+    const sample = state.index.sample;
+    if (sample) rows.push(["평가 범위", `전체 ${int(sample.original_items)}개 중 표본 ${int(sample.items)}개 · 세션 ${int(sample.sessions)}개` +
+      ((sample.changed || []).length ? ` · 표본 이후 원본 변경: ${sample.changed.join(", ")}` : "")]);
     const failedOpen = summary.datasets.reduce((total, item) => total + item.failed_open, 0);
     if (failedOpen) rows.push(["fail-open", `${int(failedOpen)}개 item (탐지기 결과가 거부돼 원문 그대로 나감)`]);
-    rows.push(["gitleaks", summary.benchmark.gitleaks || "없음 (평가 기기에 설치되지 않음)"]);
   }
   const failures = commit ? tracks().filter((track) => commit[track] && commit[track].state === "failed") : [];
   return [
@@ -609,142 +664,10 @@ function commitPopover() {
     h("div", { class: "note" }, statusText() || "상태 정보 없음"),
     h("div", { class: "actions" },
       commit && !isLatest(commit) ? h("button", { class: "ghost", type: "button", onclick: () => { closePopover(); selectCommit(null); } }, "최신 커밋 보기") : null,
-      failures.length && state.status && state.status.state !== "serve-only"
+      !state.evaluation && failures.length && state.status && state.status.state !== "serve-only"
         ? h("button", { class: "ghost", type: "button", onclick: () => { closePopover(); fetch("api/refresh?retry=1", { method: "POST" }).then(pollStatus); } }, "실패한 평가 다시 돌리기")
         : null),
   ];
-}
-
-// ------------------------------------------------------------------ ensemble settings
-
-const ENSEMBLE_MODULES = [
-  ["credsweeper", "CredSweeper", "기본 규칙과 추가 자격증명 규칙"],
-  ["gitleaks", "gitleaks", "토큰·키 탐지 · 기존 결과 캐시 재사용"],
-  ["promptguard-rules", "PromptGuard 규칙", "자체 비밀값 탐지 규칙"],
-];
-const ENSEMBLE_STATES = { done: "평가 완료", queued: "평가 대기", running: "평가 중", failed: "평가 실패" };
-
-function ensembleLabel(config) {
-  return `${config.detectors.map((name) => ENSEMBLE_MODULES.find((item) => item[0] === name)?.[1] || name).join(" + ")} · ${config.consensus}`;
-}
-
-function ensembleVotes(count, consensus) {
-  return consensus === "any" ? 1 : consensus === "unanimous" ? count : Math.floor(count / 2) + 1;
-}
-
-async function selectEnsemble(identity) {
-  state.ensemble = identity;
-  state.shown = PAGE;
-  state.openExamples.clear();
-  writeHash();
-  await showSelected();
-}
-
-function renderEnsembleActive() {
-  const box = clear($("#ensemble-active"));
-  $("#ensemble-open").disabled = !selectedCommit();
-  if (!state.ensemble) return;
-  const record = detectionRecord(selectedCommit());
-  add(box, h("span", { class: "ensemble-badge" }, "선택 구성"),
-    h("span", null, record ? ensembleLabel(record) : "선택한 조합은 이 커밋에서 아직 평가하지 않았어요."),
-    record ? h("span", { class: "muted" }, ENSEMBLE_STATES[record.state]) : null,
-    h("button", { class: "link", type: "button", onclick: () => selectEnsemble(null) }, "기본 구성으로"),
-    h("div", { class: "muted ensemble-scope" }, "선택 구성은 탐지 성능에 적용돼요. 탐지 지연과 작업 성공은 기본 구성의 결과예요."));
-}
-
-function openEnsemblePanel() {
-  const commit = selectedCommit();
-  if (!commit) return;
-  closePopover();
-  const dialog = clear($("#ensemble-dialog"));
-  const chosen = detectionRecord(commit);
-  const described = !state.ensemble && !state.detection?.fallbackFrom ? state.summary?.system?.detector : null;
-  const base = commit.default_ensemble || (described ? {
-    detectors: described.adapters.map((item) => item.name), consensus: described.consensus,
-  } : null);
-  const draft = {
-    detectors: chosen?.detectors?.slice() || base?.detectors.slice() || described?.adapters?.map((item) => item.name)
-      || ENSEMBLE_MODULES.map((item) => item[0]),
-    consensus: chosen?.consensus || base?.consensus || described?.consensus || "majority",
-  };
-  const writable = state.status?.ensemble_writable === true;
-  const message = h("p", { class: "note", role: "status", "aria-live": "polite" });
-  const hint = h("p", { class: "ensemble-votes", "aria-live": "polite" });
-  const submit = h("button", { class: "ensemble-submit", type: "submit" });
-  const matches = (item) => item && item.consensus === draft.consensus
-    && item.detectors.length === draft.detectors.length && item.detectors.every((name) => draft.detectors.includes(name));
-  const existing = () => matches(base) ? { ...commit.detection, id: null, default: true }
-    : (commit.ensembles || []).find(matches);
-  const update = () => {
-    const count = draft.detectors.length;
-    hint.textContent = count ? `${count}개 모듈 중 ${ensembleVotes(count, draft.consensus)}개가 탐지하면 가려요.` : "모듈을 한 개 이상 켜 주세요.";
-    const record = existing();
-    submit.disabled = !count || (!writable && !record);
-    submit.textContent = record?.default ? "기본 구성 보기" : record && record.state !== "failed" ? "이 구성 보기" : record ? "다시 평가" : "이 구성으로 평가";
-    message.textContent = record?.default ? `기본 구성과 같아요. 기본 평가 결과를 그대로 사용해요. (${ENSEMBLE_STATES[record.state] || "결과 대기"})`
-      : record ? `${ENSEMBLE_STATES[record.state]}${record.error ? `: ${record.error}` : ""}`
-      : writable ? "새 조합은 재평가가 필요해요. 같은 조건의 gitleaks 결과는 캐시에서 가져와요."
-        : "결과 보기 전용이에요. 이미 평가한 구성은 아래에서 볼 수 있어요.";
-    if (record?.state === "failed" && !record.default && !writable) submit.disabled = true;
-  };
-  const form = h("form", { onsubmit: async (event) => {
-    event.preventDefault();
-    const record = existing();
-    if (record && (record.default || record.state !== "failed")) {
-      dialog.close();
-      await selectEnsemble(record.id);
-      return;
-    }
-    if (!draft.detectors.length || !writable) return;
-    submit.disabled = true;
-    message.textContent = "평가를 요청하고 있어요…";
-    try {
-      const response = await fetch("api/ensemble", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sha: commit.sha, detectors: draft.detectors, consensus: draft.consensus }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-      // Pin the request's commit even if the reader was following the latest one.
-      state.sha = commit.sha;
-      state.ensemble = result.id;
-      if (result.id) state.pendingEnsembles.set(`${commit.sha}:${result.id}`, { sha: commit.sha, ...result, state: "queued" });
-      writeHash();
-      dialog.close();
-      await refreshIndex();
-    } catch (error) {
-      message.textContent = `평가 요청 실패: ${error.message}`;
-      submit.disabled = false;
-    }
-  } });
-  const fieldset = h("fieldset", { class: "ensemble-modules" }, h("legend", null, "탐지 모듈"));
-  for (const [name, label, note] of ENSEMBLE_MODULES) {
-    const input = h("input", { type: "checkbox", name: "detectors", value: name, onchange: (event) => {
-      draft.detectors = event.target.checked ? [...draft.detectors, name] : draft.detectors.filter((item) => item !== name);
-      update();
-    } });
-    input.checked = draft.detectors.includes(name);
-    fieldset.append(h("label", { class: "ensemble-module" }, input,
-      h("span", null, h("strong", null, label), h("small", null, note))));
-  }
-  const policy = h("select", { id: "ensemble-policy", onchange: (event) => { draft.consensus = event.target.value; update(); } },
-    h("option", { value: "any" }, "any · 하나 이상 탐지"),
-    h("option", { value: "majority" }, "majority · 과반수 탐지"),
-    h("option", { value: "unanimous" }, "unanimous · 모두 탐지"));
-  policy.value = draft.consensus;
-  add(form, fieldset, h("label", { class: "ensemble-policy", for: "ensemble-policy" }, "투표 방식", policy), hint, message,
-    h("div", { class: "actions" },
-      h("button", { class: "ghost", type: "button", onclick: () => { dialog.close(); selectEnsemble(null); } }, "기본 구성 보기"), submit));
-  add(dialog, h("div", { class: "card-head" }, h("h2", { id: "ensemble-title" }, "앙상블 설정"),
-    h("button", { class: "ghost", type: "button", "aria-label": "앙상블 설정 닫기", onclick: () => dialog.close() }, "닫기")),
-    h("p", { class: "muted" }, `${commit.short} · ${commit.title}`),
-    h("p", { class: "ensemble-scope" }, "탐지 성능의 모듈과 투표 방식을 바꿔 비교해 보세요."), form);
-  if ((commit.ensembles || []).length) {
-    add(dialog, h("h3", null, "이 커밋에서 요청한 구성"), h("div", { class: "ensemble-history" },
-      commit.ensembles.map((record) => h("button", { class: "ensemble-history-item", type: "button", onclick: () => {
-        dialog.close(); selectEnsemble(record.id);
-      } }, h("span", null, ensembleLabel(record)), h("small", null, ENSEMBLE_STATES[record.state])))));
-  }
-  update();
-  dialog.showModal();
 }
 
 // ------------------------------------------------------------------ hero
@@ -843,12 +766,6 @@ function emptyDetectionText() {
   const pickInfo = state.detection;
   const record = pickInfo && pickInfo.record;
   if (!state.index) return "아직 평가 결과가 없어요. 서비스가 첫 평가를 돌리고 있을 수 있어요.";
-  if (state.ensemble) {
-    if (!record) return "이 커밋의 선택 조합 결과가 없어요. 앙상블 설정에서 평가를 요청해 주세요.";
-    if (record.state === "failed") return `선택 조합 평가가 실패했어요: ${record.error || ""} 앙상블 설정에서 다시 평가할 수 있어요.`;
-    if (record.state === "running") return "선택한 앙상블 구성으로 평가하는 중이에요. 완료되면 결과가 자동으로 표시돼요.";
-    if (record.state === "queued") return "선택 조합이 평가 대기 중이에요. 현재 작업이 끝나면 캐시를 활용해 평가해요.";
-  }
   if (record && record.state === "failed") return "이 커밋의 탐지 성능 평가가 실패했어요. 위 커밋 버튼에서 이유를 볼 수 있어요.";
   if (record && record.state === "running") return "이 커밋을 평가하는 중이에요.";
   return "아직 평가된 결과가 없어요.";
@@ -1293,7 +1210,8 @@ function renderLatency() {
   state.drawLatencyCharts = null;
   if (!state.index || !tracks().includes("latency")) {
     section.hidden = !state.index;
-    body.append(h("div", { class: "empty" }, "이 서버는 탐지 지연을 재지 않도록 설정돼 있어요."));
+    body.append(h("div", { class: "empty" }, state.evaluation
+      ? "이 표본 평가에는 별도 탐지 지연 결과가 없어요." : "이 서버는 탐지 지연을 재지 않도록 설정돼 있어요."));
     return;
   }
   section.hidden = false;
@@ -1313,16 +1231,23 @@ function renderLatency() {
   }
   const data = state.latency;
   const ensemble = data.detectors.find((item) => item.label === "ensemble") || data.detectors[0];
+  const ml = data.environment?.second_stage;
   if (pickInfo.fallbackFrom || pickInfo.stale) {
     body.append(h("div", { class: "flags" }, pickInfo.stale
       ? flag("이전 측정 · 다시 재는 중", "측정 환경이 바뀌어 다시 재는 중이에요. 지금 숫자는 이전 측정이에요.")
       : flag(`${pickInfo.commit.short} 커밋의 측정`, `${pickInfo.fallbackFrom.short} 커밋은 아직 재지 않아서 ${pickInfo.commit.short} 커밋의 측정을 보여 주고 있어요.`)));
   }
+  if (ml) body.append(h("div", { class: "flags" }, flag("detector + ML",
+    `${ml.mode === "span_union" ? "합집합 탐지 모델" : "2차 KEEP/MASK 모델"}: ${ml.model_id}`)));
   const largestBatch = ensemble.batch_sweep[ensemble.batch_sweep.length - 1];
   const fit = ensemble.fit_items;
   const tiles = [
     { key: "single_1k", label: "텍스트 1개 · 1KB", value: ensemble.single_1k.p50, sub: `p95 ${ms(ensemble.single_1k.p95)}ms`,
-      detail: "Native Mod처럼 텍스트 하나를 보낸 탐지기 호출 한 번의 시간(탐지기가 보고한 detector_ms)의 중앙값이에요. 합성 로그·코드 텍스트 1,024자, 비밀이 있는 것과 없는 것을 합쳐 셉니다." },
+      detail: (ml ? (ml.mode === "span_union"
+        ? "입력을 받은 뒤 규칙 탐지와 ML 원문 탐지를 합쳐 최종 마스킹 구간이 정해질 때까지 걸린 시간의 중앙값이에요. "
+        : "입력을 받은 뒤 detector 후보 탐지와 ML의 최종 KEEP/MASK 판정까지 걸린 시간의 중앙값이에요. ")
+        : "Native Mod처럼 텍스트 하나를 보낸 탐지기 호출 한 번의 시간(탐지기가 보고한 detector_ms)의 중앙값이에요. ") +
+        "합성 로그·코드 텍스트 1,024자, 비밀이 있는 것과 없는 것을 합쳐 셉니다." },
     { key: "single_64k", label: "텍스트 1개 · 64KB", value: ensemble.single_64k.p50, sub: `p95 ${ms(ensemble.single_64k.p95)}ms`,
       detail: "큰 도구 결과 하나(65,536자)를 보낸 호출의 중앙값이에요." },
     { key: "per_string", label: "문자열 1개 늘 때마다", value: fit ? fit.ms_per_string : null, plus: true,
@@ -1365,16 +1290,6 @@ function renderLatency() {
       h("dt", null, "반복"), h("dd", null, `호출마다 ${data.repeat}번, 백분위수는 nearest rank`),
       h("dt", null, "측정"), h("dd", null, `${pickInfo.commit.short} · ${dateTimeLabel(data.evaluated_at)}`))));
   }
-  if (data.detectors.length > 1) {
-    const rows = data.detectors.map((item) => ({ label: item.label === "ensemble" ? "앙상블 (시스템)" : item.label, value: item.single_1k.p50, strong: item.label === "ensemble" }));
-    const max = Math.max(...rows.map((row) => row.value || 0), 0.001);
-    body.append(h("div", { class: "mini-title" }, "어댑터별 · 1KB 중앙값"),
-      h("div", { class: "hbars" }, rows.map((row) => h("div", { class: "hbar" },
-        h("span", { class: `name${row.strong ? " strong" : ""}`, title: row.label }, row.label),
-        h("span", { class: "bar lat" }, h("i", { style: `width:${Math.max(0.5, ((row.value || 0) / max) * 100).toFixed(1)}%` })),
-        h("span", { class: "num" }, `${ms(row.value)}ms`)))));
-  }
-
   const charts = h("div", { class: "charts2" });
   const sizeChart = h("div", { class: "chart" });
   const batchChart = h("div", { class: "chart" });
@@ -1574,6 +1489,8 @@ async function fetchTask() {
 // ------------------------------------------------------------------ loading
 
 let latestLoad = 0; // the newest loadResults() call; the responses of an older one are dropped
+let latestIndex = 0;
+let latestStatus = 0;
 
 async function fetchResult(url, key, loadedKey, loaded) {
   if (!key) return { data: null, error: null };
@@ -1624,7 +1541,6 @@ function applyCatalog() {
 function renderAll() {
   applyCatalog();
   renderChip();
-  renderEnsembleActive();
   renderKpis();
   renderHeroNote();
   renderTrend();
@@ -1679,38 +1595,47 @@ async function selectCommit(sha) {
 }
 
 async function refreshIndex() {
+  const call = ++latestIndex;
   try {
-    state.index = await getJSON("data/index.json");
-    for (const [identity, pending] of state.pendingEnsembles) {
-      const commit = state.index.commits.find((item) => item.sha === pending.sha);
-      if (!commit) continue;
-      if ((commit.ensembles || []).some((item) => item.id === pending.id)) state.pendingEnsembles.delete(identity);
-      else (commit.ensembles ||= []).push(pending);
-    }
+    const index = await getJSON("data/index.json");
+    if (call !== latestIndex) return false;
+    state.index = index;
+    state.indexError = false;
   } catch {
-    if (state.index) return; // keep showing what was loaded; the next status poll tries again
+    if (call !== latestIndex) return false;
+    state.indexError = true;
+    renderEvaluationStatus();
+    return false;
   }
   await showSelected();
+  return true;
 }
 
 async function pollStatus() {
   if (!state.statusPolling) return;
+  const call = ++latestStatus;
+  if (state.evaluationCatalogError) {
+    if (!(await setupEvaluations())) return;
+    await refreshIndex();
+  }
   let status;
   try {
     status = await getJSON("api/status");
   } catch (error) {
+    if (call !== latestStatus) return;
     // A static copy (--export) answers 4xx: it has no API, and index.json carries the last status. A restarting
     // server or a dropped network answers 5xx or nothing: ask again at the next tick.
-    if (error.status >= 400 && error.status < 500) state.statusPolling = false;
+    if (!state.evaluation && error.status >= 400 && error.status < 500) state.statusPolling = false;
     return;
   }
+  if (call !== latestStatus) return;
   const changed = state.status && status.index_at && status.index_at !== state.status.index_at;
   state.status = status;
-  if (!state.index || changed || (status.index_at && status.index_at > state.index.generated_at)) await refreshIndex();
+  // Revision tokens can be hashes, so their lexical ordering has no time meaning.
+  if (!state.index || changed || state.indexError || (status.index_at && status.index_at !== state.index.generated_at)) await refreshIndex();
   else if (state.summaryError || state.latencyError || state.taskError) await showSelected();
   else {
     renderChip();
-    renderEnsembleActive();
     const examplesKey = `${state.detection?.key}/${state.filters.d || "_all"}`;
     if (state.summary && state.exampleErrors.has(examplesKey)) await renderOutcomes();
   }
@@ -1723,8 +1648,8 @@ function onResize() {
 }
 
 async function main() {
+  await setupEvaluations();
   readHash();
-  $("#ensemble-open").addEventListener("click", openEnsemblePanel);
   $("#commit-chip").addEventListener("click", (event) => {
     if (state.popover && state.popover.anchor === event.currentTarget) closePopover();
     else openPopover(event.currentTarget, commitPopover);
@@ -1745,16 +1670,15 @@ async function main() {
   window.addEventListener("resize", onResize);
   window.addEventListener("hashchange", async () => {
     const before = state.sha;
-    const beforeEnsemble = state.ensemble;
     readHash();
-    if (before !== state.sha || beforeEnsemble !== state.ensemble) await selectCommit(state.sha);
+    if (before !== state.sha) await selectCommit(state.sha);
     else {
       renderDetails();
       renderViews();
       requestAnimationFrame(drawCharts);
     }
   });
-  await refreshIndex();
+  if (!state.evaluationCatalogError) await refreshIndex();
   await pollStatus();
   setInterval(pollStatus, 15000);
 }

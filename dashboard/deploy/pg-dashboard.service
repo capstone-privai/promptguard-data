@@ -1,0 +1,21 @@
+[Unit]
+Description=PromptGuard evaluation dashboard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data
+EnvironmentFile=/etc/pg-dashboard.env
+Environment="PATH=/home/ubuntu/.pyenv/versions/promptguard-data/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/ubuntu/.pyenv/versions/promptguard-data/bin/python3 -u dashboard/serve.py --host 127.0.0.1 --port 8765 --jobs 4
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

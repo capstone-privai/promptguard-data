@@ -145,6 +145,7 @@ button { cursor: pointer; }
 .chip .mono { font-family: var(--mono); font-size: 12.5px; }
 
 .chip .soft { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.chip .soft.bad { color: var(--critical); }
 
 .dot {
   flex: none;
@@ -917,47 +918,6 @@ table.plain td.num, table.plain th.num { text-align: right; font-variant-numeric
 }
 
 .batch-name { min-width: 0; max-width: 100%; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* ---------------------------------------------------------------- ensemble settings */
-
-.ensemble-dialog {
-  width: min(520px, calc(100vw - 32px));
-  max-height: calc(100dvh - 48px);
-  overflow: auto;
-  padding: 24px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--shadow);
-}
-.ensemble-dialog::backdrop { background: rgba(0, 0, 0, .38); backdrop-filter: blur(3px); }
-.ensemble-dialog h2 { margin: 0; font-size: 19px; }
-.ensemble-dialog h3 { margin: 24px 0 10px; font-size: 13px; }
-.ensemble-dialog > .muted { font-size: 12px; overflow-wrap: anywhere; }
-.ensemble-modules { border: 0; padding: 0; margin: 20px 0; }
-.ensemble-modules legend, .ensemble-policy { font-size: 13px; font-weight: 600; }
-.ensemble-module {
-  display: flex; align-items: center; gap: 12px;
-  margin-top: 8px; padding: 14px;
-  border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
-}
-.ensemble-module:has(input:checked) { background: color-mix(in srgb, var(--f1) 7%, var(--surface)); border-color: var(--f1); }
-.ensemble-module input { width: 18px; height: 18px; accent-color: var(--f1); flex-shrink: 0; }
-.ensemble-module strong { display: block; font-size: 14px; }
-.ensemble-module small { display: block; color: var(--ink-2); font-size: 12px; margin-top: 3px; }
-.ensemble-policy { display: grid; gap: 8px; }
-.ensemble-policy select { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; }
-.ensemble-votes { font-size: 13px; color: var(--ink-2); }
-.ensemble-submit { padding: 9px 16px; border: 0; border-radius: 9px; background: var(--ink); color: var(--surface); font: inherit; font-size: 13px; cursor: pointer; }
-.ensemble-submit:disabled { opacity: .45; cursor: default; }
-.ensemble-active { display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
-.ensemble-active:not(:empty) { margin: 0 0 12px; }
-.ensemble-badge { background: color-mix(in srgb, var(--f1) 14%, var(--surface)); color: var(--ink); border-radius: 5px; padding: 2px 6px; }
-.ensemble-scope { width: 100%; font-size: 12px; color: var(--ink-2); }
-.ensemble-history { display: grid; gap: 6px; }
-.ensemble-history-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
-.ensemble-history-item small { white-space: nowrap; color: var(--ink-2); }
 
 /* ---------------------------------------------------------------- responsive */
 

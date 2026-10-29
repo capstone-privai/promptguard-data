@@ -189,18 +189,21 @@ def single_adapter_config(config_path: Path, entry: dict, out_dir: Path) -> Path
 
 def detectors_from_args(args, run_dir: Path) -> list[Detector]:
     spec = args.detector
+    env = child_env()
+    if consensus := getattr(args, "consensus", None):
+        env["PG_DETECTOR_CONSENSUS"] = consensus
     if spec == "null":
         return [Detector("null", "null", [sys.executable, str(Path(__file__).resolve()), "null-detector"], child_env())]
     if spec.startswith("url:"):
         return [Detector(args.label or "url", "url", url=spec[4:].rstrip("/"))]
     if spec.startswith("cmd:"):
-        return [Detector(args.label or "cmd", "cmd", shlex.split(spec[4:]), child_env())]
+        return [Detector(args.label or "cmd", "cmd", shlex.split(spec[4:]), env)]
     if spec != "promptguard":
         raise SystemExit(f"unknown --detector {spec!r}")
     root = system_root(args.system_root)
     python = system_python(root, args.python)
     config = root / DETECTOR_CONFIG
-    base = {**child_env(), "PG_DETECTOR_MODE": "normal"}
+    base = {**env, "PG_DETECTOR_MODE": "normal"}
     argv = [python, str(root / WORKER)]
     out = [Detector("ensemble", "promptguard", argv, base, cwd=root, config=config, system_root=root)]
     if args.adapters == "each":
@@ -588,6 +591,8 @@ def main(argv=None):
     p.add_argument("--label", help="name for a cmd: or url: detector in the report")
     p.add_argument("--adapters", choices=["ensemble", "each"], default="ensemble",
                    help="promptguard: also measure each adapter alone (one worker per adapter, consensus any)")
+    p.add_argument("--consensus", choices=["any", "majority", "unanimous"],
+                   help="explicit ensemble vote policy; omitted uses the checkout default")
     p.add_argument("--system-root", help=f"promptguard-claude-demoV0 checkout (default ${SYSTEM_ENV}, else ../promptguard-claude-demoV0)")
     p.add_argument("--python", help="Python for the system's worker (default the checkout's .venv)")
     p.add_argument("--synth", action="store_true", help="generated size and batch sweeps (the default workload)")

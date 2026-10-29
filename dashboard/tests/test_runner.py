@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -16,6 +17,12 @@ from pipeline import catalog, runner  # noqa: E402
 
 
 class BenchmarkTest(unittest.TestCase):
+    def test_dashboard_forces_any_without_inheriting_other_pg_overrides(self):
+        with patch.dict(os.environ, {"PG_DETECTOR_CONSENSUS": "unanimous", "PG_DETECTOR_MODE": "crash"}):
+            env = runner.child_env()
+        self.assertEqual(env["PG_DETECTOR_CONSENSUS"], "any")
+        self.assertNotIn("PG_DETECTOR_MODE", env)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

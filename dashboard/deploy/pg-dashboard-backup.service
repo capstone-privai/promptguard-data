@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up PromptGuard datasets, published results and configuration
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/home/ubuntu/.pyenv/versions/promptguard-data/bin/python3 /home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/dashboard/deploy/backup.py

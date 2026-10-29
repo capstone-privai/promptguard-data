@@ -9,6 +9,8 @@ import lzma
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -175,6 +177,16 @@ class StatisticsTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
+    def test_explicit_any_reaches_both_checkout_worker_and_ml_command(self):
+        args = SimpleNamespace(detector="promptguard", system_root="unused", python=sys.executable,
+                               adapters="ensemble", consensus="any", label="ensemble")
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m4, "system_root", return_value=Path(tmp)):
+            worker = m4.detectors_from_args(args, Path(tmp))[0]
+            args.detector = "cmd:python example-ml-worker.py"
+            ml_worker = m4.detectors_from_args(args, Path(tmp))[0]
+        self.assertEqual(worker.env["PG_DETECTOR_CONSENSUS"], "any")
+        self.assertEqual(ml_worker.env["PG_DETECTOR_CONSENSUS"], "any")
+
     def test_single_adapter_config_makes_file_options_absolute(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

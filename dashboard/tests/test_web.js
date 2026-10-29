@@ -61,6 +61,27 @@ const response = (data, status = 200) => ({ ok: status < 400, status, json: asyn
 const descendants = (node) => [node, ...node.children.flatMap(descendants)];
 const retryButton = (node) => descendants(node).find((child) => child.tag === "button" && child.textContent === "다시 시도");
 
+test("registered ML run requests use their own data and status routes", async () => {
+  const urls = [];
+  const { context } = app({ fetch: async url => { urls.push(url); return response({}); } });
+  vm.runInContext("state.evaluation = 'ml-v9-10k'", context);
+  await vm.runInContext("getJSON('data/index.json')", context);
+  await vm.runInContext("getJSON('data/results/detection/abc/summary.json')", context);
+  await vm.runInContext("getJSON('api/status')", context);
+  assert.deepEqual(urls, ["data/evaluations/ml-v9-10k/index.json",
+    "data/evaluations/ml-v9-10k/results/detection/abc/summary.json", "api/status?evaluation=ml-v9-10k"]);
+});
+
+test("ML sample status shows scope, actual counts and job 4", () => {
+  const { context, elements } = app();
+  vm.runInContext(`state.evaluationOptions = [{id:'ml-v9-10k'}];
+    state.index = {evaluation:{label:'규칙 + ML v9 · 1만 표본',jobs:4,state:'running'}};
+    state.status = {state:'evaluating',progress:{done:400,total:10037}};
+    renderEvaluationStatus();`, context);
+  const text = elements.get("#evaluation-progress").textContent;
+  assert.ok(text.includes("400/10,037개")); assert.ok(text.includes("job 4")); assert.ok(text.includes("평가 중"));
+});
+
 function resultsFixture() {
   return {
     index: {
@@ -83,6 +104,91 @@ function examplesFixture() {
     },
   };
 }
+
+for (const failFirstIndex of [false, true]) {
+  test(`ML completion refreshes even when the new revision sorts earlier${failFirstIndex ? " and a fetch fails" : ""}`, async () => {
+    let indexRequests = 0;
+    const fresh = resultsFixture().index;
+    fresh.generated_at = "0000"; fresh.tracks = ["detection"]; fresh.task_batches = [];
+    const { context } = app({ fetch: async url => {
+      if (url.includes("api/status")) return response({ index_at: "0000" });
+      if (url.endsWith("index.json")) return response(fresh, ++indexRequests === 1 && failFirstIndex ? 503 : 200);
+      if (url.endsWith("summary.json")) return response({ marker: "completed" });
+      throw Error(`unexpected fetch: ${url}`);
+    } });
+    context.fixture = resultsFixture();
+    context.fixture.index.generated_at = "ffff";
+    context.fixture.index.tracks = ["detection"]; context.fixture.index.task_batches = [];
+    context.fixture.index.commits[0].detection.state = "running";
+    vm.runInContext("Object.assign(state, fixture); state.evaluation='ml-v9-10k'; state.status=null; renderAll=()=>{};", context);
+    await vm.runInContext("pollStatus()", context);
+    if (failFirstIndex) await vm.runInContext("pollStatus()", context);
+    assert.equal(vm.runInContext("state.summary.marker", context), "completed");
+    assert.equal(indexRequests, failFirstIndex ? 2 : 1);
+  });
+}
+
+test("an explicit ML URL never silently falls back to rule results on catalogue errors", async () => {
+  let requests = 0;
+  const { context } = app({ URLSearchParams, location: { search: "?run=ml-v9-10k" },
+    fetch: async () => response({ runs: [], default: null }, ++requests === 1 ? 503 : 200) });
+  assert.equal(await vm.runInContext("setupEvaluations()", context), false);
+  assert.equal(vm.runInContext("state.evaluation", context), "ml-v9-10k");
+  assert.equal(vm.runInContext("state.evaluationCatalogError", context), true);
+  assert.equal(await vm.runInContext("setupEvaluations()", context), true);
+  assert.equal(vm.runInContext("state.evaluation", context), "ml-v9-10k");
+});
+
+test("static exports still load the basic results when the catalogue API is absent", async () => {
+  const { context } = app({ URLSearchParams, location: {search:""}, fetch: async () => response({},404) });
+  assert.equal(await vm.runInContext("setupEvaluations()", context), true);
+  assert.equal(vm.runInContext("state.evaluationCatalogError", context), false);
+  assert.equal(vm.runInContext("state.evaluation", context), null);
+});
+
+test("an external run temporarily missing from status keeps polling", async () => {
+  const { context } = app({ fetch: async () => response({}, 404) });
+  vm.runInContext("state.evaluation='ml-v9-10k'", context);
+  await vm.runInContext("pollStatus()", context);
+  assert.equal(vm.runInContext("state.statusPolling", context), true);
+});
+
+test("external ML failures do not offer the basic rule queue retry action", () => {
+  const { context } = app();
+  context.fixture = { index: { repo: {}, latest: "a", tracks: ["detection"], commits: [
+    { sha: "a", short: "a", date: "2026-10-28", detection: { state: "failed", error: "stopped" } }] },
+    status: { state: "error" }, evaluation: "ml-v9-10k" };
+  vm.runInContext("Object.assign(state, fixture)", context);
+  const text = vm.runInContext("commitPopover()", context).flat(Infinity).filter(Boolean).map(n => n.textContent).join("");
+  assert.ok(!text.includes("실패한 평가 다시 돌리기"));
+  vm.runInContext("state.evaluation=null", context);
+  const basic = vm.runInContext("commitPopover()", context).flat(Infinity).filter(Boolean).map(n => n.textContent).join("");
+  assert.ok(basic.includes("실패한 평가 다시 돌리기"));
+});
+
+test("a late index response cannot replace a newer index", async () => {
+  let resolveOld, requests = 0;
+  const { context } = app({ fetch: () => ++requests === 1 ? new Promise(resolve => { resolveOld=resolve; })
+    : Promise.resolve(response({ marker: "new" })) });
+  vm.runInContext("showSelected=async()=>{}", context);
+  const old = vm.runInContext("refreshIndex()", context);
+  await vm.runInContext("refreshIndex()", context);
+  resolveOld(response({ marker: "old" }));
+  assert.equal(await old, false);
+  assert.equal(vm.runInContext("state.index.marker", context), "new");
+});
+
+test("a late status response cannot move progress back after completion", async () => {
+  let resolveOld, requests = 0;
+  const { context } = app({ fetch: () => ++requests === 1 ? new Promise(resolve => { resolveOld=resolve; })
+    : Promise.resolve(response({ index_at: "new", progress: {done:10,total:10} })) });
+  vm.runInContext("state.index={generated_at:'new'};renderChip=()=>{}", context);
+  const old = vm.runInContext("pollStatus()", context);
+  await vm.runInContext("pollStatus()", context);
+  resolveOld(response({ index_at: "old", progress: {done:1,total:10} }));
+  await old;
+  assert.equal(vm.runInContext("state.status.progress.done", context), 10);
+});
 
 test("failed example requests can be retried; successful empty results stay cached", async () => {
   let requests = 0;
@@ -380,119 +486,82 @@ for (const [name, guard, value] of [
   });
 }
 
-const ensembleFixture = (variants = []) => ({
-  tracks: ["detection", "latency"], latest: "a", generated_at: "same",
-  commits: [{ sha: "a", short: "a", title: "Detector", ensembles: variants,
-    detection: { key: "default", state: "done", headline: { f1: 0.5 } },
-    latency: { key: "latency", state: "done" } }],
-});
-
-test("selected ensembles never fall back to default metrics and compare the same configuration", () => {
-  const { context } = app();
-  context.fixture = ensembleFixture([{ id: "choice", key: "variant", state: "queued" }]);
-  vm.runInContext("state.index = fixture; state.ensemble = 'choice'", context);
-  assert.equal(vm.runInContext("pick('detection').key", context), null);
-  assert.equal(vm.runInContext("pick('latency').key", context), "latency");
-  assert.equal(vm.runInContext("doneCommits('detection').length", context), 0);
-  vm.runInContext("state.index.commits[0].ensembles[0].state = 'done'", context);
-  assert.equal(vm.runInContext("pick('detection').key", context), "variant");
-  assert.equal(vm.runInContext("doneCommits('detection')[0].detection.key", context), "variant");
-  vm.runInContext("state.ensemble = 'unknown'", context);
-  assert.equal(vm.runInContext("pick('detection').key", context), null);
-  vm.runInContext("state.ensemble = null", context);
-  assert.equal(vm.runInContext("pick('detection').key", context), "default");
-});
-
-test("ensemble panel computes the vote count and rejects zero selected modules", () => {
-  const { context, elements } = app();
-  context.fixture = ensembleFixture();
-  vm.runInContext("state.index = fixture; state.status = { ensemble_writable: true }; openEnsemblePanel()", context);
-  const dialog = elements.get("#ensemble-dialog");
-  assert.equal(dialog.open, true);
-  assert.ok(dialog.textContent.includes("3개 모듈 중 2개"));
-  const inputs = descendants(dialog).filter((node) => node.tag === "input");
-  const submit = descendants(dialog).find((node) => node.attributes.type === "submit");
-  inputs[0].listeners.get("change")({ target: { checked: false } });
-  assert.ok(dialog.textContent.includes("2개 모듈 중 2개"));
-  const policy = descendants(dialog).find((node) => node.tag === "select");
-  policy.listeners.get("change")({ target: { value: "any" } });
-  assert.ok(dialog.textContent.includes("2개 모듈 중 1개"));
-  for (const input of inputs.slice(1)) input.listeners.get("change")({ target: { checked: false } });
-  assert.equal(submit.disabled, true);
-  assert.ok(dialog.textContent.includes("한 개 이상"));
-});
-
-test("ensemble request pins its commit and shows the accepted request before the worker indexes it", async () => {
-  const calls = [];
-  const fixture = ensembleFixture();
-  const { context, elements } = app({
-    URLSearchParams, location: { pathname: "/", search: "" }, history: { replaceState() {} },
-    fetch: async (url, options) => {
-      calls.push([url, options]);
-      return response(url === "api/ensemble" ? { id: "choice", detectors: ["credsweeper", "gitleaks", "promptguard-rules"], consensus: "majority" }
-        : JSON.parse(JSON.stringify(fixture)));
-    },
+test("legacy combination links and index entries still show default E2E results", () => {
+  let hash;
+  const { context } = app({
+    URLSearchParams, location: { hash: "#c=a&e=choice&d=sessions", pathname: "/", search: "" },
+    history: { replaceState(_state, _title, value) { hash = value; } },
   });
-  context.fixture = fixture;
-  vm.runInContext("state.index = fixture; state.status = { ensemble_writable: true }; showSelected = async () => {}; openEnsemblePanel()", context);
-  const dialog = elements.get("#ensemble-dialog");
-  const form = descendants(dialog).find((node) => node.tag === "form");
-  await form.listeners.get("submit")({ preventDefault() {} });
-  assert.equal(dialog.open, false);
-  assert.equal(JSON.parse(calls[0][1].body).sha, "a");
-  assert.equal(vm.runInContext("state.sha", context), "a");
-  assert.equal(vm.runInContext("state.ensemble", context), "choice");
-  assert.equal(vm.runInContext("detectionRecord(selectedCommit()).state", context), "queued");
-  assert.equal(vm.runInContext("pick('detection').key", context), null);
-});
-
-test("failed ensemble requests stay in the panel and allow retry", async () => {
-  const { context, elements } = app({ fetch: async () => response({ error: "server unavailable" }, 503) });
-  context.fixture = ensembleFixture();
-  vm.runInContext("state.index = fixture; state.status = { ensemble_writable: true }; openEnsemblePanel()", context);
-  const dialog = elements.get("#ensemble-dialog");
-  const form = descendants(dialog).find((node) => node.tag === "form");
-  await form.listeners.get("submit")({ preventDefault() {} });
-  assert.equal(dialog.open, true);
-  assert.ok(dialog.textContent.includes("server unavailable"));
-  assert.equal(descendants(dialog).find((node) => node.attributes.type === "submit").disabled, false);
-});
-
-test("read-only exports can open completed combinations without requesting evaluations", async () => {
-  const variant = { id: "choice", key: "variant", state: "done", detectors: ["gitleaks"], consensus: "any" };
-  const { context, elements } = app({
-    URLSearchParams, location: { pathname: "/", search: "" }, history: { replaceState() {} },
-    fetch: () => { throw new Error("should not request an evaluation"); },
-  });
-  context.fixture = ensembleFixture([variant]);
-  vm.runInContext("state.index = fixture; state.ensemble = 'choice'; showSelected = async () => {}; openEnsemblePanel()", context);
-  const dialog = elements.get("#ensemble-dialog");
-  const form = descendants(dialog).find((node) => node.tag === "form");
-  assert.equal(descendants(dialog).find((node) => node.attributes.type === "submit").disabled, false);
-  await form.listeners.get("submit")({ preventDefault() {} });
-  assert.equal(dialog.open, false);
-  assert.equal(vm.runInContext("state.ensemble", context), "choice");
-  vm.runInContext("state.ensemble = null; openEnsemblePanel()", context);
-  assert.equal(descendants(dialog).find((node) => node.attributes.type === "submit").disabled, true);
-});
-
-test("the default ensemble opens existing results without posting or queueing a new evaluation", async () => {
-  const { context, elements } = app({
-    URLSearchParams, location: { pathname: "/", search: "" }, history: { replaceState() {} },
-    fetch: () => { throw new Error("default must not be queued"); },
-  });
-  context.fixture = ensembleFixture();
-  context.fixture.commits[0].default_ensemble = {
-    detectors: ["credsweeper", "gitleaks", "promptguard-rules"], consensus: "majority",
+  context.fixture = {
+    tracks: ["detection"], latest: "b", commits: [
+      { sha: "a", detection: { key: "default-a", state: "done" },
+        ensembles: [{ id: "choice", key: "variant-a", state: "done" }] },
+      { sha: "b", detection: { key: "default-b", state: "done" },
+        ensembles: [{ id: "choice", key: "variant-b", state: "done" }] },
+    ],
   };
-  vm.runInContext("state.index = fixture; showSelected = async () => {}; openEnsemblePanel()", context);
-  const dialog = elements.get("#ensemble-dialog");
-  assert.ok(dialog.textContent.includes("기본 구성과 같아요"));
-  const submit = descendants(dialog).find((node) => node.attributes.type === "submit");
-  assert.equal(submit.disabled, false); // Also works in read-only exports.
-  assert.equal(submit.textContent, "기본 구성 보기");
-  await descendants(dialog).find((node) => node.tag === "form").listeners.get("submit")({ preventDefault() {} });
-  assert.equal(dialog.open, false);
-  assert.equal(vm.runInContext("state.ensemble", context), null);
-  assert.equal(vm.runInContext("pick('detection').key", context), "default");
+  vm.runInContext("state.index = fixture; readHash();", context);
+  assert.equal(vm.runInContext("pick('detection').key", context), "default-a");
+  assert.deepEqual(Array.from(vm.runInContext("doneCommits('detection').map(c => c.detection.key)", context)),
+    ["default-a", "default-b"]);
+  vm.runInContext("state.sha = 'b'", context);
+  assert.equal(vm.runInContext("previousDistinct('detection', selectedCommit(), 'default-b').record.key", context), "default-a");
+  vm.runInContext("writeHash()", context);
+  assert.equal(hash, "#c=b&d=sessions");
+});
+
+test("commit details do not inspect detector implementation metadata", () => {
+  const { context } = app();
+  context.fixture = {
+    index: { repo: {}, latest: "a", tracks: ["detection"], commits: [
+      { sha: "a", short: "a", title: "System", date: "2026-10-25", detection: { state: "done" } },
+    ] },
+    detection: { commit: { short: "a" } },
+    summary: { evaluated_at: "2026-10-25", wall_seconds: 1, datasets: [{ gold: 2, failed_open: 0 }] },
+  };
+  Object.defineProperty(context.fixture.summary, "system", { get() { throw Error("internal metadata accessed"); } });
+  vm.runInContext("Object.assign(state, fixture)", context);
+  const nodes = vm.runInContext("commitPopover()", context);
+  const text = nodes.flat(Infinity).filter(Boolean).map(node => node.textContent).join("");
+  assert.ok(text.includes("탐지 평가"));
+  assert.ok(text.includes("정답 2개"));
+});
+
+test("legacy latency results display the complete system without individual adapter metrics", () => {
+  const { context, elements } = app({ requestAnimationFrame: () => {} });
+  const system = {
+    label: "ensemble", single_1k: { p50: 12, p95: 15 }, single_64k: { p50: 20, p95: 25 },
+    batch_sweep: [], size_sweep: [], fit_items: null, all: { n: 2 }, over_timeout: 0,
+  };
+  context.fixture = {
+    index: { tracks: ["latency"], commits: [] },
+    latencyPick: { key: "latency", commit: { sha: "a", short: "a" } },
+    latency: { timeout_ms: 5000, repeat: 1, batch_item_chars: 1024,
+      machine: { platform: "fixture", cpu_count: 1 },
+      detectors: [{ ...system, label: "legacy-adapter", single_1k: { p50: 999, p95: 999 } }, system] },
+  };
+  vm.runInContext("Object.assign(state, fixture); sparkline = () => null; renderLatency();", context);
+  const text = elements.get("#latency-body").textContent;
+  assert.ok(text.includes("12ms"));
+  assert.ok(!text.includes("999"));
+  assert.ok(!text.includes("legacy-adapter"));
+  assert.ok(!text.includes("어댑터별"));
+});
+
+test("ML latency identifies the measured model and explains the final KEEP/MASK interval", () => {
+  const { context, elements } = app({ requestAnimationFrame: () => {} });
+  context.fixture = {
+    index: { tracks: ["latency"], commits: [] }, tileOpen: "single_1k",
+    latencyPick: { key: "ml", commit: { short: "a" } },
+    latency: { timeout_ms: 5000, repeat: 1, batch_item_chars: 1024,
+      environment: { second_stage: { model_id: "finetuned-v1" } },
+      machine: { platform: "fixture", cpu_count: 1 },
+      detectors: [{ label: "ensemble", single_1k: { p50: 40, p95: 45 }, single_64k: { p50: 60, p95: 70 },
+        batch_sweep: [], size_sweep: [], fit_items: null, all: { n: 2 }, over_timeout: 0 }] },
+  };
+  vm.runInContext("Object.assign(state, fixture); renderLatency();", context);
+  const body = elements.get("#latency-body");
+  assert.ok(body.textContent.includes("detector + ML"));
+  assert.ok(body.textContent.includes("최종 KEEP/MASK 판정까지"));
+  assert.ok(descendants(body).some(node => node.attributes.title?.includes("finetuned-v1")));
 });

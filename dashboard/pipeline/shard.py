@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -62,7 +63,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     weights = []
     if not issues:
         sessions = load_range(Path(args.sessions), Path(args.gold), 0, sys.maxsize)
-        issues = check_use(sessions, USE)
+        issues = check_use(sessions, args.use)
         weights = [sum(1 for item in session.items if item.channel in CHANNELS) for session in sessions]
     write_json(Path(args.out), {"issues": [str(issue) for issue in issues[:20]], "issue_count": len(issues),
                                 "weights": weights})
@@ -86,20 +87,43 @@ def evaluate_range(args: argparse.Namespace) -> int:
     started = time.perf_counter()
     low, high = (int(part) for part in args.lines.split(":"))
     sessions = load_range(Path(args.sessions), Path(args.gold), low, high)
+    classifier = None
     try:
         from evaluation.adapters.promptguard_adapter import PromptGuardAdapter
 
-        adapter = PromptGuardAdapter(load_worker(args.system_root),
-                                    detectors=args.detectors.split(",") if args.detectors else None,
-                                    consensus=args.consensus)
+        worker = load_worker(args.system_root)
+        if args.ml_config:
+            from pipeline.ml import inference, load_spec
+            from evaluation.adapters.two_stage_adapter import TwoStageAdapter
+            from evaluation.adapters.span_union_adapter import SpanUnionAdapter
+            issues = check_use(sessions, "ml_eval")
+            if issues:
+                print(f"dataset policy error: {issues[0]}", file=sys.stderr)
+                return EXIT_DATASET
+            spec = load_spec(args.ml_config)
+            if spec.datasets and args.dataset not in spec.datasets:
+                raise ValueError("dataset is not in the ML evaluation allowlist")
+            classifier = inference(spec)
+            adapter = (SpanUnionAdapter if spec.mode == "span_union" else TwoStageAdapter)(classifier, worker)
+        else:
+            adapter = PromptGuardAdapter(worker)
     except (SystemRootError, ValueError) as exc:
+        if classifier is not None:
+            classifier.close()
         print(f"configuration error: {exc}", file=sys.stderr)
         return EXIT_CONFIG
+    except BaseException:
+        if classifier is not None:
+            classifier.close()
+        raise
     try:
         result = evaluate_sessions(sessions, adapter)
     except ScoringError as exc:
         print(f"scoring failed: {exc}", file=sys.stderr)
         return EXIT_SCORING
+    finally:
+        if classifier is not None:
+            classifier.close()
 
     collector = Collector(args.dataset, group_of(args.dataset))
     lookup = {(session.session_id, item.item_id): (session, item) for session in sessions for item in session.items}
@@ -122,15 +146,18 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--sessions", required=True)
         command.add_argument("--gold", required=True)
         command.add_argument("--out", required=True)
+    validate.add_argument("--use", choices=("rule_eval", "ml_eval"), default=USE)
+    run.add_argument("--ml-config", help="KEEP/MASK model config; enables ml_eval policy")
     run.add_argument("--dataset", required=True, help="sessions file stem, e.g. sessions_from_CredData")
     run.add_argument("--lines", required=True, help="session range low:high in file order")
     run.add_argument("--system-root", required=True, help="PromptGuard checkout (src/detector, the mod's register.mjs)")
     run.add_argument("--gitleaks-cache", help="SQLite file caching gitleaks runs across shards and commits")
-    run.add_argument("--detectors", help="comma-separated adapter names to keep")
-    run.add_argument("--consensus", choices=("any", "majority", "unanimous"))
     args = parser.parse_args(argv)
     return cmd_validate(args) if args.command == "validate" else cmd_run(args)
 
 
 if __name__ == "__main__":
+    def stop(_signal, _frame):
+        raise SystemExit(130)
+    signal.signal(signal.SIGTERM, stop)
     raise SystemExit(main())

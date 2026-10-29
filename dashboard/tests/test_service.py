@@ -48,6 +48,39 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(jobs, [("detection", "d"), ("latency", "d"), ("detection", "c"), ("latency", "c"),
                                 ("detection", "a"), ("latency", "a")])  # b shares c's detector
 
+    def sample_dir(self, sessions_hash="s", gold_hash="g"):
+        sample = self.data / "sample"
+        (sample / "data_test").mkdir(parents=True)
+        (sample / "data_test" / "sessions_x.jsonl").write_text("")
+        (sample / "manifest.json").write_text(json.dumps({
+            "seed": "seed", "selected_items": 10, "selected_sessions": 2, "original_items": 100,
+            "datasets": [{"stem": "sessions_x", "source_sessions_sha256": sessions_hash, "source_gold_sha256": gold_hash}]}))
+        return sample / "data_test"
+
+    def test_sample_data_test_is_planned_and_reports_changed_sources(self):
+        from pipeline import service as module
+        data_test = self.sample_dir()
+        full = [runner.Dataset("sessions_x", Path("x"), Path("y"), "s", "g"),
+                runner.Dataset("sessions_new", Path("x"), Path("y"), "n", "n")]
+        sampled = [runner.Dataset("sessions_x", Path("a"), Path("b"), "1", "2")]
+        self.assertEqual(module.sample_info(module.DATA_TEST), None)
+        with patch("pipeline.service.runner.discover",
+                   side_effect=lambda path: sampled if path == data_test else full) as discover:
+            self.assertEqual(module.sample_info(data_test)["changed"], ["sessions_new"])
+            full[0] = runner.Dataset("sessions_x", Path("x"), Path("y"), "changed", "g")
+            info = module.sample_info(data_test)
+            service = Service(Config(data_dir=self.data, repo_url="unused", data_test=data_test, task=False))
+            with patch("pipeline.service.repo.sync"), patch("pipeline.service.repo.commits", return_value=self.commits), \
+                    patch("pipeline.service.runner.benchmark", return_value={"fingerprint": "b"}), \
+                    patch("pipeline.service.latency.environment", return_value={"fingerprint": "e"}):
+                plan = service.plan()
+        self.assertEqual(info, {"seed": "seed", "items": 10, "sessions": 2, "original_items": 100,
+                                "changed": ["sessions_new", "sessions_x"]})
+        self.assertEqual(plan["datasets"], sampled)
+        self.assertIn(data_test, [call.args[0] for call in discover.call_args_list])
+        service.write_index(plan, [], running=None)
+        self.assertEqual(json.loads((self.data / "index.json").read_text())["sample"]["items"], 10)
+
     def test_only_clean_batches_are_attributed_to_a_commit(self):
         self.plan["task_batches"] = [
             {"key": label, "system_commit": self.commits[-1].sha, "provenance": label}

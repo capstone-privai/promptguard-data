@@ -225,6 +225,7 @@ class CondenseTest(unittest.TestCase):
                                          repeat=1, warmup=1, commit={}, system_fingerprint="system",
                                          env={"fingerprint": "environment"})
                     command = popen.call_args.args[0]
+                    self.assertEqual(command[command.index("--consensus") + 1], "any")
                     self.assertIn("--timeout-ms", command)
                     self.assertEqual(command[command.index("--timeout-ms") + 1], str(value or 5000))
 
