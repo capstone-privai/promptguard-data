@@ -25,7 +25,7 @@ tar -czf runs/colab/pg-data-full.tar.gz -C metric-detection data_test data_answe
 
 - 노트북은 `--require-adapters`로 실행한다. ML 모듈이 패키지나 가중치 문제로 빠지면 점수를 내지 않고 이유를 출력하며 멈춘다. 플러그인에서 ML 모듈은 선택 모듈이라, 이 옵션이 없으면 빠져도 점수가 정상처럼 나온다.
 - `blocked`는 탐지기 오류(ML timeout `ADAPTER_FAILURE` 등)로 Final Guard가 요청을 막았다고 본 item 수다. 그 item의 정답은 노출이 아니라 과잉 마스킹(`over`)으로 채점된다. ML을 켠 쪽에서만 이 수가 크면 ML 모듈의 timeout(v9 4초, Qwen 25초)에 걸린 것이다. 자세한 규칙은 [evaluation/README.md](../evaluation/README.md)의 "탐지기 실패"에 있다.
-- 채점은 `--use ml_eval`로 한다. 학습·검증 split 세션이 섞인 데이터셋은 실행 전에 거부된다.
+- 채점은 `--use ml_eval`로 한다. `meta.split`이 `train`·`val`인 세션은 거부되지만, privesc-llm-data 원본(`sessions_from_privesc-llm-data`, split 이름이 `training`·`validation`)은 통과한다. 이 원본에는 ML 학습 시나리오가 들어 있으니 압축 파일에 넣지 않거나 그 행은 읽지 않는다(README의 데이터셋 표).
 
 ## 중간발표 탐지 성능 보고서
 
