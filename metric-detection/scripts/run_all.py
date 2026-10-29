@@ -9,9 +9,9 @@ Axes (each defaults to every value):
   dataset       every metric-detection/data_test/sessions*.jsonl that has a gold file (--datasets)
   system        promptguard, credsweeper, gitleaks, oracle, identity (--systems)
   ml            credsweeper only: off, on (--ml)
-  pg config     promptguard only: which adapters of its ensemble vote and how (--pg-configs). Default: the
-                system as configured. --ensemble runs each adapter alone and all of them under any, majority
-                and unanimous, and adds tables comparing those configurations across datasets to summary.md
+
+PromptGuard is evaluated as its checkout is configured; which detectors it runs and how they vote is up to the
+system (promptguard-claude-demoV0), not this script.
 
 Every system is scored on prompt, instructions and tool_output (evaluation/dataset/schema.py SCORED_CHANNELS);
 tool_input, the text the model writes, is never scored. CredSweeper and gitleaks scan those three channels
@@ -58,10 +58,6 @@ from evaluation.adapters.system_root import SystemRootError, check_credsweeper, 
 from evaluation.dataset.io import gold_path_for  # noqa: E402
 
 SYSTEMS = ("promptguard", "credsweeper", "gitleaks", "oracle", "identity")
-# PromptGuard ensemble configurations: "default" is the system as configured; otherwise
-# "adapter+adapter" (the configured vote among them), "@consensus" (every adapter) or "adapter+adapter@consensus".
-# The adapter names are the ones in the system's src/detector/detector.json.
-ENSEMBLE_CONFIGS = ("credsweeper", "gitleaks", "promptguard-rules", "@any", "@majority", "@unanimous")
 
 
 @dataclass
@@ -69,7 +65,6 @@ class Combo:
     dataset: Path
     system: str
     ml: str | None = None
-    pg: str = "default"  # promptguard ensemble configuration, see ENSEMBLE_CONFIGS
     skip: str | None = None
     # filled in after running
     status: str = "pending"
@@ -79,19 +74,8 @@ class Combo:
     note: str = ""
 
     @property
-    def detectors(self) -> str:
-        return "" if self.pg == "default" else self.pg.partition("@")[0]
-
-    @property
-    def consensus(self) -> str:
-        return "" if self.pg == "default" else self.pg.partition("@")[2]
-
-    @property
     def config(self) -> str:
-        if self.ml:
-            return f"ml={self.ml}"
-        return " ".join(f"{key}={value}" for key, value in (("detectors", self.detectors), ("consensus", self.consensus))
-                        if value)
+        return f"ml={self.ml}" if self.ml else ""
 
     @property
     def slug(self) -> str:
@@ -159,13 +143,10 @@ def build_combos(args: argparse.Namespace) -> list[Combo]:
         for system in args.systems:
             if system == "credsweeper":
                 variants = [Combo(dataset, system, ml=ml) for ml in args.ml]
-            elif system == "promptguard":
-                variants = [Combo(dataset, system, pg=pg) for pg in args.pg_configs]
             else:
                 variants = [Combo(dataset, system)]
             for combo in variants:
                 combo.skip = (dataset_skip or missing.get(system)
-                              or (missing["gitleaks"] if "gitleaks" in combo.detectors.split("+") else None)
                               or (None if combo.use() in uses else f"dataset does not allow {combo.use()}"))
             combos += variants
     args.resolved_system_root = system_root
@@ -183,10 +164,6 @@ def evaluate_command(combo: Combo, args: argparse.Namespace, batch: Path, findin
         cmd += ["--findings", str(findings)]
     elif combo.system == "promptguard":
         cmd += ["--system-root", str(args.resolved_system_root)]
-        if combo.detectors:
-            cmd += ["--detectors", combo.detectors.replace("+", ",")]
-        if combo.consensus:
-            cmd += ["--consensus", combo.consensus]
     return cmd
 
 
@@ -265,45 +242,7 @@ def write_summary(combos: list[Combo], batch: Path) -> None:
                 r["run_dir"] = Path(r["run_dir"]).name if r["run_dir"] else ""
                 lines.append("| " + " | ".join(str(r[k]).replace("|", "\\|") for k in md_cols) + " |")
         lines.append("")
-    lines += ensemble_tables(combos)
     (batch / "summary.md").write_text("\n".join(lines), encoding="utf-8")
-
-
-def pg_label(pg: str) -> str:
-    if pg == "default":
-        return "시스템 설정 그대로"
-    detectors, _, consensus = pg.partition("@")
-    names = detectors.replace("+", " + ") or "전체"
-    if not consensus:
-        return f"{names} 단독" if "+" not in detectors else names
-    return f"{names}, {consensus}"
-
-
-def ensemble_tables(combos: list[Combo]) -> list[str]:
-    """One table per metric: PromptGuard ensemble configurations as rows, datasets as columns."""
-    pg = [c for c in combos if c.system == "promptguard"]
-    configs = list(dict.fromkeys(c.pg for c in pg))
-    if len(configs) < 2:
-        return []
-    datasets = list(dict.fromkeys(c.dataset.name for c in pg))
-    by_key = {(c.pg, c.dataset.name): c for c in pg}
-    lines = ["## PromptGuard 탐지기 구성별", "",
-             "행은 시스템 앙상블에서 투표하는 어댑터와 합의 규칙이다. 합의 규칙을 적지 않은 행은 시스템 설정"
-             "(detector.json)의 규칙을 따르고, 어댑터를 적지 않은 행은 설정된 어댑터 전부가 투표한다.", ""]
-    for key, title in (("recall", "recall"), ("precision", "precision"), ("f2", "F2"),
-                       ("fp_per_1k_lines", "1,000줄당 과잉 마스킹")):
-        lines += [f"### {title}", "", "| 구성 | " + " | ".join(name.removesuffix(".jsonl") for name in datasets) + " |",
-                  "|---|" + "---|" * len(datasets)]
-        for config in configs:
-            cells = []
-            for name in datasets:
-                combo = by_key.get((config, name))
-                value = combo.metrics.get(key) if combo else None
-                cells.append(fmt(value, 2 if key == "fp_per_1k_lines" else 3) if value is not None
-                             else (combo.status if combo and combo.status != "ok" else ""))
-            lines.append(f"| {pg_label(config)} | " + " | ".join(cells) + " |")
-        lines.append("")
-    return lines
 
 
 # ---------------------------------------------------------------- main
@@ -313,11 +252,6 @@ def main() -> int:
     parser.add_argument("--datasets", nargs="+", help="sessions files or names (e.g. sessions_2, from_CredData); default: all")
     parser.add_argument("--systems", nargs="+", choices=SYSTEMS, default=list(SYSTEMS))
     parser.add_argument("--ml", nargs="+", choices=("off", "on"), default=["off", "on"], help="credsweeper ML settings")
-    parser.add_argument("--pg-configs", nargs="+", default=["default"],
-                        help="promptguard ensemble configurations: default, adapter+adapter, @consensus or "
-                             "adapter+adapter@consensus (default: default)")
-    parser.add_argument("--ensemble", action="store_true",
-                        help=f"promptguard configurations {' '.join(ENSEMBLE_CONFIGS)} (overrides --pg-configs)")
     parser.add_argument("--system-root", help="promptguard-claude-demoV0 checkout "
                                               "(default: $PROMPTGUARD_CLAUDE_ROOT, else ../promptguard-claude-demoV0)")
     parser.add_argument("--gitleaks", default="gitleaks", help="gitleaks executable")
@@ -325,8 +259,6 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="batch folder (default: metric-detection/results/all_<timestamp>)")
     parser.add_argument("--dry-run", action="store_true", help="list the combinations and exit")
     args = parser.parse_args()
-    if args.ensemble:
-        args.pg_configs = list(ENSEMBLE_CONFIGS)
 
     combos = build_combos(args)
     runnable = [c for c in combos if not c.skip]

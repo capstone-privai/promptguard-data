@@ -6,10 +6,20 @@ own detector in process (`pgdetector.load_detector().scan`, the ensemble the wor
 and MCP transport. The substitution is JavaScript, so `ModSession` follows its `placeholder` and `redactText`;
 tests/test_system_contract.py runs register.mjs under Node and checks that both give the same text.
 
+When the mod's hook throws (an unsafe worker result, a worker exception, an ML module's timeout), Claude Code
+skips the hook. Under Runtime V1 (`promptguard run`) the Final Guard then rescans the request and blocks it on a
+detector failure, so nothing reaches the model: `on_failure="block"` (the default) scores such an item as one
+edit over its whole text (its gold spans count as over-masked, never as exposed). `on_failure="pass"` is the
+legacy launcher without the Final Guard, where the text goes out unchanged.
+
+`required_adapters` names adapters that must be running, as the system's own `describe()` reports them: an
+optional adapter the system skipped (an ML module without its packages or weights) stops the run instead of
+leaving a result that silently lacks it.
+
 Load the detector package with system_root.load_worker() before constructing the adapter, or let the adapter
-do it. `detectors` and `consensus` evaluate other configurations of the same ensemble (one adapter alone, or
-another vote): the detector is built by the system's own load_detector() and then keeps only the named
-adapters, so the system's config file is never edited.
+do it. The detector is the system's own `load_detector()` with the checkout's own configuration: which adapters
+run, how they vote and any ML modules are the system's business, and this adapter only records what it reports
+(`describe()`).
 """
 
 from __future__ import annotations
@@ -28,6 +38,8 @@ from evaluation.dataset.schema import Session
 from evaluation.scorer.edits import Edit
 
 _WARMUP_TEXT = "DB_PASSWORD=warmup123\n"
+BLOCKED = "[PROMPTGUARD_BLOCKED]"  # stands for a request the Final Guard did not send
+FAILURE_MODES = ("block", "pass")
 
 # Dataset channel → the `source` the mod scans it as. prompt is the prompt.submit hook, instructions the
 # CLAUDE.md blocks of prompt.context, tool_output the tool.call result. The arguments the model writes
@@ -155,37 +167,42 @@ class ModSession:
 class PromptGuardAdapter:
     name = "promptguard"
 
-    def __init__(self, worker: ModuleType | None = None, debug: bool = False,
-                 detectors: Sequence[str] | None = None, consensus: str | None = None):
+    def __init__(self, worker: ModuleType | None = None, debug: bool = False, on_failure: str = "block",
+                 required_adapters: Sequence[str] = ()):
         if os.environ.get("PG_DETECTOR_MODE", "normal") != "normal":
             # The worker's fault injection (crash exits the process) is for the demo's own failure tests.
             raise ValueError("unset PG_DETECTOR_MODE; the worker would inject faults")
+        if on_failure not in FAILURE_MODES:
+            raise ValueError(f"on_failure must be one of {FAILURE_MODES}, got {on_failure!r}")
         self.worker = worker or load_worker()
-        self.detector = self.worker.load_detector(consensus=consensus) if consensus else self.worker.load_detector()
-        if detectors:
-            self.detector = self._subset(self.detector, detectors)
+        self.detector = self.worker.load_detector()
+        self._require(required_adapters)
         self.debug = debug
+        self.on_failure = on_failure
         self.failed_open = 0
+        self.blocked = 0
         self.detector.scan(_WARMUP_TEXT, "warmup")  # keep rule loading out of the recorded latencies
 
-    @staticmethod
-    def _subset(detector: Any, names: Sequence[str]) -> Any:
-        """The same ensemble with only the named adapters voting, under the same consensus policy."""
-        skipped = {item["name"]: item["reason"] for item in detector.skipped}
-        if unknown := [name for name in names if name not in detector.names]:
-            reasons = [f"{name}: {skipped[name]}" if name in skipped else name for name in unknown]
-            raise ValueError(f"detector(s) {reasons} not available; the ensemble has {detector.names}")
-        kept = [adapter for adapter in detector.adapters if adapter.name in names]
-        dropped = [{"name": name, "reason": "not selected"} for name in detector.names if name not in names]
-        return type(detector)(kept, detector.policy, detector.skipped + dropped)
+    def _require(self, names: Sequence[str]) -> None:
+        if not names:
+            return
+        described = self.detector.describe()
+        running = {adapter.get("name") for adapter in described.get("adapters", [])}
+        if missing := [name for name in names if name not in running]:
+            skipped = {entry.get("name"): entry.get("reason") for entry in described.get("skipped", [])}
+            reasons = ", ".join(f"{name} ({skipped[name]})" if skipped.get(name) else f"{name} (not configured)"
+                                for name in missing)
+            raise ValueError(f"required detector adapter(s) not running: {reasons}; running: {sorted(running)}")
 
     def describe(self) -> dict[str, Any]:
         return {
             "system": self.name,
-            "detector": self.detector.describe(),  # adapters and their versions, consensus, skipped adapters
+            "detector": self.detector.describe(),  # as the system reports it: adapters, versions, policy, skipped
             "processed_channels": list(CHANNEL_MAP),
             "channel_map": dict(CHANNEL_MAP),
+            "on_detector_failure": self.on_failure,
             "failed_open_items": self.failed_open,
+            "blocked_items": self.blocked,
         }
 
     def _scan(self, text: str, source: str) -> Any:
@@ -208,9 +225,14 @@ class PromptGuardAdapter:
             try:
                 text, edits = mod.redact(item.text, result)
             except ModFailure as exc:
-                text, edits, failure = item.text, [], str(exc)
-                self.failed_open += 1
+                failure = str(exc)
+                if self.on_failure == "block" and item.text:
+                    text, edits = BLOCKED, [Edit(start=0, end=len(item.text), replacement=BLOCKED)]
+                    self.blocked += 1
+                else:
+                    text, edits = item.text, []
+                    self.failed_open += 1
             elapsed_ms = (time.perf_counter() - started) * 1000
-            debug = {"source": source, "result": result, "failed_open": failure} if self.debug else None
+            debug = {"source": source, "result": result, "failure": failure} if self.debug else None
             outputs[item.item_id] = ItemOutput(item.item_id, text, edits, elapsed_ms, debug)
         return outputs

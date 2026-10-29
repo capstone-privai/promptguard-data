@@ -1,5 +1,7 @@
 # 탐지기 구성별 성능: 단일 모듈과 투표
 
+> **보관 문서.** 2026-10-29부터 이 저장소는 PromptGuard를 체크아웃에 설정된 그대로만 평가한다. 아래에 나오는 `--ensemble`, `--pg-configs`, `--detectors`, `--consensus` 옵션은 없앴으므로 이 결과는 다시 돌릴 수 없다.
+
 PromptGuard 탐지기는 어댑터 세 개(CredSweeper, gitleaks, 자체 규칙 `promptguard-rules`)가 각자 찾은 값을 합의 규칙으로 묶는 앙상블이다(`src/detector/detector.json`, 기본은 `majority`). 이 문서는 어댑터를 하나만 쓸 때와 셋이 투표할 때 metric-detection 점수가 어떻게 달라지는지 모든 데이터셋에서 잰 결과다.
 
 - 대상 실행: `metric-detection/results/all_20261014-023225` (2026-10-14)

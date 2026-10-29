@@ -145,7 +145,6 @@ class Config:
     data_dir: Path
     repo_url: str
     branch: str = "main"
-    ml_config: str | None = None
     data_test: Path = DATA_TEST  # a sample made by runs/ml-evaluations/sample_evaluation.py keeps its manifest.json beside it
     jobs: int = 4
     python: str = "python3"
@@ -258,13 +257,14 @@ class Service:
                 return None
         return self._meta_cache[path]
 
-    def latest_by_system(self, track: str, second_stage: dict | None = None) -> dict[str, tuple[str, str]]:
-        """Newest result per detector for the same ML model (or rule-only), under earlier data/scoring versions."""
+    def latest_by_system(self, track: str) -> dict[str, tuple[str, str]]:
+        """Newest result per detector under earlier data/scoring versions. Results of the removed second-stage ML
+        evaluation (meta.second_stage) are not the system as configured and are left out."""
         found: dict[str, tuple[str, str]] = {}
         root = self.data / "results" / track
         for folder in root.iterdir() if root.is_dir() else []:
             if KEY.fullmatch(folder.name) and (meta := self.meta(track, folder.name)) and not meta.get("ensemble"):
-                if meta.get("second_stage") != second_stage:
+                if meta.get("second_stage"):
                     continue
                 entry = (meta["evaluated_at"], folder.name)
                 found[meta["system_fingerprint"]] = max(found.get(meta["system_fingerprint"], entry), entry)
@@ -281,24 +281,12 @@ class Service:
             raise runner.EvaluationError(f"no datasets under {self.config.data_test}; build them first "
                                          "(metric-detection/README.md)")
         sample = sample_info(self.config.data_test)
-        ml_spec = None
-        if self.config.ml_config:
-            from pipeline.ml import load_spec
-            ml_spec = load_spec(self.config.ml_config)
-            if not ml_spec.datasets:
-                raise ValueError("ML config needs a nonempty datasets allowlist containing heldout evaluation sets")
-            available = {dataset.stem: dataset for dataset in datasets}
-            if any(stem not in available for stem in ml_spec.datasets):
-                raise ValueError("an ML evaluation dataset or its gold file is missing")
-            datasets = [dataset for dataset in datasets if dataset.stem in ml_spec.datasets]
-        bench = (runner.benchmark(datasets, second_stage=ml_spec.metadata()) if ml_spec
-                 else runner.benchmark(datasets))
+        bench = runner.benchmark(datasets)
         contexts = {"detection": bench["fingerprint"]}
         env = None
         if self.config.latency:
-            env = latency.environment("ensemble", self.config.latency_guard,
-                                      self.config.latency_repeat, self.config.latency_warmup,
-                                      **({"second_stage": ml_spec.metadata()} if ml_spec else {}))
+            env = latency.environment(self.config.latency_guard, self.config.latency_repeat,
+                                      self.config.latency_warmup)
             contexts["latency"] = env["fingerprint"]
         if self.retry:
             self.failures, self.retry = {}, False
@@ -310,7 +298,7 @@ class Service:
                 batch["commit"] = repo.describe(self.data / "repo.git", batch.get("system_commit") or "")
         self.set_status(state="idle", message="", last_sync=now())
         return {"commits": commits, "datasets": datasets, "bench": bench, "env": env, "contexts": contexts,
-                "task_batches": batches, "ml_spec": ml_spec, "sample": sample}
+                "task_batches": batches, "sample": sample}
 
     def jobs(self, plan: dict[str, Any]) -> list[tuple[str, repo.Commit, str]]:
         """Missing results, most urgent first, one per (track, key)."""
@@ -382,15 +370,13 @@ class Service:
                 runner.evaluate(checkout, plan["datasets"], self.result_dir(track, key), python=python,
                                 jobs=self.config.jobs, cache_dir=self.data / "validated", commit=commit.as_json(),
                                 system_fingerprint=commit.fingerprint, bench=plan["bench"], progress=progress,
-                                cancelled=self.stopping.is_set, gitleaks_cache=self.data / "gitleaks-cache.sqlite",
-                                **({"ml_spec": plan["ml_spec"]} if plan.get("ml_spec") else {}))
+                                cancelled=self.stopping.is_set, gitleaks_cache=self.data / "gitleaks-cache.sqlite")
             else:
                 latency.evaluate(checkout, self.result_dir(track, key), python=python,
-                                 adapters="ensemble", guard=self.config.latency_guard,
+                                 guard=self.config.latency_guard,
                                  repeat=self.config.latency_repeat, warmup=self.config.latency_warmup,
                                  commit=commit.as_json(), system_fingerprint=commit.fingerprint, env=plan["env"],
-                                 cancelled=self.stopping.is_set,
-                                 **({"ml_spec": plan["ml_spec"]} if plan.get("ml_spec") else {}))
+                                 cancelled=self.stopping.is_set)
         except runner.InputsChanged as exc:
             # A stale plan is not a detector failure. The next cycle discovers the current inputs and can retry.
             log(f"{name}: discarded: {exc}")
@@ -516,7 +502,7 @@ class Service:
     def write_index(self, plan: dict[str, Any], pending: list[tuple[str, repo.Commit, str]],
                     running: tuple[str, str] | None) -> None:
         queued = {(track, key) for track, _commit, key in pending}
-        fallback = {track: self.latest_by_system(track, plan["bench"].get("second_stage"))
+        fallback = {track: self.latest_by_system(track)
                     for track in plan["contexts"]}
         entries = []
         for commit in plan["commits"]:

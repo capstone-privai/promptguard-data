@@ -11,7 +11,7 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **metric
 | [demo/](demo/) | 시연 화면: Mod가 탐지기를 부를 때마다 입력 채널과 원문, 모듈별 탐지 스팬과 그 합집합, 가린 뒤 모델로 가는 텍스트를 실시간으로 보여 준다 | 실제 Mod 훅으로 재구성 텍스트 일치 확인 |
 | [metric-detection/docs/](metric-detection/docs/) | 분석 문서: [기존 시스템의 recall이 낮은 이유](metric-detection/docs/README_baseline-recall.md), [새 외부 소스로 본 기존 시스템의 약점](metric-detection/docs/README_baseline-new-sources.md), [탐지기 구성별 성능](metric-detection/docs/README_ensemble.md) | 앞의 두 편은 이전 시스템으로 잰 2026-10-08 결과, 구성별 성능은 현재 시스템으로 잰 2026-10-14 결과 |
 
-이 저장소는 데이터, 생성·검증 도구, 채점기를 맡는다. 평가 대상 시스템(PromptGuard)은 Claude Code에 붙는 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)이다. metric-detection 채점기는 그 체크아웃의 탐지기(`src/detector`의 앙상블)를 불러 쓰고 Native Mod의 치환 규칙을 따르며, metric-task는 Native Mod를 그대로 쓴다. [metric-detection/docs/](metric-detection/docs/)의 분석 문서 중 baseline 두 편은 이전 시스템(promptguard-demo-v0)으로 잰 결과다.
+이 저장소는 데이터, 생성·검증 도구, 채점기를 맡는다. 평가 대상 시스템(PromptGuard)은 Claude Code에 붙는 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)이다. metric-detection 채점기는 그 체크아웃의 탐지기(`src/detector`의 앙상블)를 불러 쓰고 Native Mod의 치환 규칙을 따르며, metric-task는 Native Mod를 그대로 쓴다. 이 저장소는 평가만 맡는다. 어떤 탐지 모듈(ML 포함)을 켜고 어떻게 합칠지는 PromptGuard 저장소가 정하고, 채점기와 대시보드는 체크아웃에 설정된 그대로 돌린다. [metric-detection/docs/](metric-detection/docs/)의 분석 문서 중 baseline 두 편은 이전 시스템(promptguard-demo-v0)으로 잰 결과다.
 
 ## metric-detection
 

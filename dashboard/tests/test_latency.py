@@ -104,9 +104,9 @@ class GuardCondenseTest(unittest.TestCase):
     def test_changed_latency_version_invalidates_cached_results(self):
         from pipeline.service import result_key
         with patch.object(latency, "tool_version", return_value=None):
-            current = latency.environment("each", [], 5, 3)["fingerprint"]
+            current = latency.environment([], 5, 3)["fingerprint"]
             with patch.object(latency, "LATENCY_VERSION", 2):
-                old = latency.environment("each", [], 5, 3)["fingerprint"]
+                old = latency.environment([], 5, 3)["fingerprint"]
         self.assertGreaterEqual(latency.LATENCY_VERSION, 3)
         self.assertNotEqual(result_key("latency", "system", old), result_key("latency", "system", current))
 
@@ -124,7 +124,7 @@ class GuardSessionIdentityTest(unittest.TestCase):
         from pipeline.service import result_key
         with tempfile.TemporaryDirectory() as tmp, patch.object(latency, "tool_version", return_value=None):
             paths = self.captures(Path(tmp))
-            contexts = [latency.environment("each", [str(path)], 1, 1)["fingerprint"] for path in paths]
+            contexts = [latency.environment([str(path)], 1, 1)["fingerprint"] for path in paths]
         self.assertNotEqual(result_key("latency", "system", contexts[0]), result_key("latency", "system", contexts[1]))
 
     def test_environment_and_replay_deduplicate_the_same_capture(self):
@@ -133,8 +133,8 @@ class GuardSessionIdentityTest(unittest.TestCase):
             path = self.captures(root)[0]
             alias = root / "alias.xz"
             alias.symlink_to(path)
-            one = latency.environment("each", [str(path)], 1, 1)
-            overlap = latency.environment("each", [str(path.parent), str(path), str(alias)], 1, 1)
+            one = latency.environment([str(path)], 1, 1)
+            overlap = latency.environment([str(path.parent), str(path), str(alias)], 1, 1)
             self.assertEqual(overlap["guard_captures"], 1)
             self.assertEqual(one["fingerprint"], overlap["fingerprint"])
 
@@ -221,18 +221,19 @@ class CondenseTest(unittest.TestCase):
                     with patch.object(latency.subprocess, "Popen") as popen, \
                             patch.object(latency, "condense", return_value=data):
                         popen.return_value.wait.return_value = 0
-                        latency.evaluate(root, root / "result", python=sys.executable, adapters="each", guard=[],
+                        latency.evaluate(root, root / "result", python=sys.executable, guard=[],
                                          repeat=1, warmup=1, commit={}, system_fingerprint="system",
                                          env={"fingerprint": "environment"})
                     command = popen.call_args.args[0]
-                    self.assertEqual(command[command.index("--consensus") + 1], "any")
+                    self.assertNotIn("--consensus", command)
+                    self.assertNotIn("--adapters", command)
                     self.assertIn("--timeout-ms", command)
                     self.assertEqual(command[command.index("--timeout-ms") + 1], str(value or 5000))
 
     def test_environment_fingerprint_follows_options(self):
-        one = latency.environment("each", [], 5, 3)
-        self.assertEqual(one["fingerprint"], latency.environment("each", [], 5, 3)["fingerprint"])
-        self.assertNotEqual(one["fingerprint"], latency.environment("ensemble", [], 5, 3)["fingerprint"])
+        one = latency.environment([], 5, 3)
+        self.assertEqual(one["fingerprint"], latency.environment([], 5, 3)["fingerprint"])
+        self.assertNotEqual(one["fingerprint"], latency.environment([], 6, 3)["fingerprint"])
 
 
 if __name__ == "__main__":

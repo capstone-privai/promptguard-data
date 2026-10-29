@@ -176,8 +176,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-test", default=os.environ.get("DASHBOARD_DATA_TEST"),
                         help="sessions/gold folder to evaluate instead of metric-detection/data_test, e.g. a fixed "
                              "sample (default $DASHBOARD_DATA_TEST)")
-    parser.add_argument("--ml-config", default=os.environ.get("DASHBOARD_ML_CONFIG"),
-                        help="KEEP/MASK inference config; model bundle changes trigger quality and latency reevaluation")
     parser.add_argument("--branch", default="main")
     parser.add_argument("--poll-minutes", type=float, default=10.0, help="how often to fetch the branch (default 10)")
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1),
@@ -213,7 +211,6 @@ def main(argv: list[str] | None = None) -> int:
             print("warning: gitleaks is not on PATH; the detector will run without its gitleaks adapter, unlike "
                   "the deployed system", file=sys.stderr)
         config = Config(data_dir=data_dir, repo_url=args.repo, branch=args.branch, jobs=args.jobs,
-                        ml_config=args.ml_config,
                         **({"data_test": Path(args.data_test).resolve()} if args.data_test else {}),
                         python=args.python, auto_venv=not args.no_auto_venv, latency=not args.no_latency,
                         latency_guard=args.latency_guard,

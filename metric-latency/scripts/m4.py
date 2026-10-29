@@ -9,14 +9,14 @@ string leaves it has not yet seen clean. So the unit measured here is one detect
   call_ms      the evaluator's wall time around the HTTP call on loopback: detector_ms plus HTTP and JSON
 
 The evaluator treats the detector as a black box that speaks the worker's HTTP protocol (GET /health,
-POST /scan-batch). It can start the system's worker (--detector promptguard, optionally once per adapter
-with --adapters each), a built-in null detector that finds nothing (--detector null: the transport floor),
+POST /scan-batch). It can start the system's worker as its checkout configures it (--detector promptguard),
+a built-in null detector that finds nothing (--detector null: the transport floor),
 any command (--detector "cmd:... {port}") or use a running one (--detector url:http://127.0.0.1:18771).
 It imports nothing from the system or from metric-detection and metric-task. What it needs to know about the system is
 listed in metric-latency/README.md.
 
 Commands, from the repository root:
-  python3 metric-latency/scripts/m4.py run --name pg --detector promptguard --adapters each --synth \\
+  python3 metric-latency/scripts/m4.py run --name pg --detector promptguard --synth \\
       --guard runs/metric-task/capture_trial
   python3 metric-latency/scripts/m4.py run --name null --detector null --synth --guard runs/metric-task/capture_trial
   python3 metric-latency/scripts/m4.py report runs/metric-latency/pg runs/metric-latency/null --out metric-latency/results/<name>
@@ -172,26 +172,9 @@ def system_python(root: Path, arg: str | None) -> str:
     raise SystemExit(f"no .venv under {root} (run its install script) and no --python given")
 
 
-def single_adapter_config(config_path: Path, entry: dict, out_dir: Path) -> Path:
-    """detector.json with one adapter and consensus "any". Option values that name a file next to the original
-    config are made absolute, because the system resolves them against the config's folder."""
-    def absolute(value):
-        if isinstance(value, str) and value and (config_path.parent / value).exists():
-            return str((config_path.parent / value).resolve())
-        if isinstance(value, list):
-            return [absolute(v) for v in value]
-        return value
-    entry = {**entry, "required": True, "options": {k: absolute(v) for k, v in entry.get("options", {}).items()}}
-    out = out_dir / f"detector-{entry['name']}.json"
-    out.write_text(json.dumps({"consensus": "any", "adapters": [entry]}, indent=2), encoding="utf-8")
-    return out
-
-
 def detectors_from_args(args, run_dir: Path) -> list[Detector]:
     spec = args.detector
     env = child_env()
-    if consensus := getattr(args, "consensus", None):
-        env["PG_DETECTOR_CONSENSUS"] = consensus
     if spec == "null":
         return [Detector("null", "null", [sys.executable, str(Path(__file__).resolve()), "null-detector"], child_env())]
     if spec.startswith("url:"):
@@ -205,14 +188,7 @@ def detectors_from_args(args, run_dir: Path) -> list[Detector]:
     config = root / DETECTOR_CONFIG
     base = {**env, "PG_DETECTOR_MODE": "normal"}
     argv = [python, str(root / WORKER)]
-    out = [Detector("ensemble", "promptguard", argv, base, cwd=root, config=config, system_root=root)]
-    if args.adapters == "each":
-        entries = [e for e in json.loads(config.read_text(encoding="utf-8")).get("adapters", []) if e.get("enabled", True)]
-        for entry in entries:
-            path = single_adapter_config(config, entry, run_dir)
-            out.append(Detector(entry["name"], "promptguard", argv, {**base, "PG_DETECTOR_CONFIG": str(path)},
-                                cwd=root, config=path, system_root=root))
-    return out
+    return [Detector("ensemble", "promptguard", argv, base, cwd=root, config=config, system_root=root)]
 
 
 def git_state(root: Path | None) -> dict | None:
@@ -589,10 +565,6 @@ def main(argv=None):
     p.add_argument("--detector", default="promptguard",
                    help="promptguard (the system's worker), null, cmd:<command with {port}>, url:<base url>")
     p.add_argument("--label", help="name for a cmd: or url: detector in the report")
-    p.add_argument("--adapters", choices=["ensemble", "each"], default="ensemble",
-                   help="promptguard: also measure each adapter alone (one worker per adapter, consensus any)")
-    p.add_argument("--consensus", choices=["any", "majority", "unanimous"],
-                   help="explicit ensemble vote policy; omitted uses the checkout default")
     p.add_argument("--system-root", help=f"promptguard-claude-demoV0 checkout (default ${SYSTEM_ENV}, else ../promptguard-claude-demoV0)")
     p.add_argument("--python", help="Python for the system's worker (default the checkout's .venv)")
     p.add_argument("--synth", action="store_true", help="generated size and batch sweeps (the default workload)")
