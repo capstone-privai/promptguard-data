@@ -96,6 +96,12 @@ async function replay(policyArgs, union) {
     const bash = await hooks['tool.call']($, { tool: 'Bash', tool_use_id: 't2', command: 'echo' },
       () => ({ result: { stdout: 'Sup3rS3cret!x9\nPgDemoOnly!84qSynthetic\n', stderr: '' } }))
     forwarded.push([bash.result.stdout])
+    // prompt.context scans CLAUDE.md twice: inside its prompt block, then as the instruction file.
+    const claudeMd = readFileSync(join(pgRoot, 'sample-protected-project', 'CLAUDE.md'), 'utf8')
+    let context
+    await hooks['prompt.context']($, { blocks: [{ text: `Contents of /p/CLAUDE.md (project instructions):\n\n${claudeMd}` }],
+      instructionFiles: [{ path: '/p/CLAUDE.md', content: claudeMd }] }, e => { context = e; return e })
+    forwarded.push([context.blocks[0].text], ['/p/CLAUDE.md', context.instructionFiles[0].content])
 
     if (union) assert.doesNotMatch(sent.text, /5400|blue-harbor-42/)
     else assert.match(sent.text, /token_ttl_seconds = 5400/)
@@ -114,6 +120,11 @@ async function replay(policyArgs, union) {
     const again = echo.output.filter(s => typeof s !== 'string')
     assert.deepEqual(again.map(s => s.how), ['remask', 'remask'])
     for (const s of again) assert.equal(echo.text.slice(s.start, s.end), s.raw)
+    // The second CLAUDE.md copy is folded into the first; the block itself is drawn in full.
+    const [block, file] = events.slice(3)
+    assert.ok(block.items[0].regions.length)
+    assert.equal(block.items[0].repeat_of, null)
+    assert.equal(file.items[1].repeat_of, block.seq)
   } finally {
     server.kill()
   }

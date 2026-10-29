@@ -43,6 +43,7 @@ HOST = "127.0.0.1"
 DEFAULT_PORT = 18790
 MAX_BODY = 8 * 1024 * 1024
 KEEP_EVENTS = 300
+KEEP_SHOWN = 50  # rows shown in full that a later call may repeat (see Tap.repeat_of)
 PREVIEW_CHARS = 2000  # texts with nothing flagged are cut to this for the page
 STATIC = {"/": ("index.html", "text/html; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8"),
           "/style.css": ("style.css", "text/css; charset=utf-8")}
@@ -212,6 +213,7 @@ class Tap:
         self.events: deque = deque(maxlen=KEEP_EVENTS)
         self.listeners: set[queue.Queue] = set()
         self.seq = 0
+        self.shown: deque = deque(maxlen=KEEP_SHOWN)  # (seq, source, text, placeholders) of rows shown in full
         self.boot = secrets.token_hex(4)  # lets a reconnecting page tell a restarted server from a dropped stream
 
     def describe(self) -> dict:
@@ -232,6 +234,17 @@ class Tap:
             print(f"pipeline demo: could not record a scan ({type(exc).__name__}: {exc})", file=sys.stderr, flush=True)
         return results
 
+    def repeat_of(self, source: str, text: str, segments: list) -> int | None:
+        """The event that already showed this text: the Mod scans some content twice in one step (prompt.context
+        sends CLAUDE.md inside its prompt block and again as the instruction file), and the second copy is masked
+        with the same placeholders, so the page folds it instead of drawing the same flows again."""
+        body = text.strip()
+        masks = {s["mask"] for s in segments if not isinstance(s, str)}
+        for seq, seen_source, seen_text, seen_masks in reversed(self.shown):
+            if seen_source == source and body in seen_text and masks <= seen_masks:
+                return seq
+        return None
+
     def record(self, items, results, ballots) -> None:
         adapters = self.detector.names
         # The Mod rejects the whole batch when any item is not clean (scanBatch), before handing out placeholders.
@@ -240,18 +253,23 @@ class Tap:
             redacted = [self.mod.redact(text, r["findings"]) if ok else [text] for (text, _), r in zip(items, results)]
             forwarded = [self.mod.remask(segments) for segments in redacted] if ok else redacted
             shown = []
-            for (text, _), result, ballot, segments in zip(items, results, ballots, forwarded):
+            seq = self.seq + 1
+            for (text, source), result, ballot, segments in zip(items, results, ballots, forwarded):
                 if not text.strip():
                     continue
                 found = regions(text, ballot, result.get("findings", []), adapters)
                 changed = segments != [text]
                 quiet = not found and not changed and not result.get("errors")
-                shown.append({"text": text[:PREVIEW_CHARS] if quiet else text, "length": len(text),
-                              "regions": found, "output": None if quiet else segments,
-                              "errors": result.get("errors") or []})
+                row = {"text": text[:PREVIEW_CHARS] if quiet else text, "length": len(text),
+                       "regions": found, "output": None if quiet else segments, "errors": result.get("errors") or []}
+                if not quiet and ok:
+                    row["repeat_of"] = self.repeat_of(source, text, segments)
+                    if row["repeat_of"] is None:
+                        self.shown.append((seq, source, text, {s["mask"] for s in segments if not isinstance(s, str)}))
+                shown.append(row)
             if not shown:
                 return
-            self.seq += 1
+            self.seq = seq
             event = {"seq": self.seq, "time": time.time(), "source": items[0][1], "ok": ok, "items": shown,
                      "latency_ms": results[0].get("latency_ms") if results else None}
             self.events.append(event)

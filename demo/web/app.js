@@ -30,6 +30,7 @@ let setup = null
 let lastSeq = 0
 let live = false
 let quiet = 0
+const seen = new Map()  // event seq -> time, for rows that repeat an earlier one
 
 function el(tag, className, text) {
   const node = document.createElement(tag)
@@ -370,7 +371,13 @@ function lane(item, ok) {
 // ---- events ----
 
 function interesting(item) {
-  return item.regions.length > 0 || item.output !== null || item.errors.length > 0
+  return (item.regions.length > 0 || item.output !== null || item.errors.length > 0) && !item.repeat_of
+}
+
+// Rows the server matched to an earlier row: the same text, masked with the same placeholders (see Tap.repeat_of).
+function repeatNote(items) {
+  const when = [...new Set(items.map(item => seen.has(item.repeat_of) ? clock(seen.get(item.repeat_of)) : '앞'))]
+  return `${when.join(', ')}에 보인 내용을 한 번 더 검사 · 같은 자리표시자로 가림${items.length > 1 ? ` (${items.length}개)` : ''}`
 }
 
 function render(event) {
@@ -378,24 +385,27 @@ function render(event) {
   const head = el('div', 'event-head')
   head.append(channelChip(event.source), el('span', 'time', clock(event.time)))
   const flagged = event.items.filter(interesting)
+  const repeats = event.items.filter(item => item.repeat_of)
   const always = ALWAYS_SHOWN.has(event.source)
   if (flagged.length || !event.ok || always) {
     card.append(head)
     const shown = always || !event.ok ? event.items : flagged
     for (const item of shown) card.append(lane(item, event.ok))
-    const rest = event.items.length - shown.length
+    const folded = repeats.filter(item => !shown.includes(item))
+    if (folded.length) card.append(el('div', 'pass', repeatNote(folded)))
+    const rest = event.items.length - shown.length - folded.length
     if (rest) card.append(el('div', 'pass', `탐지 없는 텍스트 ${rest}개는 그대로 함께 전송`))
     return card
   }
-  // Nothing flagged: one line, hidden unless the toggle is on.
+  // Nothing new: one line, hidden unless the toggle is on.
   card.classList.add('quiet')
   const row = el('div', 'lane')
   const first = el('div', 'col')
-  first.append(head, el('div', 'preview', event.items.map(item => item.text).join(' ⏎ ')))
+  first.append(head, el('div', 'preview', (repeats.length ? repeats : event.items).map(item => item.text).join(' ⏎ ')))
   const nothing = el('div', 'col')
-  nothing.append(el('span', 'none', `모듈 ${setup.adapters.length}개 모두 탐지 없음 · 후보 없음`))
+  nothing.append(el('span', 'none', repeats.length ? repeatNote(repeats) : `모듈 ${setup.adapters.length}개 모두 탐지 없음 · 후보 없음`))
   const pass = el('div', 'col')
-  pass.append(el('span', 'pass', '→ 그대로 전송'))
+  pass.append(el('span', 'pass', repeats.length ? '→ 같은 자리표시자로 전송' : '→ 그대로 전송'))
   row.append(first, nothing, pass)
   card.append(row)
   quiet += 1
@@ -413,6 +423,8 @@ function scrollToFirstMark(card) {
 function add(event) {
   if (event.seq <= lastSeq) return
   lastSeq = event.seq
+  seen.set(event.seq, event.time)
+  if (seen.size > KEEP) seen.delete(seen.keys().next().value)
   const card = render(event)
   if (live && !card.classList.contains('quiet')) card.classList.add('fresh')
   empty.remove()
@@ -439,7 +451,7 @@ function connect() {
   const source = new EventSource('events')
   source.addEventListener('setup', message => {
     const info = JSON.parse(message.data)
-    if (setup && setup.boot !== info.boot) { clear(); lastSeq = 0 }
+    if (setup && setup.boot !== info.boot) { clear(); lastSeq = 0; seen.clear() }
     setup = info
     live = false
     document.getElementById('rule').textContent = consensusText(info)
