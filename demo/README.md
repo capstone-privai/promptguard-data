@@ -33,6 +33,7 @@ python3 demo/pipeline_demo.py play -- --model sonnet  # -- 뒤는 claude 인수
 ```bash
 python3 demo/pipeline_demo.py play --showcase             # 시연용 .env를 넣은 샘플 사본 + 그 정답으로 채점
 python3 demo/pipeline_demo.py play --truth my-truth.json  # 다른 정답 파일
+python3 demo/pipeline_demo.py play --showcase --no-grade  # 시연용 .env는 쓰되 채점은 끈다(발표 라이브용)
 ```
 
 | 색 | 뜻 |

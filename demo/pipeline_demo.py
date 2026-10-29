@@ -494,7 +494,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def truth_file(args) -> Path | None:
-    """--truth FILE, or with --showcase the showcase's own truth file."""
+    """--truth FILE, or with --showcase the showcase's own truth file; --no-grade turns grading off."""
+    if getattr(args, "no_grade", False):
+        return None
     if getattr(args, "truth", None):
         return Path(args.truth).resolve()
     return SHOWCASE / "truth.json" if getattr(args, "showcase", False) else None
@@ -587,6 +589,8 @@ def main() -> None:
                        help="vote rule under --policy majority: any, majority, unanimous or at_least:N (default: detector.json's)")
         p.add_argument("--truth", help="JSON of the secrets the project really holds; the page grades each one "
                                        "as masked, partial or leaked and counts over-masking")
+        p.add_argument("--no-grade", action="store_true",
+                       help="no truth grading (no counts bar, no answer-key panel), e.g. --showcase for a live talk")
         p.add_argument("--showcase", action="store_true",
                        help="grade against demo/showcase/truth.json" + (" and put demo/showcase/.env and CLAUDE.md in the project copy" if name == "play" else ""))
         if name == "play":
