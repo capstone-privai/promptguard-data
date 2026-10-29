@@ -378,6 +378,16 @@ class Tap:
             self.listeners.discard(listener)
 
 
+class QuietServer(ThreadingHTTPServer):
+    """In `play` this process shares the terminal with Claude Code: a traceback printed there draws over its screen.
+    A browser that drops its connection is normal (reload, closed tab), so that is not printed at all."""
+
+    def handle_error(self, request, client_address) -> None:
+        if isinstance(sys.exc_info()[1], ConnectionError):
+            return
+        super().handle_error(request, client_address)
+
+
 class Handler(BaseHTTPRequestHandler):
     """The worker's detector protocol for the Mod, plus the page and its event stream."""
 
@@ -440,7 +450,7 @@ class Handler(BaseHTTPRequestHandler):
                 except queue.Empty:
                     self.wfile.write(b": keepalive\n\n")
                     self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:  # the page went away (reload, closed tab); WinError 10053 is ConnectionAbortedError
             pass
         finally:
             self.tap.unlisten(listener)
@@ -499,7 +509,7 @@ def start_server(pg_root: Path, port: int, consensus: str | None, policy: str | 
         os.environ["PG_DETECTOR_CANDIDATE_POLICY"] = policy  # load_detector() reads it over detector.json's
     tap = Tap(load_detector(consensus=consensus), Truth(truth) if truth else None)
     handler = type("BoundHandler", (Handler,), {"tap": tap, "port": port})
-    server = ThreadingHTTPServer((HOST, port), handler)
+    server = QuietServer((HOST, port), handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     info = tap.describe()
