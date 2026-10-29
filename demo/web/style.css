@@ -102,7 +102,7 @@ body {
 
 .heads, .lane {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr) minmax(0, 1fr);
   gap: 44px;
 }
 .heads {
@@ -117,7 +117,7 @@ body {
 .head + .head::before, .head .step::before {
   content: "→"; position: absolute; left: -28px; color: var(--muted); font-weight: 400;
 }
-/* each head starts where its block below starts: the modules (column 2) and the verdict panel (column 4, which
+/* each head starts where its block below starts: the modules (column 2) and the span panel (column 4, which
    the panel overhangs by 16px) */
 .head.ensemble { gap: 0; }
 .head.ensemble::before { content: none; }
@@ -207,7 +207,7 @@ mark .tag {
 }
 .placeholder.remask { background: transparent; outline: 1.5px dashed var(--mask-ink); outline-offset: -1.5px; }
 
-/* columns 2-3: detection modules -> vote, one flow per region */
+/* columns 2-3: detection modules -> their spans -> the union, one flow per region */
 .flows { display: flex; flex-direction: column; gap: 16px; }
 /* the value starts where the module boxes start (after the 56px curve column of .flow-grid) */
 .flow-head { display: flex; align-items: center; margin-bottom: 6px; padding-left: 56px; }
@@ -215,7 +215,7 @@ mark .tag {
 .flow-grid, .head.ensemble {
   display: grid;
   /* the last column is room for the verdict arrows to bend on their way to the forwarded text */
-  grid-template-columns: 56px minmax(150px, 1.15fr) minmax(24px, 0.45fr) 18px 24px minmax(110px, 1fr) 40px;
+  grid-template-columns: 56px minmax(140px, 1fr) minmax(20px, 0.3fr) minmax(0, 1.5fr) 24px minmax(0, 1.5fr) 40px;
 }
 .flow-grid { align-items: center; position: relative; }
 .flow-grid > * { position: relative; z-index: 1; }
@@ -225,7 +225,7 @@ mark .tag {
   border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface-2);
 }
 .flow-grid.hit > .panel { border-color: color-mix(in srgb, var(--good) 55%, transparent); background: color-mix(in srgb, var(--good) 9%, var(--surface)); }
-/* right: the arms gather the votes and go out to the count */
+/* right: the arms gather the tracks and go out to the final span */
 .arm, .trunk { align-self: stretch; }
 .trunk::before { content: ""; position: absolute; }
 .arm > span { position: absolute; border: 0 solid var(--ink-2); }
@@ -251,14 +251,28 @@ mark .tag {
 .module.yes .mark-icon { background: var(--ink); border-color: var(--ink); color: var(--page); }
 .wire { height: 0; border-top: 2px dashed var(--muted); opacity: 0.7; }
 .wire.yes { border-top: 2.5px solid var(--ink); opacity: 1; }
-/* the vote: a black dot when the module flagged the region, a black ✕ when it did not */
-.dot { width: 18px; height: 18px; display: grid; place-items: center; font: 800 16px/1 var(--sans); color: var(--ink); }
-.dot.yes { border-radius: 50%; background: var(--ink); }
-.verdict { text-align: center; padding: 0 6px; }
-.verdict .count { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.verdict .decision { font-size: 16px; font-weight: 700; margin-top: 4px; }
-.flow-grid.hit .count, .flow-grid.hit .decision { color: var(--good); }
-.flow-grid.miss .count, .flow-grid.miss .decision { color: var(--muted); }
+/* a module's spans: the region's text, the same characters on every row, with what the module found highlighted,
+   so the rows read as bars on one axis. Every row wraps the same way, two lines at most to keep to the module's
+   height */
+.track {
+  font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-all; overflow: hidden;
+  max-height: calc(3.2em + 6px);
+  color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px;
+}
+.track.idle { opacity: 0.55; }
+.track mark { color: var(--ink); border-radius: 3px; padding: 0; }
+.track mark.found { background: color-mix(in srgb, var(--ink) 13%, transparent); box-shadow: inset 0 -2px 0 var(--ink-2); }
+/* the union of the tracks: what is masked */
+.final {
+  margin-right: 4px; padding: 8px 10px; min-width: 0;
+  border: 1.5px solid var(--border); border-radius: 10px; background: var(--surface);
+}
+.flow-grid.hit .final { border-color: var(--good); }
+.final-label { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.final .track { border: 0; padding: 2px 0; background: transparent; max-height: calc(4.8em + 4px); }
+.final .decision { font-size: 16px; font-weight: 700; margin-top: 4px; }
+.flow-grid.hit .decision { color: var(--good); }
+.flow-grid.miss .decision { color: var(--muted); font-size: 13px; }
 
 .again-note { font-size: 13px; color: var(--mask-ink); font-weight: 600; }
 
@@ -275,23 +289,22 @@ mark .tag {
 .pass { font-size: 13px; color: var(--muted); }
 body:not(.show-quiet) .event.quiet { display: none; }
 
-/* arrival, left to right: the input, each module's answer, its vote travelling to the panel, the count, the
-   forwarded text */
+/* arrival, left to right: the input, each module's answer, its spans, the union, the forwarded text */
 /* fade only: the wires are measured from the input box as it lands */
 .event.fresh .col.input { animation: fade 0.4s ease-out both; }
 /* fade only, like the input: the curves are measured to the modules as they land */
 .event.fresh .module { animation: fade 0.35s ease-out both; animation-delay: calc(0.55s + var(--i, 0) * 0.1s); }
 .event.fresh .wire { transform-origin: left; animation: draw 0.35s ease-out both; animation-delay: calc(0.8s + var(--i) * 0.15s); }
-.event.fresh .dot { animation: pop 0.25s ease-out both; animation-delay: calc(1.1s + var(--i) * 0.15s); }
+.event.fresh .track { animation: reveal 0.3s ease-out both; animation-delay: calc(1.1s + var(--i, 0) * 0.15s); }
 .event.fresh .panel { animation: fade 0.3s ease-out both; animation-delay: 0.7s; }
 .event.fresh .arm, .event.fresh .trunk.out { animation: fade 0.3s ease-out both; animation-delay: 1.45s; }
-.event.fresh .verdict { animation: reveal 0.4s ease-out both; animation-delay: 1.65s; }
+.event.fresh .final { animation: reveal 0.4s ease-out both; animation-delay: 1.65s; }
+.event.fresh .final .track { animation: none; }
 .event.fresh .col.output { animation: reveal 0.4s ease-out both; animation-delay: 2s; }
 .event.fresh { animation: arrive 2.4s ease-out; }
 @keyframes reveal { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
 @keyframes fade { from { opacity: 0; } }
 @keyframes draw { from { transform: scaleX(0); } to { transform: none; } }
-@keyframes pop { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: none; } }
 @keyframes arrive { from { border-color: var(--ink-2); } to { border-color: var(--border); } }
 @media (prefers-reduced-motion: reduce) {
   .event.fresh, .event.fresh * { animation: none !important; }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PromptGuard 파이프라인</title>
-  <meta name="description" content="Native Mod가 가로챈 입력이 탐지 모듈, 앙상블 투표를 거쳐 가려진 채 모델로 가는 과정을 실시간으로 보여 준다">
+  <meta name="description" content="Native Mod가 가로챈 입력이 탐지 모듈이 찾은 스팬의 합집합으로 가려진 채 모델로 가는 과정을 실시간으로 보여 준다">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='5' width='14' height='6' rx='2' fill='%232a78d6'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
@@ -23,7 +23,7 @@
     <div class="head"><span class="num">1</span>들어온 입력</div>
     <div class="head ensemble">
       <div class="step"><span class="num">2</span>탐지 모듈</div>
-      <div class="step"><span class="num">3</span>앙상블 투표 <span class="rule" id="rule"></span></div>
+      <div class="step"><span class="num">3</span>모듈별 스팬 → 합집합 <span class="rule" id="rule"></span></div>
     </div>
     <div class="head"><span class="num">4</span>모델로 보내는 텍스트</div>
   </div>

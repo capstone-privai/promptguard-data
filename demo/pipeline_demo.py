@@ -1,13 +1,15 @@
-"""Live demo view of the PromptGuard Native Mod pipeline: channel and input -> what each detector module flagged
--> the consensus vote -> the text the Mod forwards to the model.
+"""Live demo view of the PromptGuard Native Mod pipeline: channel and input -> the spans each detector module
+flagged -> their union, the masked spans -> the text the Mod forwards to the model.
 
 The Mod in promptguard-claude-demoV0 (src/native-mod) sends every text bound for the model to its detector over
 HTTP (POST /scan-batch, through its MCP bridge). This script takes the detector's place: it loads the checkout's
 own ensemble (src/detector/pgdetector with its detector.json) and answers the Mod exactly as src/detector/worker.py
-would, while keeping every adapter's ballot, the ones that lost the vote included. It then replays the Mod's
-placeholder rules on the answer to rebuild the text the Mod forwards, and pushes each step to the browser.
+would, while keeping every adapter's spans. It masks by detector.json's own rule, as the plugin does: under
+candidate_policy "union" (shipped) every module's spans are unioned, under "majority" only regions enough voting
+modules agree on; --policy and --consensus override it. It then replays the Mod's placeholder rules on the answer
+to rebuild the text the Mod forwards, and pushes each step to the browser.
 
-  python3 demo/pipeline_demo.py play                 # a copy of the sample project + Claude Code with the Mod
+  python3 demo/pipeline_demo.py play                 # a copy of the sample project + Claude Code with the Mod, opens the page
   python3 demo/pipeline_demo.py play --project DIR   # in DIR instead
   python3 demo/pipeline_demo.py serve                # detector + page only; point a Mod's bridge at it
 
@@ -28,6 +30,7 @@ import sys
 import tempfile
 import threading
 import time
+import webbrowser
 from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -163,7 +166,8 @@ class ModReplica:
 
 def regions(text: str, ballots: dict, findings: list[dict], adapters: list[str]) -> list[dict]:
     """Every adapter's findings grouped into regions of overlapping spans (the vote counts any overlap as
-    agreeing), each with who voted for it and whether it was masked. Offsets are UTF-16, as in the browser."""
+    agreeing), each with who voted for it, whether it was masked and the masked spans inside it (the union of the
+    accepted findings, after normalize()). Offsets are UTF-16, as in the browser."""
     table = utf16_table(text)
     to16 = (lambda i: i) if table is None else (lambda i: table[i])
     # Out-of-range ballots never reach the vote (Detector.accept drops them), so they are not shown either.
@@ -180,9 +184,11 @@ def regions(text: str, ballots: dict, findings: list[dict], adapters: list[str])
     out = []
     for group in groups:
         start, end = to16(group["start"]), to16(group["_end"])
+        final = [{"start": s, "end": e} for s, e in sorted({(f["start"], f["end"]) for f in findings
+                                                            if f["start"] < end and start < f["end"]})]
         out.append({"start": start, "end": end, "votes": group["votes"],
                     "voters": sorted({v["adapter"] for v in group["votes"]}, key=adapters.index),
-                    "masked": any(f["start"] < end and start < f["end"] for f in findings)})
+                    "masked": bool(final), "final": final})
     return out
 
 
@@ -210,8 +216,12 @@ class Tap:
 
     def describe(self) -> dict:
         info = self.detector.describe()
-        return {"boot": self.boot, "consensus": info["consensus"], "required": info["required_votes"],
-                "adapters": [a["name"] for a in info["adapters"]], "skipped": [s["name"] for s in info["skipped"]]}
+        adapters = [a["name"] for a in info["adapters"]]
+        # protection_adapters: whose spans can get a value masked. Under "majority" candidate-only modules
+        # (shell-aware) still scan but do not vote. Checkouts without candidate_policy vote with every module.
+        return {"boot": self.boot, "policy": info.get("candidate_policy", "majority"), "consensus": info["consensus"],
+                "required": info["required_votes"], "adapters": adapters,
+                "voters": info.get("protection_adapters", adapters), "skipped": [s["name"] for s in info["skipped"]]}
 
     def scan_many(self, items: list[tuple[str, str]]) -> list[dict]:
         self.local.ballots = None
@@ -364,18 +374,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {"ok": False, "error": "DETECTOR_EXCEPTION"})
 
 
-def start_server(pg_root: Path, port: int, consensus: str | None) -> tuple[ThreadingHTTPServer, Tap]:
+def start_server(pg_root: Path, port: int, consensus: str | None, policy: str | None) -> tuple[ThreadingHTTPServer, Tap]:
     sys.path.insert(0, str(pg_root / "src" / "detector"))
     from pgdetector import load_detector
 
-    # None keeps detector.json's rule (or PG_DETECTOR_CONSENSUS), as the real worker does.
+    if policy:
+        os.environ["PG_DETECTOR_CANDIDATE_POLICY"] = policy  # load_detector() reads it over detector.json's
     tap = Tap(load_detector(consensus=consensus))
     handler = type("BoundHandler", (Handler,), {"tap": tap, "port": port})
     server = ThreadingHTTPServer((HOST, port), handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     info = tap.describe()
-    print(f"detectors: {', '.join(info['adapters'])} (consensus {info['consensus']}, {info['required']} vote(s))"
+    rule = "union" if info["policy"] == "union" else f"majority vote: consensus {info['consensus']}"
+    print(f"detectors: {', '.join(info['adapters'])} ({rule}, {info['required']} vote(s) to mask)"
           + (f"; skipped: {', '.join(info['skipped'])}" if info["skipped"] else ""))
     print(f"page:      http://{HOST}:{port}")
     return server, tap
@@ -384,7 +396,7 @@ def start_server(pg_root: Path, port: int, consensus: str | None) -> tuple[Threa
 # ---- commands ------------------------------------------------------------------------------------------------
 
 def cmd_serve(args, pg_root: Path) -> None:
-    server, _ = start_server(pg_root, args.port, args.consensus)
+    server, _ = start_server(pg_root, args.port, args.consensus, args.policy)
     print(f"detector:  point the Mod's bridge here with PG_MOD_DETECTOR_URL=http://{HOST}:{args.port}")
     try:
         threading.Event().wait()
@@ -393,7 +405,7 @@ def cmd_serve(args, pg_root: Path) -> None:
 
 
 def cmd_play(args, pg_root: Path) -> None:
-    server, _ = start_server(pg_root, args.port, args.consensus)
+    server, _ = start_server(pg_root, args.port, args.consensus, args.policy)
     url = f"http://{HOST}:{args.port}"
     work = Path(tempfile.mkdtemp(prefix="pg-pipeline-demo-"))
     if args.project:
@@ -414,6 +426,7 @@ def cmd_play(args, pg_root: Path) -> None:
                 "PG_MOD_AUDIT": str(work / "mod-audit.json"), "PG_SESSION_HASH": secrets.token_hex(32)})
     print(f"project:   {project}")
     print(f"started:   {datetime.now():%H:%M:%S}; exit Claude Code (/exit) to stop\n")
+    webbrowser.open(url)  # Claude Code takes over the terminal next, so the printed address is easy to miss
     try:
         subprocess.run(argv, cwd=project, env=env)
     except KeyboardInterrupt:
@@ -431,7 +444,10 @@ def main() -> None:
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"detector and page port (default {DEFAULT_PORT})")
         p.add_argument("--system-root", help="promptguard-claude-demoV0 checkout (default: ../promptguard-claude-demoV0)")
-        p.add_argument("--consensus", help="vote rule instead of detector.json's: any, majority, unanimous or at_least:N")
+        p.add_argument("--policy", choices=("union", "majority"),
+                       help="mask the union of every module's spans, or only what the vote accepts (default: detector.json's candidate_policy)")
+        p.add_argument("--consensus",
+                       help="vote rule under --policy majority: any, majority, unanimous or at_least:N (default: detector.json's)")
         if name == "play":
             p.add_argument("--project", help="folder Claude Code works in (default: a copy of sample-protected-project)")
             p.add_argument("claude_args", nargs=argparse.REMAINDER, help="after --: extra arguments for claude")

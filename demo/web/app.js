@@ -38,8 +38,12 @@ function el(tag, className, text) {
   return node
 }
 
+// The rule in force: detector.json's candidate_policy, and under "majority" its vote among the voting modules.
 function consensusText(info) {
-  return `${ruleWords()} · ${info.required}/${info.adapters.length}표 이상이면 가림`
+  if (info.policy === 'union') return '하나라도 찾으면 가림 · 모듈별 스팬을 모두 합쳐 가림'
+  const bystanders = info.adapters.filter(name => !info.voters.includes(name))
+  return `${ruleWords()} · ${info.required}/${info.voters.length}개 이상이 찾은 자리만 합쳐 가림`
+    + (bystanders.length ? ` · ${bystanders.join(', ')}는 표 없음` : '')
 }
 
 function clock(seconds) {
@@ -141,13 +145,49 @@ function ruleWords() {
     : setup.consensus === 'unanimous' ? '만장일치' : `${setup.required}표 이상`
 }
 
+const TRACK_CONTEXT = 6  // characters of the same line kept on each side of a region in its span tracks
+const TRACK_CHARS = 72   // longer regions are cut, the same way in every track so they stay aligned
+
+// The stretch of text every track of a region shows: the region with a little of its line around it.
+function trackWindow(text, region) {
+  let start = region.start
+  let end = region.end
+  while (start > 0 && region.start - start < TRACK_CONTEXT && text[start - 1] !== '\n') start--
+  while (end < text.length && end - region.end < TRACK_CONTEXT && text[end] !== '\n') end++
+  return [start, end]
+}
+
+// One row of a region's span picture: the window's text, dimmed, with the spans in it highlighted. Every row of a
+// region shows the same characters, so the spans line up from row to row like bars on a shared axis.
+function track(text, [w0, w1], spans, className) {
+  const row = el('div', 'track')
+  const end = Math.min(w1, w0 + TRACK_CHARS)
+  const shown = s => s.replace(/\n/g, '⏎').replace(/\t/g, '→')
+  const merged = []
+  for (const { start, end: stop } of [...spans].sort((a, b) => a.start - b.start)) {
+    const s0 = Math.max(start, w0)
+    const s1 = Math.min(stop, end)
+    if (s0 >= s1) continue
+    if (merged.length && s0 <= merged.at(-1)[1]) merged.at(-1)[1] = Math.max(merged.at(-1)[1], s1)
+    else merged.push([s0, s1])
+  }
+  let cursor = w0
+  for (const [s0, s1] of merged) {
+    row.append(shown(text.slice(cursor, s0)), el('mark', className, shown(text.slice(s0, s1))))
+    cursor = s1
+  }
+  row.append(shown(text.slice(cursor, end)))
+  if (end < w1) row.append(el('span', 'cut', '…'))
+  return row
+}
+
 // One region's path through the ensemble: the same text reaches every module (curves from the input box, see
-// drawLinks), each module that flagged the region sends a vote (solid line, filled dot; ✕ when it did not), and
-// the votes are gathered into the count (bracket, panel). The bracket is drawn per row so its arms meet each
-// row's center.
-// One row of the bracket: the stroke across from the vote, and the halves of the upright above and below its
-// center. Every stroke carries the votes that pass through it on their way to the bracket's middle, where the
-// count line leaves: solid when at least one of them is a dot, dashed when they are all ✕.
+// drawLinks), each module's spans in the region are drawn on its own track (solid line in when it found
+// something, dashed when it did not), and the tracks are gathered into the final span, their union (bracket,
+// panel). The bracket is drawn per row so its arms meet each row's center.
+// One row of the bracket: the stroke across from the track, and the halves of the upright above and below its
+// center. Every stroke carries the tracks that pass through it on their way to the bracket's middle, where the
+// line to the final span leaves: solid when at least one of them holds a span, dashed when none does.
 function bracketArm(region, i) {
   const voted = setup.adapters.map(name => region.voters.includes(name))
   const middle = (voted.length - 1) / 2
@@ -166,6 +206,7 @@ function flow(item, region, index) {
   const head = el('div', 'flow-head')
   head.append(el('span', 'value', clip(item.text.slice(region.start, region.end), 40)))
   const active = setup.adapters.length
+  const frame = trackWindow(item.text, region)
   const grid = el('div', `flow-grid ${region.masked ? 'hit' : 'miss'}`)
   const span = `1 / ${active + 1}`
   const place = (node, column, row) => { node.style.gridColumn = column; node.style.gridRow = row; grid.append(node); return node }
@@ -180,20 +221,24 @@ function flow(item, region, index) {
     top.append(el('span', 'module-name', name), el('span', 'mark-icon', skipped ? '–' : voted ? '✓' : '✕'))
     box.append(top)
     const votes = region.votes.filter(v => v.adapter === name)
-    if (skipped) box.append(el('div', 'module-rule', '설치 안 됨 · 투표 제외'))
+    if (skipped) box.append(el('div', 'module-rule', '설치 안 됨 · 제외'))
     else if (votes.length) {
-      // One module may flag the same value with several rules; it is still one vote.
-      const rule = el('div', 'module-rule', `${[...new Set(votes.map(v => v.type))].join(' / ')} · ${votes[0].rule}${votes.length > 1 ? ` 외 ${votes.length - 1}` : ''}`)
+      // One module may flag the same value with several rules: one row, all its spans on the track.
+      const rule = el('div', 'module-rule', `${[...new Set(votes.map(v => v.type))].join(' / ')} · ${votes[0].rule}${votes.length > 1 ? ` 외 ${votes.length - 1}` : ''}${setup.voters.includes(name) ? '' : ' · 표 없음'}`)
       rule.title = votes.map(v => `${v.type} · ${v.rule}`).join('\n')
       box.append(rule)
     } else box.append(el('div', 'module-rule', '탐지 없음'))
     if (skipped) return
-    const parts = [box, place(el('div', `wire${voted ? ' yes' : ''}`), '3', row),
-      place(el('div', `dot${voted ? ' yes' : ''}`, voted ? '' : '✕'), '4', row), place(bracketArm(region, i), '5', row)]
+    const spans = place(track(item.text, frame, votes, 'found'), '4', row)
+    if (!voted) spans.classList.add('idle')
+    const parts = [box, place(el('div', `wire${voted ? ' yes' : ''}`), '3', row), spans, place(bracketArm(region, i), '5', row)]
     for (const node of parts) node.style.setProperty('--i', i)
   })
-  const verdict = place(el('div', 'verdict'), '6', span)
-  verdict.append(el('div', 'count', `${region.voters.length} / ${active}`), el('div', 'decision', region.masked ? '가림' : '통과'))
+  const final = place(el('div', 'final'), '6', span)
+  final.append(el('div', 'final-label', '최종 스팬 (합집합)'), track(item.text, frame, region.final, 'hit'))
+  // Under the majority vote a region can fall short: say why nothing is masked, counting voting modules only.
+  const counted = region.voters.filter(name => setup.voters.includes(name)).length
+  final.append(el('div', 'decision', region.masked ? '가림' : `통과 · ${counted}/${setup.voters.length}개만 찾아 기준 미달`))
   wrap.append(head, grid)
   return wrap
 }
@@ -201,7 +246,7 @@ function flow(item, region, index) {
 function flowColumn(item) {
   const list = el('div', 'flows')
   const again = remasked(item)
-  if (again.length) list.append(el('div', 'again-note', `↺ 앞에서 가린 값이 다시 나와 투표 없이 같은 자리표시자로 가림 (${again.length}곳)`))
+  if (again.length) list.append(el('div', 'again-note', `↺ 앞에서 가린 값이 다시 나와 탐지 없이 같은 자리표시자로 가림 (${again.length}곳)`))
   if (!item.regions.length && !again.length) list.append(el('span', 'none', `모듈 ${setup.adapters.length}개 모두 탐지 없음 · 후보 없음`))
   item.regions.forEach((region, index) => list.append(flow(item, region, index)))
   return list
@@ -316,7 +361,7 @@ function lane(item, ok) {
   const row = el('div', 'lane')
   row.append(
     column('들어온 입력', inputColumn(item), 'input'),
-    column('탐지 모듈 → 앙상블 투표', flowColumn(item), 'ensemble'),
+    column('탐지 모듈 → 스팬 합집합', flowColumn(item), 'ensemble'),
     column('모델로 보내는 텍스트', outputColumn(item, ok), 'output'),
   )
   return row

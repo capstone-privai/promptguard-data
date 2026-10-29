@@ -8,7 +8,7 @@ PromptGuard의 평가 지표별 데이터셋을 관리한다. 지금은 **metric
 | [metric-task/](metric-task/) | 마스킹 조건별 과제 성공과 서버 누출 평가: 과제 26개, Claude Code 실행기, API 요청 기록 프록시, 결과 | Sonnet 5.5로 3회 반복한 결과 + 요청 기록을 켠 시험 실행(10개 × 3조건) |
 | [metric-latency/](metric-latency/) | 탐지기 호출 지연 평가기: 탐지기를 HTTP 블랙박스로 띄워 합성 입력, Final Guard 재생, Mod 호출 기록 재생으로 잰다 | 시스템 앙상블과 어댑터별 첫 측정 |
 | [dashboard/](dashboard/) | 평가 대시보드: 서버가 PromptGuard `main`을 따라가며 커밋마다 metric-detection, metric-latency를 돌리고, 사람이 돌린 metric-task 배치와 함께 웹으로 보여 준다 | `main`의 커밋 7개(탐지기 상태 3가지) 평가 |
-| [demo/](demo/) | 시연 화면: Mod가 탐지기를 부를 때마다 입력 채널과 원문, 모듈별 탐지, 앙상블 투표, 가린 뒤 모델로 가는 텍스트를 실시간으로 보여 준다 | 실제 Mod 훅으로 재구성 텍스트 일치 확인 |
+| [demo/](demo/) | 시연 화면: Mod가 탐지기를 부를 때마다 입력 채널과 원문, 모듈별 탐지 스팬과 그 합집합, 가린 뒤 모델로 가는 텍스트를 실시간으로 보여 준다 | 실제 Mod 훅으로 재구성 텍스트 일치 확인 |
 | [metric-detection/docs/](metric-detection/docs/) | 분석 문서: [기존 시스템의 recall이 낮은 이유](metric-detection/docs/README_baseline-recall.md), [새 외부 소스로 본 기존 시스템의 약점](metric-detection/docs/README_baseline-new-sources.md), [탐지기 구성별 성능](metric-detection/docs/README_ensemble.md) | 앞의 두 편은 이전 시스템으로 잰 2026-10-08 결과, 구성별 성능은 현재 시스템으로 잰 2026-10-14 결과 |
 
 이 저장소는 데이터, 생성·검증 도구, 채점기를 맡는다. 평가 대상 시스템(PromptGuard)은 Claude Code에 붙는 [promptguard-claude-demoV0](https://github.com/capstone-privai/promptguard-claude-demoV0)이다. metric-detection 채점기는 그 체크아웃의 탐지기(`src/detector`의 앙상블)를 불러 쓰고 Native Mod의 치환 규칙을 따르며, metric-task는 Native Mod를 그대로 쓴다. [metric-detection/docs/](metric-detection/docs/)의 분석 문서 중 baseline 두 편은 이전 시스템(promptguard-demo-v0)으로 잰 결과다.

@@ -12,10 +12,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pgRoot = resolve(process.env.PROMPTGUARD_CLAUDE_ROOT || join(here, '..', '..', '..', 'promptguard-claude-demoV0'))
-const port = 18000 + Math.floor(Math.random() * 900)
-const url = `http://127.0.0.1:${port}`
 
-// Synthetic values only. The emoji puts UTF-16 and code point offsets apart. 5400 and blue-harbor-42 get a single vote (CredSweeper) and must stay.
+// Synthetic values only. The emoji puts UTF-16 and code point offsets apart. 5400 and blue-harbor-42 get a single vote (CredSweeper): the
+// union (detector.json's candidate_policy, which the demo follows by default) masks them, the majority vote lets them through.
 // Key-shaped values are put together at run time: written whole, GitHub push protection takes them for real keys.
 const PROMPT = [
   '🔐 토큰 수명은 token_ttl_seconds = 5400, 힌트는 retry_secret_hint = blue-harbor-42 야.',
@@ -23,7 +22,7 @@ const PROMPT = [
 ].join('\n')
 const DB_URL = 'postgres://admin:Sup3rS3cret!x9@db.internal:5432/orders'
 
-async function waitHealthy(child) {
+async function waitHealthy(url, child) {
   for (let i = 0; i < 240; i++) {
     if (child.exitCode !== null) throw new Error(`server exited with ${child.exitCode}`)
     try { if ((await fetch(`${url}/health`)).ok) return } catch {}
@@ -33,7 +32,7 @@ async function waitHealthy(child) {
 }
 
 // What the page received: every scan event in the backlog, up to the "live" marker.
-async function pageEvents() {
+async function pageEvents(url) {
   const response = await fetch(`${url}/events`)
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -60,12 +59,17 @@ function pageText(item) {
   return item.output === null ? item.text : item.output.map(s => typeof s === 'string' ? s : s.mask).join('')
 }
 
-test('the page rebuilds exactly the text the Mod forwards', { timeout: 120000 }, async () => {
-  const server = spawn('python3', [join(here, '..', 'pipeline_demo.py'), 'serve', '--port', String(port), '--system-root', pgRoot],
+async function replay(policyArgs, union) {
+  const port = 18000 + Math.floor(Math.random() * 900)
+  const url = `http://127.0.0.1:${port}`
+  const server = spawn('python3', [join(here, '..', 'pipeline_demo.py'), 'serve', '--port', String(port), '--system-root', pgRoot, ...policyArgs],
     { stdio: ['ignore', 'ignore', 'inherit'] })
   try {
-    await waitHealthy(server)
-    const { register } = await import(pathToFileURL(join(pgRoot, 'src', 'native-mod', 'hooks', 'register.mjs')).href)
+    await waitHealthy(url, server)
+    const health = await (await fetch(`${url}/health`)).json()
+    assert.equal(health.candidate_policy, union ? 'union' : 'majority')
+    // A fresh copy per run: the Mod keeps its placeholders in module state, and each server starts empty.
+    const { register } = await import(`${pathToFileURL(join(pgRoot, 'src', 'native-mod', 'hooks', 'register.mjs')).href}?run=${port}`)
     const hooks = {}
     register((name, handler) => { hooks[name] = handler })
     // The bridge's job: POST the items to the detector and wrap the answer as an MCP tool result.
@@ -93,18 +97,19 @@ test('the page rebuilds exactly the text the Mod forwards', { timeout: 120000 },
       () => ({ result: { stdout: 'Sup3rS3cret!x9\nPgDemoOnly!84qSynthetic\n', stderr: '' } }))
     forwarded.push([bash.result.stdout])
 
-    assert.match(sent.text, /token_ttl_seconds = 5400/)
+    if (union) assert.doesNotMatch(sent.text, /5400|blue-harbor-42/)
+    else assert.match(sent.text, /token_ttl_seconds = 5400/)
     assert.match(sent.text, /\[GITHUB_TOKEN_1\]/)
     assert.doesNotMatch(bash.result.stdout, /Sup3rS3cret|PgDemoOnly/)
 
-    const events = await pageEvents()
+    const events = await pageEvents(url)
     assert.equal(events.length, forwarded.length)
     events.forEach((event, index) => {
       assert.deepEqual(event.items.map(pageText), forwarded[index], `call ${index + 1} (${event.source})`)
     })
     const prompt = events[0].items[0]
     const ttl = prompt.regions.find(region => prompt.text.slice(region.start, region.end) === '5400')
-    assert.deepEqual([ttl.voters, ttl.masked], [['credsweeper'], false])
+    assert.deepEqual([ttl.voters, ttl.masked], [['credsweeper'], union])
     const echo = events[2].items[0]
     const again = echo.output.filter(s => typeof s !== 'string')
     assert.deepEqual(again.map(s => s.how), ['remask', 'remask'])
@@ -112,4 +117,9 @@ test('the page rebuilds exactly the text the Mod forwards', { timeout: 120000 },
   } finally {
     server.kill()
   }
-})
+}
+
+test('the page rebuilds exactly the text the Mod forwards under detector.json (union)', { timeout: 120000 },
+  () => replay([], true))
+test('the page rebuilds exactly the text the Mod forwards under --policy majority', { timeout: 120000 },
+  () => replay(['--policy', 'majority'], false))
