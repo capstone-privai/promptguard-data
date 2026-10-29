@@ -245,9 +245,8 @@ mark .tag {
 /* columns 2-3: detection modules -> their spans -> the union, one flow per region */
 .flows { display: flex; flex-direction: column; gap: 16px; }
 /* the value starts where the module boxes start (after the 56px curve column of .flow-grid) */
-.flow-head { display: flex; align-items: center; margin-bottom: 6px; padding-left: 56px; padding-right: 40px; }
+.flow-head { display: flex; align-items: center; margin-bottom: 6px; padding-left: 56px; }
 .flow-head .value { font: 12px var(--mono); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flow-head .others { margin-left: auto; padding-left: 12px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .flow-grid, .head.ensemble {
   display: grid;
   /* the last column is room for the verdict arrows to bend on their way to the forwarded text */
