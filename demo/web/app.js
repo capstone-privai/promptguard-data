@@ -182,22 +182,16 @@ function track(text, [w0, w1], spans, className) {
   return row
 }
 
-// One region's path through the ensemble: the same text reaches every module (curves from the input box, see
-// drawLinks), each module's spans in the region are drawn on its own track (solid line in when it found
-// something, dashed when it did not), and the tracks are gathered into the final span, their union (bracket,
-// panel). The bracket is drawn per row so its arms meet each row's center.
-// One row of the bracket: the stroke across from the track, and the halves of the upright above and below its
-// center. Every stroke carries the tracks that pass through it on their way to the bracket's middle, where the
-// line to the final span leaves: solid when at least one of them holds a span, dashed when none does.
-function bracketArm(region, i) {
-  const voted = setup.adapters.map(name => region.voters.includes(name))
-  const middle = (voted.length - 1) / 2
-  const any = (from, to) => voted.slice(from, to).some(Boolean)
+// One region's path through the ensemble: only the modules that found something in it are drawn (curves from
+// the input box, see drawLinks), each with its spans on its own track, and the tracks are gathered into the final
+// span, their union (bracket, panel). The modules that found nothing are named in one line above (the ones not
+// installed, once in the column head), so the picture holds only what led to the mask. The bracket is drawn per row so its arms meet each row's
+// center: the stroke across from the track and the halves of the upright above and below it.
+function bracketArm(i, rows) {
   const arm = el('div', 'arm')
-  const stroke = (name, solid) => arm.append(el('span', `${name}${solid ? '' : ' dashed'}`))
-  stroke('across', voted[i])
-  if (i > 0) stroke('up', i <= middle ? any(0, i) : any(i))
-  if (i < voted.length - 1) stroke('down', i >= middle ? any(i + 1) : any(0, i + 1))
+  arm.append(el('span', 'across'))
+  if (i > 0) arm.append(el('span', 'up'))
+  if (i < rows - 1) arm.append(el('span', 'down'))
   return arm
 }
 
@@ -206,33 +200,28 @@ function flow(item, region, index) {
   wrap.dataset.region = index
   const head = el('div', 'flow-head')
   head.append(el('span', 'value', clip(item.text.slice(region.start, region.end), 40)))
-  const active = setup.adapters.length
+  const found = setup.adapters.filter(name => region.voters.includes(name))
+  const silent = setup.adapters.filter(name => !region.voters.includes(name))
+  if (silent.length) head.append(el('span', 'others', `${silent.join(', ')} 탐지 없음`))
   const frame = trackWindow(item.text, region)
   const grid = el('div', `flow-grid ${region.masked ? 'hit' : 'miss'}`)
-  const span = `1 / ${active + 1}`
+  const span = `1 / ${found.length + 1}`
   const place = (node, column, row) => { node.style.gridColumn = column; node.style.gridRow = row; grid.append(node); return node }
   place(el('div', 'panel'), '4 / 7', span)
   place(el('div', 'trunk out'), '5', span)
-  ;[...setup.adapters, ...setup.skipped].forEach((name, i) => {
+  found.forEach((name, i) => {
     const row = String(i + 1)
-    const skipped = i >= active
-    const voted = region.voters.includes(name)
-    const box = place(el('div', `module${skipped ? ' off' : voted ? ' yes' : ' no'}`), '2', row)
+    const box = place(el('div', 'module yes'), '2', row)
     const top = el('div', 'module-top')
-    top.append(el('span', 'module-name', name), el('span', 'mark-icon', skipped ? '–' : voted ? '✓' : '✕'))
+    top.append(el('span', 'module-name', name), el('span', 'mark-icon', '✓'))
     box.append(top)
+    // One module may flag the same value with several rules: one row, all its spans on the track.
     const votes = region.votes.filter(v => v.adapter === name)
-    if (skipped) box.append(el('div', 'module-rule', '설치 안 됨 · 제외'))
-    else if (votes.length) {
-      // One module may flag the same value with several rules: one row, all its spans on the track.
-      const rule = el('div', 'module-rule', `${[...new Set(votes.map(v => v.type))].join(' / ')} · ${votes[0].rule}${votes.length > 1 ? ` 외 ${votes.length - 1}` : ''}${setup.voters.includes(name) ? '' : ' · 표 없음'}`)
-      rule.title = votes.map(v => `${v.type} · ${v.rule}`).join('\n')
-      box.append(rule)
-    } else box.append(el('div', 'module-rule', '탐지 없음'))
-    if (skipped) return
-    const spans = place(track(item.text, frame, votes, 'found'), '4', row)
-    if (!voted) spans.classList.add('idle')
-    const parts = [box, place(el('div', `wire${voted ? ' yes' : ''}`), '3', row), spans, place(bracketArm(region, i), '5', row)]
+    const rule = el('div', 'module-rule', `${[...new Set(votes.map(v => v.type))].join(' / ')} · ${votes[0].rule}${votes.length > 1 ? ` 외 ${votes.length - 1}` : ''}${setup.voters.includes(name) ? '' : ' · 표 없음'}`)
+    rule.title = votes.map(v => `${v.type} · ${v.rule}`).join('\n')
+    box.append(rule)
+    const parts = [box, place(el('div', 'wire yes'), '3', row), place(track(item.text, frame, votes, 'found'), '4', row),
+      place(bracketArm(i, found.length), '5', row)]
     for (const node of parts) node.style.setProperty('--i', i)
   })
   const final = place(el('div', 'final'), '6', span)
@@ -364,20 +353,22 @@ const TRUTH_WORDS = { masked: '가림', partial: '부분 노출', leaked: '그�
 const FULL_CHARS = 6000  // shorter texts (a .env, a config) are shown whole; longer ones as excerpts
 
 // The whole text with every real secret painted by what happened to it, and masked text that holds no secret.
+// Folded by default: the counts stay in view, the text opens on a click.
 function truthPanel(item) {
   const marks = [
     ...item.truth.spans.map(span => ({ ...span, className: `t-${span.status}` })),
     ...item.truth.fp.map(span => ({ ...span, className: 't-fp', name: '비밀 아님' })),
   ].sort((a, b) => a.start - b.start)
-  const panel = el('div', 'truth')
+  const panel = el('details', 'truth')
   const counts = {}
   for (const span of item.truth.spans) counts[span.status] = (counts[span.status] || 0) + 1
-  const head = el('div', 'truth-head')
+  const head = el('summary', 'truth-head')
   head.append(el('span', 'truth-title', `정답 대조 · 진짜 비밀 ${item.truth.spans.length}곳`))
   for (const status of ['masked', 'partial', 'leaked', 'error']) {
     if (counts[status]) head.append(el('span', `chip t-${status}`, `${TRUTH_WORDS[status]} ${counts[status]}`))
   }
   if (item.truth.fp.length) head.append(el('span', 'chip t-fp', `비밀 아닌데 가림 ${item.truth.fp.length}`))
+  head.append(el('span', 'truth-open', '원문 보기'))
   const box = el('pre', 'textbox truth-text')
   const draw = (span, start, end) => {
     const mark = el('mark', span.className, item.text.slice(start, end))
@@ -393,6 +384,10 @@ function truthPanel(item) {
     box.append(item.text.slice(cursor))
   } else excerpt(box, item.text, marks, draw)
   panel.append(head, box)
+  // Opening it moves the rows below: their curves are measured from the layout.
+  panel.addEventListener('toggle', () => {
+    for (const row of panel.closest('.event')?.querySelectorAll('.lane') || []) drawLinks(row)
+  })
   return panel
 }
 
@@ -514,7 +509,9 @@ function connect() {
     if (setup && setup.boot !== info.boot) { clear(); lastSeq = 0; seen.clear() }
     setup = info
     live = false
-    document.getElementById('rule').textContent = consensusText(info)
+    const rule = document.getElementById('rule')
+    rule.textContent = (info.skipped.length ? `${info.skipped.join(', ')} 설치 안 됨 · ` : '') + consensusText(info)
+    rule.title = rule.textContent
     if (!info.truth) showTruthSummary(null)
     else if (lastSeq === 0) showTruthSummary({ total: info.truth.total, seen: 0, masked: 0, partial: 0, leaked: 0, error: 0, fp: 0 })
     setStatus('live', '연결됨')

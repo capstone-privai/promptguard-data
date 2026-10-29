@@ -310,12 +310,13 @@ class Tap:
 
     def repeat_of(self, source: str, text: str, segments: list) -> int | None:
         """The event that already showed this text: the Mod scans some content twice in one step (prompt.context
-        sends CLAUDE.md inside its prompt block and again as the instruction file), and the second copy is masked
+        sends CLAUDE.md inside its prompt block and again as the instruction file), and content it already scanned
+        comes back through another channel (a file read again as conversation history). The second copy is masked
         with the same placeholders, so the page folds it instead of drawing the same flows again."""
         body = text.strip()
         masks = {s["mask"] for s in segments if not isinstance(s, str)}
-        for seq, seen_source, seen_text, seen_masks in reversed(self.shown):
-            if seen_source == source and body in seen_text and masks <= seen_masks:
+        for seq, _seen_source, seen_text, seen_masks in reversed(self.shown):
+            if body in seen_text and masks <= seen_masks:
                 return seq
         return None
 
