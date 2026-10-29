@@ -325,8 +325,13 @@ class Tap:
         with the same placeholders, so the page folds it instead of drawing the same flows again."""
         body = plain(text).strip()
         masks = {s["mask"] for s in segments if not isinstance(s, str)}
-        for seq, _seen_source, seen_text, seen_masks in reversed(self.shown):
-            if body in plain(seen_text) and masks <= seen_masks:
+        for seq, seen_source, seen_text, seen_masks in reversed(self.shown):
+            seen = plain(seen_text)
+            # Within one channel a part of an earlier text folds (CLAUDE.md inside the prompt block); across
+            # channels only the same text does, so new output that happens to repeat a few lines (a grep of a
+            # .env read earlier) still gets its own row.
+            same = body == seen.strip() if seen_source != source else body in seen
+            if same and masks <= seen_masks:
                 return seq
         return None
 
