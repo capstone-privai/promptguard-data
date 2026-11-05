@@ -51,11 +51,6 @@ BOUNDARY = {
                                               "`username:password` note)."),
     "connection_string": ("PASSWORD", None, "Put {p} in a connection string such as `Server=...;User Id=...;"
                                             "Password={p};` or a JDBC/ODBC string."),
-    "command_option": ("PASSWORD", None, "Show a command line that holds {p} as plain text where it first appears: a "
-                                         "message the developer types, a README or runbook line, shell history, a CI "
-                                         "trace. Use a form that fits: `mysql -uroot -p{p}`, `mysqldump -uroot -p{p} "
-                                         "app`, `sshpass -p {p} ssh deploy@host`, `docker login -u ci -p {p}`, "
-                                         "`psql --password={p}`, `MYSQL_PWD={p} mysql`."),
     "cookie": ("TOKEN", None, "Send {p} as a session cookie: `Cookie: session={p}` or `Set-Cookie: sid={p}; Path=/; "
                              "HttpOnly`."),
     "pem_full": ("PRIVATE_KEY", None, "Print {p} whole, on its own lines, as `cat` shows a key file."),
@@ -78,6 +73,57 @@ BOUNDARY = {
                                                     "with {p}`). Do not put it right after 'for', 'user', 'as', "
                                                     "'-u' or a '/'."),
 }
+
+
+# Boundary rule command_option: a credential in a command line written out as plain text. family -> (kind, form).
+# A family takes its turn before a form does, so the common commands do not crowd out the rest.
+COMMAND_FORMS = {
+    "mysql": [("password", "mysql -uroot -p{p} -h db.internal"), ("password", "mysqldump -uroot -p{p} app"),
+              ("password", "mysqladmin -uroot -p{p} status"), ("password", "MYSQL_PWD={p} mysql -h db.internal")],
+    "postgres_client": [("password", "psql --password={p} -h db.internal"), ("password", "PGPASSWORD={p} psql -h db.internal"),
+                        ("password", "psql 'host=db.internal user=app password={p}'")],
+    "other_db": [("password", "redis-cli -a {p} ping"), ("password", "redis-cli --pass {p} ping"),
+                 ("password", "mongosh -u admin -p {p}"), ("password", "mongosh --password {p} app")],
+    "remote": [("password", "sshpass -p {p} ssh deploy@host.internal"), ("password", "smbclient //host.internal/s -U admin%{p}"),
+               ("password", "net use \\\\host.internal\\s /user:admin {p}")],
+    "env": [("api_key", "export API_KEY={p}"), ("password", "export DB_PASSWORD={p}"), ("token", "API_TOKEN={p} ./deploy.sh"),
+            ("token", "TOKEN={p} curl https://api.internal/v1/me"),
+            ("aws_secret_access_key", "AWS_SECRET_ACCESS_KEY={p} aws s3 ls")],
+    "container": [("password", "docker login -u ci -p {p} registry.internal"), ("password", "docker run -e POSTGRES_PASSWORD={p} postgres"),
+                  ("api_key", "docker run --env API_KEY={p} app"),
+                  ("password", "kubectl create secret generic db --from-literal=password={p}")],
+    "deploy": [("password", "helm install app ./chart --set db.password={p}"), ("password", "terraform apply -var 'db_password={p}'"),
+               ("password", "ansible-playbook site.yml -e 'ansible_password={p}'"), ("api_key", "heroku config:set API_KEY={p}"),
+               ("token", "gh secret set DEPLOY_TOKEN --body {p}"), ("password", "vault kv put secret/app password={p}"),
+               ("token", "vault login {p}")],
+    "http": [("api_key", "curl -H 'X-API-Key: {p}' https://api.internal/v1"), ("api_key", "curl 'https://api.internal/v1?api_key={p}'"),
+             ("password", "curl -d 'password={p}' https://app.internal/login"),
+             ("password", "curl -d '{{\"password\":\"{p}\"}}' https://app.internal/login"),
+             ("password", "wget --password={p} https://files.internal/a.tar")],
+    "cloud_package": [("aws_secret_access_key", "aws configure set aws_secret_access_key {p}"),
+                      ("password", "az login -u me@example.invalid -p {p}"),
+                      ("api_key", "az login --service-principal -u app -p {p} --tenant t"),
+                      ("pypi_token", "twine upload -u __token__ -p {p} dist/*"),
+                      ("npm_token", "npm config set //registry.internal/:_authToken {p}")],
+    "crypto": [("password", "openssl enc -aes-256-cbc -pass pass:{p} -in a.tar"), ("password", "openssl pkcs12 -in a.p12 -passin pass:{p}"),
+               ("password", "zip -P {p} a.zip b.txt"), ("password", "unzip -P {p} a.zip"), ("password", "7z a -p{p} a.7z b.txt"),
+               ("password", "gpg --batch --passphrase {p} -d a.gpg"), ("password", "ssh-keygen -t ed25519 -N {p} -f deploy_key")],
+    "account": [("password", "echo 'root:{p}' | chpasswd"), ("password", "echo '{p}' | sudo -S systemctl restart app"),
+                ("password", "htpasswd -b .htpasswd admin {p}")],
+    "stdin": [("password", "echo {p} | docker login -u ci --password-stdin registry.internal"),
+              ("github_classic", "echo {p} | gh auth login --with-token"),
+              ("github_classic", "gh auth login --with-token <<< {p}")],
+}
+TYPE_OF_COMMAND_KIND = {"password": "PASSWORD", "token": "TOKEN", "api_key": "SECRET", "aws_secret_access_key": "SECRET",
+                        "pypi_token": "TOKEN", "npm_token": "TOKEN", "github_classic": "TOKEN"}
+# Commands that read like one of the forms and hold no credential: a port, a flag, a prompt, a reference
+COMMAND_LOOKALIKES = ("ssh -p 2222 deploy@host.internal", "scp -P 2222 a.tar host.internal:/tmp",
+                      "docker run -p 8080:80 app", "psql -h db.internal -p 5432 app", "redis-cli -p 6379 ping",
+                      "mysql -h db.internal -P 3306 -uroot -p", "mkdir -p /etc/app/secrets", "cp -p a.conf b.conf",
+                      "mysql -uroot -p", "psql --password", "curl -u admin https://api.internal/v1",
+                      "docker login -u ci --password-stdin registry.internal", 'mysql -uroot -p"$DB_PASS"',
+                      'sshpass -p "$SSHPASS" ssh deploy@host.internal', "export API_KEY=$API_KEY",
+                      "kubectl create secret generic db --from-file=./pw.txt")
 
 
 def load(path: Path) -> dict:
@@ -171,8 +217,33 @@ def with_transform(s: dict, transform: str, d: value_gen.Draw) -> tuple[dict, di
     return s, fill
 
 
+def command_option(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
+    """A command form that holds one secret of the card, the look-alike to show with it, and where the secret starts."""
+    kind, form = d.choice(COMMAND_FORMS[d.choice(sorted(COMMAND_FORMS))])
+    want = TYPE_OF_COMMAND_KIND[kind]
+    fits = (lambda s: s["type"] == "PASSWORD" and s["kind"] not in ("db_uri", "literal")) if kind == "password" else \
+        (lambda s: s["kind"] == kind)
+    target = next((i for i, s in enumerate(secrets) if fits(s) and "|" not in s["placeholder"]), None)
+    if target is None:
+        secrets.append(secret(d, cfg, want, len(secrets) + 1, {kind: 1}))
+        target = len(secrets) - 1
+    if d.int(1000) < cfg["boundary"]["command_prompt_share"] * 1000:
+        secrets[target] = {**secrets[target], "channel": "prompt"}
+    p = secrets[target]["placeholder"]
+    command = form.replace("{{", "{").replace("}}", "}").replace("{p}", p)
+    lookalike = d.choice(COMMAND_LOOKALIKES)
+    return {"rule": "command_option", "secret": target + 1, "command": command, "lookalike": lookalike,
+            "instruction": f"Where {p} first appears, show this command line as plain text (a message the developer "
+                           f"types, a README or runbook line, shell history, a CI trace; never a tool_input): `{command}`. "
+                           "Names, hosts and paths may change; keep the command, the option and the placeholder. "
+                           f"Elsewhere in the session show this look-alike character for character; it holds no "
+                           f"credential: `{lookalike}`."}
+
+
 def boundary_rule(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
     rule = d.weighted(pairs(cfg["boundary"]["rules"]))
+    if rule == "command_option":
+        return command_option(d, cfg, secrets)
     need, transform, text = BOUNDARY[rule]
     # db_uri expands to a whole URI and takes no transform, so it cannot carry a rule; nor can a secret already
     # transformed by its catalog row

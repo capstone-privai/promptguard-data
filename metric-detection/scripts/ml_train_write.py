@@ -205,6 +205,15 @@ def follows_card(card: dict, items: list[dict]) -> list[str]:
             problems.append(f"secret {ph} in one channel, card asks multi_channel")
         if s.get("mask") and not any(s["mask"] in i["text"] for i in items if i["channel"] == "tool_input"):
             problems.append(f"mask {s['mask']} not in a tool_input")
+    if card["boundary"] and card["boundary"]["rule"] == "command_option":
+        rule = card["boundary"]
+        placeholder = card["secrets"][rule["secret"] - 1]["placeholder"]
+        program = rule["command"].split(placeholder)[0].split()[0]  # mysql, MYSQL_PWD=, echo
+        lines = [line for i in items if i["channel"] != "tool_input" for line in i["text"].split("\n")]
+        if not any(placeholder in line and program in line for line in lines):
+            problems.append(f"command {program} with {placeholder} missing")
+        if not any(rule["lookalike"] in i["text"].replace('\\"', '"') for i in items):
+            problems.append(f"look-alike {rule['lookalike']!r} missing")
     if card.get("dense"):
         placed = [s["placeholder"] for s in card["secrets"] if s["kind"] != "literal"]
         if max(sum(ph in i["text"] for ph in placed) for i in items) < min(len(placed), DENSE_TOGETHER):

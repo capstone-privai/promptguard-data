@@ -40,12 +40,21 @@ class Cards(unittest.TestCase):
 
     def test_command_option_cards_name_a_password_outside_tool_input(self):
         cards = [c for c in self.cards if c["boundary"] and c["boundary"]["rule"] == "command_option"]
-        self.assertGreaterEqual(sum(c["variants"] for c in cards if c["split"] != "test_ood"), 200)  # plan 3.4
+        self.assertGreaterEqual(sum(c["variants"] for c in cards if c["split"] != "test_ood"), 300)  # plan 3.4
         for c in cards:
-            target = c["secrets"][c["boundary"]["secret"] - 1]
-            self.assertEqual(target["type"], "PASSWORD")
-            self.assertIn(target["placeholder"], c["boundary"]["instruction"])
+            rule = c["boundary"]
+            target = c["secrets"][rule["secret"] - 1]
+            self.assertIn(target["placeholder"], rule["command"])
+            self.assertIn(rule["command"], rule["instruction"])
+            self.assertIn(rule["lookalike"], rule["instruction"])
             self.assertNotEqual(target["channel"], "tool_input")
+        prompt = sum(c["secrets"][c["boundary"]["secret"] - 1]["channel"] == "prompt" for c in cards)
+        self.assertGreater(prompt / len(cards), 0.3)
+
+    def test_command_forms_cover_most_families_and_forms(self):
+        rules = [c["boundary"] for c in self.cards if c["boundary"] and c["boundary"]["rule"] == "command_option"]
+        programs = {r["command"].split("{{")[0].split()[0] for r in rules}
+        self.assertGreaterEqual(len(programs), 20)
 
     def test_every_drawn_kind_is_a_generator(self):
         for c in self.cards:
@@ -54,7 +63,7 @@ class Cards(unittest.TestCase):
 
 
 class FollowsCard(unittest.TestCase):
-    CARD = {"items": 2, "turns": 1, "language": "en", "negatives": [], "dense": True,
+    CARD = {"items": 2, "turns": 1, "language": "en", "negatives": [], "dense": True, "boundary": None,
             "secrets": [{"placeholder": f"{{{{password:s{i}}}}}", "kind": "password", "type": "PASSWORD",
                          "channel": "tool_output", "repeat": "once", "mask": None} for i in range(1, 6)]}
 
@@ -74,23 +83,45 @@ class FollowsCard(unittest.TestCase):
 
 
 class CommandOption(unittest.TestCase):
-    FORMS = ("mysql -uroot -p{}", "mysqldump -uroot -p{} app", "sshpass -p {} ssh deploy@host",
-             "docker login -u ci -p {}", "psql --password={}", "MYSQL_PWD={} mysql")
+    def build(self, text):
+        template = {"session_id": "cmd", "meta": {"split": "train", "group_id": "cmd", "variants": 5,
+                                                  "value_profile": "mltrain"},
+                    "items": [{"turn_id": "t0", "channel": "prompt", "text": text}]}
+        return B.build_lines([json.dumps(template)], "cmd", "cmd", "metric-detection/templates/ml_train/cmd.jsonl")
 
     def test_every_form_builds_the_whole_value_as_gold(self):
-        for form in self.FORMS:
-            for kind in ("password", "password_weak"):
-                with self.subTest(form=form, kind=kind):
-                    template = {"session_id": "cmd", "meta": {"split": "train", "group_id": "cmd", "variants": 5,
-                                                              "value_profile": "mltrain"},
-                                "items": [{"turn_id": "t0", "channel": "prompt", "text":
-                                           "run this: " + form.format("{{" + kind + ":s1}}")}]}
-                    sessions, gold, labels = B.build_lines([json.dumps(template)], "cmd", "cmd",
-                                                           "metric-detection/templates/ml_train/cmd.jsonl")
-                    self.assertEqual(len(gold), 5)
-                    errors = []
-                    B.check_rows(sessions, gold, labels, "cmd", errors)
-                    self.assertEqual(errors, [])
+        for family, forms in C.COMMAND_FORMS.items():
+            for kind, form in forms:
+                for use in (kind, "password_weak") if kind == "password" else (kind,):
+                    with self.subTest(family=family, form=form, kind=use):
+                        command = form.replace("{{", "{").replace("}}", "}").replace("{p}", "{{" + use + ":s1}}")
+                        sessions, gold, labels = self.build("run this: " + command)
+                        self.assertEqual(len(gold), 5)
+                        errors = []
+                        B.check_rows(sessions, gold, labels, "cmd", errors)
+                        self.assertEqual(errors, [])
+
+    def test_look_alikes_pass_the_literal_check_and_add_no_gold(self):
+        for text in C.COMMAND_LOOKALIKES:
+            with self.subTest(text=text):
+                self.assertEqual(W.literal_secrets([text]), [])
+                self.assertEqual(self.build("run this: " + text)[1], [])
+
+    def card(self, command="mysql -uroot -p{{password:s1}}"):
+        return {"items": 2, "turns": 1, "language": "en", "negatives": [], "dense": False,
+                "secrets": [{"placeholder": "{{password:s1}}", "kind": "password", "type": "PASSWORD",
+                             "channel": "prompt", "repeat": "once", "mask": None}],
+                "boundary": {"rule": "command_option", "secret": 1, "command": command,
+                             "lookalike": 'mysql -uroot -p"$DB_PASS"', "instruction": ""}}
+
+    def test_a_card_needs_its_command_and_look_alike(self):
+        good = [{"turn_id": "t0", "channel": "prompt", "text": "run mysql -uroot -p{{password:s1}} please"},
+                {"turn_id": "t0", "channel": "tool_output", "text": '{"stdout": "mysql -uroot -p\\"$DB_PASS\\""}'}]
+        self.assertEqual(W.follows_card(self.card(), good), [])
+        no_command = [{**good[0], "text": "the password is {{password:s1}}"}, good[1]]
+        self.assertTrue(any("command mysql" in p for p in W.follows_card(self.card(), no_command)))
+        no_lookalike = [good[0], {**good[1], "text": "done"}]
+        self.assertTrue(any("look-alike" in p for p in W.follows_card(self.card(), no_lookalike)))
 
 
 class Blobs(unittest.TestCase):

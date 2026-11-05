@@ -158,7 +158,7 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 | `Bearer`, `Basic`, `token` 스킴 | 각 200 |
 | URL 속 비밀번호·토큰 (스킴 6종 이상) | 400 |
 | `사용자명:비밀번호` 쌍, 연결 문자열 `Password=…;` | 각 200 |
-| 명령줄 옵션 속 비밀번호 (`mysql -p…`, `sshpass -p …`, `--password=…`. 개발자 메시지, 문서, 히스토리, CI 추적에 나온 것. 에이전트가 쓰는 tool_input은 가림 표시다) | 200 |
+| 명령줄 속 비밀값 (DB 클라이언트, 환경변수, 컨테이너, 배포, HTTP, 클라우드, 암호화, 계정, stdin 등 12계열, `ml_train_cards.COMMAND_FORMS`). 개발자 메시지, 문서, 히스토리, CI 추적에 나온 것이고, 40%는 개발자 메시지에서 처음 나온다. 에이전트가 쓰는 tool_input은 가림 표시다. 카드마다 `ssh -p 2222`, `docker run -p 8080:80`, `mysql -uroot -p` 같은 닮은 명령을 함께 넣는다 | 300 |
 | 쿠키 (`Cookie`, `Set-Cookie`, 속성 포함) | 200 |
 | PEM 전체, 잘린 PEM, JSON 이스케이프 PEM | 각 150 |
 | 터미널 폭으로 끊긴 값 | 150 |

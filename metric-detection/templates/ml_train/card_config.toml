@@ -200,6 +200,7 @@ base64_blob = 400
 # Boundary and propagation rules (3.4절): share of positive sessions asked to exercise one, and which
 [boundary]
 share = 0.5
+command_prompt_share = 0.4   # command_option cards whose secret first shows up in a developer message
 
 [boundary.rules]
 quoted = 30
@@ -211,7 +212,7 @@ token_scheme = 10
 url_password = 40
 user_colon_password = 20
 connection_string = 20
-command_option = 40
+command_option = 90
 cookie = 20
 pem_full = 15
 pem_truncated = 15
