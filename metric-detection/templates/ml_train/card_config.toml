@@ -25,6 +25,9 @@ model_ood = "claude-sonnet-5-5"   # a different writer, to see whether the model
 [catalog]
 path = "catalog.jsonl"
 contrast_share = 1.0    # share of cards whose row contrast is added to the hard negatives
+# Share of a contrast kind that stays a contrast; the rest of its cards draw from [negatives.kinds] instead.
+# Most rows pair with `reference`, which alone made a third of all hard negatives.
+contrast_keep = { reference = 0.5 }
 
 # Session context x primary secret type, in sessions (3.2절). "none" is a session without secrets.
 [contexts.config]
@@ -38,13 +41,14 @@ weights = { PASSWORD = 340, SECRET = 300, TOKEN = 160, ACCESS_KEY = 90, PRIVATE_
 label = "명령 출력"
 formats = ["env / printenv", "ps aux", "docker inspect", "kubectl get secret -o yaml", "kubectl describe",
            "git config --list", "aws configure list / aws sts", "gcloud config list", "heroku config", "systemctl status",
-           "mysql/psql client session", "redis-cli", "ssh -v"]
+           "mysql/psql client session", "redis-cli", "ssh -v", "shell history (history, ~/.bash_history)"]
 weights = { PASSWORD = 260, SECRET = 170, TOKEN = 170, ACCESS_KEY = 80, PRIVATE_KEY = 40, none = 280 }
 
 [contexts.log]
 label = "로그"
 formats = ["application log (plain)", "JSON log lines", "nginx/apache access log", "CI job log (GitHub Actions)",
-           "CI job log (GitLab CI)", "journald", "docker compose logs", "Kubernetes pod logs"]
+           "CI job log (GitLab CI)", "CI job log with a shell trace (set -x)", "journald", "docker compose logs",
+           "Kubernetes pod logs"]
 weights = { PASSWORD = 230, SECRET = 120, TOKEN = 170, ACCESS_KEY = 30, PRIVATE_KEY = 0, none = 250 }
 
 [contexts.stacktrace]
@@ -133,6 +137,13 @@ aws_session_token = 4
 weights = { "0" = 45, "1" = 35, "2" = 20 }
 types = { PASSWORD = 35, SECRET = 25, TOKEN = 25, ACCESS_KEY = 10, PRIVATE_KEY = 5 }
 
+# A share of these contexts holds many secrets in one file or output (a long .env, a config dump) instead
+[extra_secrets.dense]
+contexts = ["config", "command_output", "diff"]
+share = 0.15
+extra = "3-6"
+min_output_chars = 800
+
 # Where each secret first appears (3.3절). Never tool_input: the agent only writes what PromptGuard showed it,
 # so a secret it reuses in a command is a mask ({{mask:NAME}}), drawn below.
 [channel]
@@ -159,14 +170,15 @@ weights = { shell = 60, json_args = 30, edit = 10 }
 [session]
 items = { "3-5" = 30, "6-10" = 40, "11-18" = 22, "19-30" = 8 }
 turns = { "1" = 35, "2-3" = 40, "4-8" = 25 }
-# Length of the longest tool_output in characters (3.1절: median 500-800, 10% over 3,000)
-longest_output = { "200-500" = 25, "500-1200" = 45, "1200-3000" = 20, "3000-6000" = 10 }
+# Length of the longest tool_output in characters (3.3절). In real traffic about 10% of tool outputs pass 6,000
+longest_output = { "200-500" = 22, "500-1200" = 40, "1200-3000" = 20, "3000-6000" = 10, "6000-15000" = 8 }
 
 # Hard negatives (3.4절): share of sessions with at least one, and their kinds (value_gen.NEGATIVE_KINDS)
 [negatives]
 share_positive = 0.45
 share_none = 0.65
 count = { "1" = 55, "2" = 30, "3" = 15 }
+anywhere_only = ["integrity_hash", "base64_blob"]   # no credential position fits these
 
 [negatives.kinds]
 identifier = 1000
@@ -182,6 +194,8 @@ non_credential = 300
 empty = 300
 public_key = 200
 pem_header = 100
+integrity_hash = 300
+base64_blob = 400
 
 # Boundary and propagation rules (3.4절): share of positive sessions asked to exercise one, and which
 [boundary]
@@ -197,6 +211,7 @@ token_scheme = 10
 url_password = 40
 user_colon_password = 20
 connection_string = 20
+command_option = 40
 cookie = 20
 pem_full = 15
 pem_truncated = 15

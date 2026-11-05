@@ -51,6 +51,11 @@ BOUNDARY = {
                                               "`username:password` note)."),
     "connection_string": ("PASSWORD", None, "Put {p} in a connection string such as `Server=...;User Id=...;"
                                             "Password={p};` or a JDBC/ODBC string."),
+    "command_option": ("PASSWORD", None, "Show a command line that holds {p} as plain text where it first appears: a "
+                                         "message the developer types, a README or runbook line, shell history, a CI "
+                                         "trace. Use a form that fits: `mysql -uroot -p{p}`, `mysqldump -uroot -p{p} "
+                                         "app`, `sshpass -p {p} ssh deploy@host`, `docker login -u ci -p {p}`, "
+                                         "`psql --password={p}`, `MYSQL_PWD={p} mysql`."),
     "cookie": ("TOKEN", None, "Send {p} as a session cookie: `Cookie: session={p}` or `Set-Cookie: sid={p}; Path=/; "
                              "HttpOnly`."),
     "pem_full": ("PRIVATE_KEY", None, "Print {p} whole, on its own lines, as `cat` shows a key file."),
@@ -209,12 +214,21 @@ def contrast(row: dict) -> dict:
     return {"placeholder": placeholder, "kind": c["kind"], "position": c["position"], "contrast": True}
 
 
+def plain_negative(d: value_gen.Draw, cfg: dict) -> dict:
+    """A hard negative drawn from [negatives.kinds]. Some kinds have no credential position to sit in."""
+    kind = d.weighted(pairs(cfg["negatives"]["kinds"]))
+    position = d.weighted([("credential", 1), ("anywhere", 1)])
+    return {"placeholder": f"{{{{neg:{kind}}}}}", "kind": kind,
+            "position": "anywhere" if kind in cfg["negatives"]["anywhere_only"] else position}
+
+
 def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, primary: str, ood: dict | None,
          row: dict | None = None) -> dict:
     ctx = cfg["contexts"].get(context)
     fmt = d.choice(ctx["formats"]) if ctx else cfg["ood"]["contexts"][context]
     secrets: list[dict] = []
     fill: dict[str, str] = {}
+    dense = False
     if primary != "none":
         if ood and ood.get("kind"):
             kinds = {ood["kind"]: 1}
@@ -226,20 +240,28 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
         if row and row["transform"] and kinds and row["kind"] in kinds:
             secrets[0], fill = with_transform(secrets[0], row["transform"], d)
         extra_types = pairs(cfg["extra_secrets"]["types"])
-        for _ in range(int(d.weighted(pairs(cfg["extra_secrets"]["weights"])))):
+        extra = int(d.weighted(pairs(cfg["extra_secrets"]["weights"])))
+        many = cfg["extra_secrets"]["dense"]
+        dense = context in many["contexts"] and d.int(1000) < many["share"] * 1000
+        if dense:
+            extra = span(d, many["extra"])
+        for _ in range(extra):
             secrets.append(secret(d, cfg, d.weighted(extra_types), len(secrets) + 1))
     boundary = None
     if secrets and d.int(1000) < cfg["boundary"]["share"] * 1000:
         boundary = boundary_rule(d, cfg, secrets)
+    if dense:  # all in one file or output, so they all start in tool_output and only the first may come back
+        secrets = [{**s, "channel": "tool_output", "repeat": s["repeat"] if i == 0 else "once"}
+                   for i, s in enumerate(secrets)]
     share = cfg["negatives"]["share_none" if not secrets else "share_positive"]
     negatives = []
     if d.int(1000) < share * 1000:
         for _ in range(int(d.weighted(pairs(cfg["negatives"]["count"])))):
-            kind = d.weighted(pairs(cfg["negatives"]["kinds"]))
-            negatives.append({"placeholder": f"{{{{neg:{kind}}}}}", "kind": kind,
-                              "position": d.weighted([("credential", 1), ("anywhere", 1)])})
+            negatives.append(plain_negative(d, cfg))
     if row and row["contrast"] and d.int(1000) < cfg["catalog"]["contrast_share"] * 1000:
-        negatives.append(contrast(row))
+        # a kind most rows pair with would crowd out the others: past its share the card draws another negative
+        keep = cfg["catalog"]["contrast_keep"].get(row["contrast"]["kind"], 1.0)
+        negatives.append(contrast(row) if d.int(1000) < keep * 1000 else plain_negative(d, cfg))
     items = span(d, d.weighted(pairs(cfg["session"]["items"])))
     turns = min(span(d, d.weighted(pairs(cfg["session"]["turns"]))), max(1, items // 2))
     tool_output = ood["tool_output_format"] if ood and ood.get("tool_output_format") else \
@@ -265,8 +287,9 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
             "boundary": boundary, "language": d.weighted(pairs(cfg["language"]["weights"])),
             "tool_output_format": tool_output, "tool_input_format": d.weighted(pairs(cfg["tool_input_format"]["weights"])),
             "items": items, "turns": turns,
-            "longest_output_chars": span(d, d.weighted(pairs(cfg["session"]["longest_output"]))),
-            "ood": ood}
+            "longest_output_chars": max(span(d, d.weighted(pairs(cfg["session"]["longest_output"]))),
+                                        cfg["extra_secrets"]["dense"]["min_output_chars"] if dense else 0),
+            "dense": dense, "ood": ood}
 
 
 def assign_rows(slots: list, rows: list[dict], base: str) -> list[dict]:
@@ -352,6 +375,7 @@ def summary(cards: list[dict], catalog: list[dict], by_source: bool = False) -> 
                                                 for c in in_dist).items())),
            "secrets": len(secrets), "secrets_by_channel": dict(sorted(Counter(s["channel"] for s in secrets).items())),
            "secrets_masked_in_tool_input": sum(bool(s["mask"]) for s in secrets),
+           "dense_cards": sum(c["dense"] for c in cards),
            "with_negatives": sum(bool(c["negatives"]) for c in cards),
            "negatives": sum(len(c["negatives"]) for c in cards),
            "contrasts": sum(n.get("contrast", False) for c in cards for n in c["negatives"]),
