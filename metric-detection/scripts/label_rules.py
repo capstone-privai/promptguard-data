@@ -54,7 +54,7 @@ SLOT = [
     ("cookie", re.compile(r"(?i)\b(?:set-)?cookie\W{1,4}(?:[^\s=;]+=[^;\n]*;\s*)*[^\s=;]+=$")),
     ("requirepass", re.compile(rf"--requirepass\s+{Qo}$")),
     ("option", re.compile(rf"(?i)--?(?:password|passwd|pass)(?:\s+|=){Qo}$")),
-    ("cli_p", re.compile(rf"(?:docker\s+login|test_credentials|htpasswd|smbclient|ftp|psql"
+    ("cli_p", re.compile(rf"(?:docker\s+login|test_credentials|htpasswd|smbclient|ftp"
                          rf"|mongosh|mongo|mongodump|mongorestore|mongoexport|mongoimport)\b[^|;\n]*?\s-p\s+{Qo}$")),
     ("redis_cli_a", re.compile(rf"\bredis-cli\b[^|;\n]*?\s-a\s+{Qo}$")),
     # htpasswd -b FILE USER PW, htpasswd -nb USER PW: the password is the last argument, not the user before it

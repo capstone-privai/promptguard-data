@@ -36,15 +36,15 @@ CredData의 행 범위는 값이 아닐 때가 있다(문장 전체, `key: value
 
 | 판정 | 행 | 기준 |
 |---|---|---|
-| 정답: 개인키 | 1,481 | 본문이 있는 개인키 블록, 또는 PEM 포장이 없는 키 재료(base64 PEM, PASERK, NKEY seed, 개인 성분이 있는 JWK) |
-| 정답: 자격증명 자리 | 10,289 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). 키 뒤의 따옴표 없는 값은 리터럴로 읽힐 때만(`label_rules.is_literal`) 정답이다 |
+| 정답: 개인키 | 1,480 | 본문이 있는 개인키 블록, 또는 PEM 포장이 없는 키 재료(base64 PEM, PASERK, NKEY seed, 개인 성분이 있는 JWK) |
+| 정답: 자격증명 자리 | 10,242 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). 키 뒤의 따옴표 없는 값은 리터럴로 읽힐 때만(`label_rules.is_literal`) 정답이다 |
 | 정답: 키 재료 | 4,005 | 키 이름 뒤의 hex·base64 값(`Key = 9f2c…`, `SharedSecret=…`), 헤더 이름 없는 `"Bearer …"` |
 | 정답: 형식 | 344 | 서비스 접두어 토큰, JWT처럼 형식만으로 자격증명인 값 |
-| 정답: 행 없는 자리 | 227 | CredData 행이 없는 줄의 리터럴 |
-| 음성: 제외 규칙 | 33,658 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`), 코드(`code`), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자, 문서 예시, 변수 참조, 해시 |
-| 음성: 자격증명 자리 아님 | 18,092 | 위 어디에도 들지 않는 값(`nonce`, `salt`, `x-github-request-id`, `appid`) |
+| 정답: 행 없는 자리 | 240 | CredData 행이 없는 줄의 리터럴 |
+| 음성: 제외 규칙 | 33,908 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`), 코드(`code`), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자, 문서 예시, 변수 참조, 해시 |
+| 음성: 자격증명 자리 아님 | 17,890 | 위 어디에도 들지 않는 값(`nonce`, `salt`, `x-github-request-id`, `appid`) |
 
-정답 값이 세션의 다른 곳에 또 나오면 퍼뜨림 기준(`label_rules.judge_occurrence`)을 따른다. 그렇게 정답이 된 등장이 886곳, 정답이 아닌 등장이 4,252곳이다(labels의 `creddata_id`가 비어 있는 행).
+정답 값이 세션의 다른 곳에 또 나오면 퍼뜨림 기준(`label_rules.judge_occurrence`)을 따른다. 그렇게 정답이 된 등장이 897곳, 정답이 아닌 등장이 4,235곳이다(labels의 `creddata_id`가 비어 있는 행).
 
 2026-11-06에 CredData의 T 판정으로 정답을 정하던 예외를 없앴다. 이 예외로 정답이 된 값이 6,000개를 넘었고, `nonce`, `salt`, 요청 id처럼 자격증명이 아닌 값이 섞여 있었다. 판정이 텍스트 규칙만 따르면서 T였던 값도 자리나 형식을 규칙이 읽지 못하면 음성이 된다. `ROTP::TOTP.new('…')`처럼 사람은 알아보지만 규칙에 없는 자리가 그런 경우다.
 

@@ -39,6 +39,11 @@ class CommandLinePositions(unittest.TestCase):
         self.assert_slot("mongodump -u admin -p 1234 --db x", "1234")
         self.assert_not_slot("mongosh -u admin -p 1234", "admin")
 
+    def test_psql_p_is_a_port(self):
+        self.assert_not_slot("psql -h db -p 5432 -U app", "5432")
+        self.assert_not_slot("psql -p 5432", "5432")
+        self.assert_slot("docker login -u me -p 1234", "1234")
+
     def test_htpasswd(self):
         self.assert_slot("htpasswd -b .htpasswd admin 1234", "1234")
         self.assert_slot("htpasswd -bc /etc/nginx/.htpasswd admin 1234", "1234")
