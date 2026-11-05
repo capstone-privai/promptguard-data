@@ -32,19 +32,21 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 
 [LABELING.md](LABELING.md)의 기준으로 다시 판정한다(`convert_creddata.py`의 `judge()`, `label_rules.py`). CredData의 행은 후보로만 쓰고 T/F/X 판정은 남기지 않는다. CredData는 "저장소에 있는 이 문자열이 실제로 살아 있는 자격증명인가"를 판정한 데이터라, 테스트 값과 약한 비밀번호를 X나 F로 둔다. 우리는 "에이전트 트래픽에서 가려야 하나"를 보므로 자격증명 자리에 있으면 이런 값도 정답이다.
 
+CredData의 행 범위는 값이 아닐 때가 있다(문장 전체, `key: value`, `user:pw`). 판정 전에 값만 남긴다(`locate_value()`). 범위가 없는 줄에 있는 값도 읽는다. 창 안의 줄에서 자격증명 자리에 든 리터럴(`label_rules.slot_literals`)은 CredData 행이 없어도 정답이다.
+
 | 판정 | 행 | 기준 |
 |---|---|---|
-| 정답: 개인키 | 1,229 | BEGIN 줄 뒤 본문이 16자 이상인 개인키 블록. 형식만으로 정답 |
-| 정답: 자격증명 자리 | 8,865 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). CredData F 1,102행, X 2,276행이 여기서 정답이 됐다 |
-| 정답: 형식 | 6,936 | 자격증명 자리 규칙에는 안 걸리지만 CredData가 T로 둔 값(토큰, 키 형식) |
-| 음성: 제외 규칙 | 28,633 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`), 코드(`code`, 버전 번호와 enum 상수 포함), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자(비밀 자리가 아닌 UUID, `ChangeToken`, `PublicKeyToken`), 문서 예시, 변수 참조 |
-| 음성: 자격증명 자리 아님 | 22,226 | F나 X로 둔 값이 자격증명 자리 밖에 있는 경우 |
+| 정답: 개인키 | 1,481 | 본문이 있는 개인키 블록, 또는 PEM 포장이 없는 키 재료(base64 PEM, PASERK, NKEY seed, 개인 성분이 있는 JWK) |
+| 정답: 자격증명 자리 | 10,289 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). 키 뒤의 따옴표 없는 값은 리터럴로 읽힐 때만(`label_rules.is_literal`) 정답이다 |
+| 정답: 키 재료 | 4,005 | 키 이름 뒤의 hex·base64 값(`Key = 9f2c…`, `SharedSecret=…`), 헤더 이름 없는 `"Bearer …"` |
+| 정답: 형식 | 344 | 서비스 접두어 토큰, JWT처럼 형식만으로 자격증명인 값 |
+| 정답: 행 없는 자리 | 227 | CredData 행이 없는 줄의 리터럴 |
+| 음성: 제외 규칙 | 33,658 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`), 코드(`code`), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자, 문서 예시, 변수 참조, 해시 |
+| 음성: 자격증명 자리 아님 | 18,092 | 위 어디에도 들지 않는 값(`nonce`, `salt`, `x-github-request-id`, `appid`) |
 
-정답 값이 세션의 다른 곳에 또 나오면 퍼뜨림 기준(`label_rules.judge_occurrence`)을 따른다. 그렇게 정답이 된 등장이 676곳, 정답이 아닌 등장이 2,268곳이다(labels의 `creddata_id`가 비어 있는 행).
+정답 값이 세션의 다른 곳에 또 나오면 퍼뜨림 기준(`label_rules.judge_occurrence`)을 따른다. 그렇게 정답이 된 등장이 886곳, 정답이 아닌 등장이 4,252곳이다(labels의 `creddata_id`가 비어 있는 행).
 
-CredData가 T로 둔 행 중 일부가 음성이 됐다. 대부분(2,299행)은 `"id": "…"`, `collectionId`, `X-Correlation-Id` 자리의 UUID와 URL 속 버킷 호스트 이름이다. LABELING.md는 이들을 `identifier`로 정한다.
-
-규칙은 F/X에서 정답으로 바뀌는 행 중 층화 표본 40개(X 20, F 20)를 사람이 검수해 다듬었다. X는 20개 모두 맞았고, F는 20개 중 3개가 틀렸다. 틀린 형태(enum 숫자 상수, `php artisan credentials:edit`, CredData가 잘못 잡은 URL 비밀번호 범위)는 규칙에 반영했다.
+2026-11-06에 CredData의 T 판정으로 정답을 정하던 예외를 없앴다. 이 예외로 정답이 된 값이 6,000개를 넘었고, `nonce`, `salt`, 요청 id처럼 자격증명이 아닌 값이 섞여 있었다. 판정이 텍스트 규칙만 따르면서 T였던 값도 자리나 형식을 규칙이 읽지 못하면 음성이 된다. `ROTP::TOTP.new('…')`처럼 사람은 알아보지만 규칙에 없는 자리가 그런 경우다.
 
 ## 결과 (`--context-lines 10`)
 

@@ -39,8 +39,8 @@ import tempfile
 
 from dataset_build import CHANNELS, REPO_ROOT, TYPES, build, from_template, write_jsonl
 from dataset_policy import ALLOWED_USE, allowed_use
-from label_rules import (classify, exclusion_kind, expected_type, is_common, judge_occurrence, normalize_span,
-                         occurrences, path_tokens)
+from label_rules import (classify, exclusion_kind, expected_type, is_common, is_key_material, judge_occurrence,
+                         normalize_span, occurrences, path_tokens)
 
 SESSION_KEYS = {"session_id", "items", "meta"}
 ITEM_KEYS = {"item_id", "turn_id", "channel", "text"}
@@ -174,7 +174,7 @@ def check_labels(spans: list[tuple], texts: dict[tuple[str, int], str], errors: 
             errors.append(f"gold span {value[:20]!r}... in {where} is not normalized (expected {text[a:b][:20]!r}...)")
         if (want := expected_type(value)) and want != kind:
             errors.append(f"gold {value[:20]!r}... in {where} is {kind}, its format says {want}")
-        if kind != "PRIVATE_KEY" and is_common(value) and classify(text, start, end)[0] != "slot":
+        if kind != "PRIVATE_KEY" and is_common(value) and classify(text, start, end)[0] != "slot" and not is_key_material(text, start, end):
             errors.append(f"gold {value[:20]!r}... in {where} is a common value outside a credential position "
                           f"(LABELING.md 퍼뜨림 기준)")
 

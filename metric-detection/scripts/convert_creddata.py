@@ -13,12 +13,16 @@ Writes, under --out (default metric-detection/):
 
 Gold, by the rules of metric-detection/LABELING.md (label_rules.py). CredData's rows are the candidates; its
 T/F/X verdict answers a different question (is this a real, live credential in a repository) and is not kept:
-  - A private key block with at least PEM_MIN_BODY characters of body is gold by its format.
+  - A private key is gold by its form: a PEM block with a base64 body, or key material (label_rules.PRIVATE_MATERIAL,
+    a JWK with a private member).
   - A value that label_rules.exclusion_kind names (redaction, template, doc_example, reference, code, descriptor,
     identifier, e.g. a UUID outside a secret's place) is not gold.
-  - Otherwise a T row is gold, and an F or X row is gold only in a credential position (label_rules.classify:
-    "password": "test", aws_secret_access_key='dummy'); weak and test values count, as everywhere else.
-  - A T row in an identifier position (a bucket host name in a URL) is not gold.
+  - Otherwise a value is gold in a credential position (label_rules.classify: "password": "test",
+    aws_secret_access_key='dummy'; weak and test values count, as everywhere else), by a credential format
+    (label_rules.has_credential_format), or as key material under a key's name (label_rules.is_key_material).
+  - CredData's row range is cut down to the value (locate_value): a whole statement, a key:value pair, a user:pw pair.
+  - Lines around a row are read too: a literal in a plain credential position (label_rules.slot_literals) is gold
+    although CredData has no row for it.
   - Other occurrences of a gold value in the session follow the propagation rule (label_rules.judge_occurrence).
   - Spans are normalized (label_rules.normalize_span) and a value whose format decides its type gets that type.
 
@@ -45,16 +49,15 @@ import subprocess
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
-from label_rules import classify, exclusion_kind, expected_type, is_common, judge_occurrence, normalize_span, occurrences
+from label_rules import (JWK_PRIVATE, KEY_RULES, PEM_BEGIN, PEM_END, PRIVATE_MATERIAL, classify, exclusion_kind, expected_type,
+                         extend_pem, has_credential_format, is_common, is_key_material, is_literal, judge_occurrence, normalize_span,
+                         occurrences, pem_has_body, position_type, slot_literals)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "CredData"
 
 PRIVATE_KEY_CATEGORIES = {"PEM Private Key", "BASE64 Private Key", "BASE64 encoded PEM Private Key",
                           "JWK", "PASERK Keys", "NKEY Seed"}
-PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
-PEM_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY-----")
-PEM_MIN_BODY = 16  # base64 characters after the BEGIN line, header lines (Proc-Type: ...) aside; as in privesc
 ACCESS_KEY_CATEGORIES = {"AWS Client ID", "Alibaba Access Key ID", "Tencent WeChat API App ID",
                          "AWS S3 Bucket", "Firebase Domain"}
 
@@ -82,10 +85,6 @@ class Row:
     last: int
     start_col: int | None
     end_col: int | None
-
-    @property
-    def truth(self) -> str:
-        return self.raw["GroundTruth"]
 
 
 def parse_row(r: dict) -> Row:
@@ -139,21 +138,62 @@ def tidy(text: str, start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
-def judge(truth: str, kind_type: str, text: str, start: int, end: int) -> tuple[bool, str, str | None]:
-    """(gold, kind, rule) of one CredData row by LABELING.md."""
-    if kind_type == "PRIVATE_KEY" and (m := PEM_BEGIN.search(text[start:end])):
-        body = "".join(line for line in text[start + m.end():end].split("\n") if ":" not in line)
-        if len(re.findall(r"[A-Za-z0-9+/=]", body)) >= PEM_MIN_BODY:
+# Anchored by Pattern.match at the position it is given.
+STATEMENT = re.compile(r"""[\w.$>\[\]'"-]{0,60}?["'\]]?\s*(?:===?|!==?|=>|:=|=|:)\s*(?=[^\s=])""")
+VALUE_PREFIX = re.compile(r"(?:pass|hexpass|hexkey|hexsecret|key|secret):(?=\S)")
+USER_PW = re.compile(r"^[\w.-]+:[^\s:/@]+$")
+USER_PW_PLACE = re.compile(r"(?i)(?:userpwd\s*,\s*|b64encode\(\s*b?|basic_?auth\W{1,4})[\"']$")
+
+
+def locate_value(text: str, start: int, end: int) -> tuple[int, int]:
+    """CredData's row range cut down to the value: past a key (password = 'x', = "x", pass:x), inside the quotes the
+    range opens or crosses, and the pw of a user:pw pair (LABELING.md 경계)."""
+    if text[start:end].startswith("-----") or re.match(r"[a-z][\w+.-]*://", text[start:end]):
+        return start, end
+    if not VALUE_PREFIX.match(text, start, end) and (m := STATEMENT.match(text, start, end)) and m.end() < end:
+        start = m.end()
+    if (m := VALUE_PREFIX.match(text, start, end)):
+        return m.end(), end
+    if start > 0 and text[start - 1] not in "'\"`" and end < len(text) and re.match(r"\w", text[end]):
+        end = re.compile(r"[^\w.]|$").search(text, end).start()  # the range stops inside a word: PasswordField(
+    opening = text[start] if start < end else ""
+    if opening in "'\"`":  # the range opens a literal: read to where it closes, on this line
+        line_end = text.find("\n", start)
+        if (m := re.compile(rf"(?<!\\){opening}").search(text, start + 1, line_end if line_end >= 0 else len(text))):
+            return start + 1, m.start()
+    if start > 0 and (q := text[start - 1]) in "'\"`" and (m := re.compile(rf"(?<!\\){q}").search(text, start, end)):
+        end = m.start()  # the literal closes inside the range
+    if USER_PW.fullmatch(text[start:end]) and USER_PW_PLACE.search(text[max(0, start - 40):start]):
+        start = text.index(":", start, end) + 1
+    return start, end
+
+
+def judge(kind_type: str, text: str, start: int, end: int) -> tuple[bool, str, str | None]:
+    """(gold, kind, rule) of one CredData row by LABELING.md, from the text alone."""
+    value = text[start:end]
+    if kind_type == "PRIVATE_KEY":
+        if PEM_BEGIN.search(value):
+            return (True, "private_key", None) if pem_has_body(value) else (False, "descriptor", None)
+        if PRIVATE_MATERIAL.match(value) or JWK_PRIVATE.search(value):
             return True, "private_key", None
     excluded = exclusion_kind(text, start, end)
     if excluded:
         return False, excluded, None
     verdict, rule = classify(text, start, end)
-    if verdict == "slot":
+    # {"token": "Auto"} is a tokenizer's output, auth="NTLM" names a scheme: such a bare key needs more than a common word
+    bare_key = re.search(r"""(?i)(?<![\w-])(?:token|auth|defaultToken)["'`]?\s*[:=]\s*["'`]?$""", text[max(0, start - 20):start])
+    if verdict == "slot" and (rule not in KEY_RULES or is_literal(text, start, end)) and not (bare_key and is_common(value)):
         return True, "credential_slot", rule
-    if truth == "T" and verdict != "ident":
+    if verdict != "ident" and has_credential_format(value):
         return True, "credential_format", rule
+    if verdict != "ident" and is_key_material(text, start, end):
+        return True, "key_material", rule
     return False, "identifier" if verdict == "ident" else "not_credential_position", rule
+
+
+def slot_literal_type(text: str, start: int) -> str:
+    """The type of a literal with no CredData row, from its key: a password key is decided by position_type."""
+    return "TOKEN" if re.search(r"(?i)token\W{0,6}$", text[max(0, start - 40):start]) else "SECRET"
 
 
 def propagate(items: list[dict], item_spans: list[list[dict]], session_id: str, labels: list[dict], stats: Counter):
@@ -173,12 +213,13 @@ def propagate(items: list[dict], item_spans: list[list[dict]], session_id: str, 
                     is_gold, kind, rule = True, "private_key", None
                 else:
                     is_gold, kind, rule = judge_occurrence(text, m.start(), m.end(), common)
+                kind_type = expected_type(value) or position_type(text, m.start()) or source["type"]
                 labels.append({"session_id": session_id, "item_id": item["item_id"], "start": m.start(), "end": m.end(),
                                "gold": is_gold, "kind": "repeated_value" if is_gold else kind, "rule": rule,
-                               "category": source["category"], "type": source["type"], "creddata_id": None})
+                               "category": source["category"], "type": kind_type, "creddata_id": None})
                 stats[f"{'gold' if is_gold else 'excluded'}_repeated_{'value' if is_gold else kind}"] += 1
                 if is_gold:
-                    spans.append({"start": m.start(), "end": m.end(), "type": source["type"], "category": source["category"]})
+                    spans.append({"start": m.start(), "end": m.end(), "type": kind_type, "category": source["category"]})
 
 
 def resolve_overlaps(spans: list[dict], stats: Counter) -> list[dict]:
@@ -232,24 +273,38 @@ def convert(creddata: Path, context: int):
             for n, line in zip(range(a, b + 1), text_lines):
                 line_offset[n] = pos
                 pos += len(line) + 1
-            spans = []
+            spans, row_ranges = [], []
             for row in (r for r in rows if a <= r.first and r.last <= b):
-                start, end = normalize_span(text, *tidy(text, *trim(text, *locate(row, lines, line_offset))))
+                start, end = trim(text, *tidy(text, *trim(text, *locate(row, lines, line_offset))))
+                kind = gold_type(row.raw["Category"], row.raw["CryptographyKey"])
+                if kind == "PRIVATE_KEY":
+                    start, end = extend_pem(text, start, end)
+                    if (m := PEM_BEGIN.search(text, start, end)):
+                        # BEGIN line through END line (or the last body line), as LABELING.md 경계 asks
+                        last = PEM_END.search(text, m.start(), end)
+                        start, end = m.start(), last.end() if last else end
+                else:
+                    start, end = locate_value(text, start, end)
+                start, end = normalize_span(text, start, end)
                 if start >= end:
                     stats["empty"] += 1
                     continue
-                kind = expected_type(text[start:end]) or gold_type(row.raw["Category"], row.raw["CryptographyKey"])
-                if kind == "PRIVATE_KEY" and (m := PEM_BEGIN.search(text, start, end)):
-                    # BEGIN line through END line (or the last body line), as LABELING.md 경계 asks
-                    last = PEM_END.search(text, m.start(), end)
-                    start, end = m.start(), last.end() if last else end
-                is_gold, verdict, rule = judge(row.truth, kind, text, start, end)
+                kind = expected_type(text[start:end]) or position_type(text, start) or kind
+                is_gold, verdict, rule = judge(kind, text, start, end)
+                row_ranges.append((start, end))
                 labels.append({"session_id": session_id, "item_id": item_id, "start": start, "end": end,
                                "gold": is_gold, "kind": verdict, "rule": rule, "category": row.raw["Category"],
                                "type": kind, "creddata_id": row.raw["Id"]})
                 stats[f"{'gold' if is_gold else 'excluded'}_{verdict}"] += 1
                 if is_gold:
                     spans.append({"start": start, "end": end, "type": kind, "category": row.raw["Category"]})
+            for start, end in slot_literals(text):  # a line CredData has no row for
+                if not any(s < end and start < e for s, e in row_ranges):
+                    kind = expected_type(text[start:end]) or position_type(text, start) or slot_literal_type(text, start)
+                    labels.append({"session_id": session_id, "item_id": item_id, "start": start, "end": end, "gold": True,
+                                   "kind": "unlabeled_slot", "rule": None, "category": "", "type": kind, "creddata_id": None})
+                    stats["gold_unlabeled_slot"] += 1
+                    spans.append({"start": start, "end": end, "type": kind, "category": ""})
             item_spans.append(spans)
             items.append({"item_id": item_id, "turn_id": "t0", "channel": "tool_output", "text": text})
             item_lines.append([a, b])

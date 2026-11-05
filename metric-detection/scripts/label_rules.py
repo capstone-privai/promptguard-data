@@ -38,13 +38,18 @@ ASSIGN = rf"(?:(?:!==?|===?)[ \t]*(?={Q})|=>|:=|[:=])"
 
 # Credential positions: the text right before the value. Checked before the identifier positions.
 SLOT = [
-    ("key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:password|passwd|passphrase|pass|pwd|pw|secret){Qo}\*{{0,2}}\s*{ASSIGN}\*{{0,2}}\s*{Qo}$")),
-    ("secret_key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:secret_?key|api_?key|access_?key(?:_?id)?|private_?key|client_?secret"
-                                    rf"|(?:auth|access|refresh|bearer|api|session)?_?token|auth|(?<!test_)credentials?){Qo}\s*{ASSIGN}\s*{Qo}$")),
-    ("camel_key_value", re.compile(rf"[a-z](?:Password|Passwd|Secret|SecretKey|Token|ApiKey|AccessKey){Qo}\s*{ASSIGN}\s*{Qo}$")),
+    ("key_value", re.compile(rf"(?i)(?:\b|_|-|\\n|pg|hex|app)(?:password|passwd|passphrase|pass|pwd|pw|secret)(?:_?\d|[_-]?(?:confirm|repeat)\w*)?{Qo}\]?\*{{0,2}}\s*{ASSIGN}\*{{0,2}}\s*(?:Some\()?{Qo}$")),
+    ("secret_key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:secret[_-]?key(?:[_-]base)?|api[_-]?key|access[_-]?key(?:_?id)?|private[_-]?key|client[_-]?secret|consumer[_-]?(?:key|secret)"
+                                    rf"|(?:auth|access|refresh|bearer|api|session|identity)?_?token|auth|(?<!test_)credentials?){Qo}\]?\s*{ASSIGN}\s*{Qo}$")),
+    ("camel_key_value", re.compile(rf"[A-Za-z0-9](?:Password|Passwd|Pass|Secret|SecretKey|Token|ApiKey|AccessKey){Qo}\s*{ASSIGN}\s*{Qo}$")),
     ("url_userinfo", re.compile(r"[a-z][\w+.-]*://[^\s/:@'\"]*:$")),  # scheme://user:⟦pw⟧@host
     ("env_default", re.compile(rf"(?i)(?:\benviron\.get|\bgetenv|\benv\.get)\(\s*{Q}[\w.-]*(?:password|passwd|secret|token|api_?key)[\w.-]*{Q}\s*,\s*{Q}$")),
-    ("auth_header", re.compile(rf"(?i)\bauthorization{Qo}\s*[:=,]\s*{Qo}(?:bearer|basic|digest|token)\s+$")),
+    ("setter", re.compile(rf"(?i)\bset\w*(?:password|passwd|secret|secretkey|token|apikey|accesskey)\(\s*{Q}$|ConvertTo-SecureString\s+(?:-String\s+)?{Q}$")),
+    ("curl_option", re.compile(rf"CURLOPT_(?:USERPWD|PASSWORD|KEYPASSWD|PROXYPASSWORD|PROXYUSERPWD|XOAUTH2_BEARER)\s*,\s*{Q}$")),
+    ("auth_header", re.compile(rf"(?i)\bauthorization{Qo}\s*[:=,]\s*(?:-\s+)?{Qo}(?:bearer|basic|digest|token|apikey)\s+$")),
+    ("sql_identified", re.compile(rf"(?i)\bIDENTIFIED\s+BY\s+(?:PASSWORD\s+)?\\{{0,3}}{Q}$")),
+    ("lisp_key", re.compile(rf"(?:^|\s):(?:password|passwd|secret|token)\s+{Q}$")),
+    ("long_option", re.compile(rf"(?i)--[\w-]*(?:password|passwd|api-?key|secret|token)(?:\s+|=){Qo}$")),
     ("cookie", re.compile(r"(?i)\b(?:set-)?cookie\W{1,4}(?:[^\s=;]+=[^;\n]*;\s*)*[^\s=;]+=$")),
     ("requirepass", re.compile(rf"--requirepass\s+{Qo}$")),
     ("option", re.compile(rf"(?i)--?(?:password|passwd|pass)(?:\s+|=){Qo}$")),
@@ -92,6 +97,9 @@ IDENT = [
                            rf"|su\s+-c\s+{Q}[^'\"]*{Q}\s+(?:-\s+)?|--chuid\s+(?:[\w.-]+:)?|getent\s+\w+\s+(?:[\w.-]+\s+)*"
                            rf"|chown\s+(?:-\w+\s+)*(?:[\w.-]+:)?){Qo}$"), None),
     ("user_at_host", None, re.compile(r"^@")),
+    ("kwarg_name", None, re.compile(r"^=(?!=)")),  # passwd="": the word before = names the argument
+    ("dict_key", None, re.compile(r"""^\\{0,3}["']\s*(?::|=>)""")),  # {"token": ...}: the value is the key here
+    ("subscript", re.compile(r"""\[\s*\\{0,3}["']$"""), re.compile(r"""^\\{0,3}["']\s*\]""")),  # data['password2']
     ("passwd_line", re.compile(rf"(?:{NL}|\"output\": \"|/etc/(?:passwd|group|shadow)-?:\d+:)$"), re.compile(r"^:")),
     ("passwd_gecos", re.compile(r"[\w.-]+:x:\d+:\d+:$"), None),
     ("stat_owner", re.compile(r"[UG]id: \(\s*\d+/\s*$"), None),
@@ -118,6 +126,9 @@ NEGATIVE_FORM = [
     ("prose_word", re.compile(r"[A-Za-z]{2,}[,.]?\s+\*{0,2}\"?$"), re.compile(r"^\"?\*{0,2}[\s,.]")),
 ]
 BEFORE, AFTER = 160, 60
+SLOT_BY_NAME = dict(SLOT)
+PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
+PEM_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
 # A value the text itself presents as an example (LABELING.md doc_example): "such as ...", "like ...", "e.g. ...",
 # an OpenAPI/YAML "example:" field.
 EXAMPLE_BEFORE = re.compile(r"(?i)(?:\bsuch as|\be\.g\.,?|\bfor (?:example|instance),?|\bexamples?:|\blike|\bsample:)"
@@ -129,7 +140,7 @@ EXCLUDED_VALUE = [
     # one-way hashes: crypt ($6$, $2a$, $y$, $argon2id$), an LDAP {SCHEME}, Django pbkdf2_sha256$...
     ("hash", re.compile(r"^(?:\{[A-Za-z0-9-]+\})?\$(?:1|2[abxy]?|5|6|y|gy|7|P|H|apr1|md5|sha\d*|scrypt|argon2(?:id|i|d)"
                         r"|krb5\w*|pbkdf2[\w-]*)\$"
-                        r"|^\{(?:S?SHA\d*|S?MD5|CRYPT|BCRYPT|PBKDF2[\w-]*)\}|^(?:pbkdf2|argon2|bcrypt|scrypt)[\w-]*\$")),
+                        r"|^\{(?:S?SHA\d*|S?MD5|CRYPT|BCRYPT|PBKDF2[\w-]*)\}|^(?:pbkdf2|argon2|bcrypt|scrypt|sha\d+|md5)[\w-]*\$")),
     ("redaction", re.compile(r"\*{3}|x{4}|X{4}|#{4}|redacted|_removed\b|\.\.\.|…|(?:^|[-_:])x{3}$", re.I)),
     ("template", re.compile(r"^<[^<>\n]+>$|^\[[A-Z][A-Z0-9_ -]*\]$"  # the whole value is a slot: <define>, [FUZZ]
                             r"|<[^<>\n]*(?:pass|token|key|secret|your|user|name|value|here|id)[^<>\n]*>|\{\{"
@@ -139,15 +150,15 @@ EXCLUDED_VALUE = [
     # the word "password" in another language: a translated screen string ('password' => 'lozinka'), not a value.
     # As a whole word: senha123 stays a value.
     ("descriptor", re.compile(r"(?i)(?<![^\W_])(?:wachtwoord|lozink[aeiu]|hesl[oa]|has[lł]o|senha|contrase[nñ]a|contrasenya|passwort"
-                              r"|[cg]yfrinair|kennwort|mot de passe|parola|passord|l[oö]senord|salasana|adgangskode|jelsz[oó]|geslo"
+                              r"|[cg]yfrinair|kennwort|mot de passe|parol[aă]|passord|l[oö]senord|salasana|adgangskode|jelsz[oó]|geslo"
                               r"|парол[ья])(?![^\W_])|密码|密碼|パスワード|비밀번호")),
     ("doc_example", re.compile(r"example(?!\.(?:com|org|net|edu|invalid|test|local)\b)", re.I)),  # AKIA...EXAMPLE, not example.com
     # ${TOKEN}, %PASS%, {token}, or the NAME of an environment variable (GITHUB_PASSWORD)
-    ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|^#\{|os\.environ|process\.env|getenv"
+    ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|^#\{|\$t\(|os\.environ|process\.env|getenv"
                              r"|^(?:[A-Z0-9]+_)*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|KEY|APIKEY|AUTH|USER)(?:_[A-Z0-9]+)*$")),
     ("code", re.compile(r"^[A-Za-z_$][\w.$]*[(\[]|[{}]$|^[A-Za-z_]{1,16}=$|\bself\.|\bthis\.|^[A-Za-z_]+(?:\.[A-Za-z_]+)+,?$"
                         r"|^(?:true|false|null|none|nil|undefined)$|^[).,;:\]}>]|\s\+$|^:\w+$|^&\w+$|\[$|^\W$|^\d+/\w+$"
-                        r"|\\u00[0-9a-fA-F]{2}|&(?:lt|gt|amp|quot);"  # punctuation, symbols, escaped markup
+                        r"|^\W{1,3}$|^&[\w.]+$|^\(\d+ bit\)$|\\u00[0-9a-fA-F]{2}|&(?:lt|gt|amp|quot);"  # punctuation, symbols, escaped markup
                         r"|^[\^~>=<]*v?\d+(?:\.\d+)+(?:[-+.]\w+)*$", re.I)),  # also version numbers
 ]
 # (kind, pattern on the text right before the value)
@@ -159,7 +170,11 @@ EXCLUDED_BEFORE = [
                                   r"|(?<!/)(?:\b|_)(?:pin|cvv|cvc|ssn|iban|card(?:[ _-]?(?:number|no))?|account[ _-]?(?:number|no))"
                                   r"\W{0,30}$")),
     ("descriptor", re.compile(r"(?:^|\n)[ \t]*(?:-\w,[ \t]*)?--?[\w-]+[ \t]{2,}$")),  # --password   help text column
+    # a screen string's key: TITLE_CHANGE_PASSWORD, LABEL_NEW_PASSWORD
+    ("descriptor", re.compile(r"(?:^|[^A-Za-z0-9_])(?:TITLE|LABEL|BTN|BUTTON|MANDATORY|FORGOT|INVALID|MSG|MESSAGE|ERROR|ERR|TEXT|TXT|HINT|TOOLTIP"
+                              r"|DESC|DESCRIPTION|NOTIFICATION|PLACEHOLDER)_\w*\W{0,4}$")),
     ("code", re.compile(r"\b(?:artisan|rake|rails)\s+[\w-]*:$")),  # php artisan credentials:edit
+    ("reference", re.compile(r"\bfrom_secret:\s*$")),  # Drone CI: the name of a stored secret
 ]
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 SECRET_WORD = re.compile(r"(?i)secret|token|passw|pwd|api[ _-]?key|access[ _-]?key|private|auth|credential")
@@ -220,8 +235,8 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
     for kind, pattern in EXCLUDED_VALUE:
         if pattern.search(value):
             return kind
-    if is_phrase(value):
-        return "descriptor"
+    if is_phrase(value) or is_foreign_word(value) or re.fullmatch(r"[^\W\d_]+:", value):
+        return "descriptor"  # "Password:" is a screen label
     if text[end:end + 3] == "..." or text[end:end + 1] == "…":
         return "redaction"  # a value cut short: Bearer vp7jx... (normalize_span leaves the dots out of the span)
     before = text[max(0, start - BEFORE):start]
@@ -233,6 +248,8 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
     if UUID.fullmatch(value) and not SECRET_WORD.search(before[-60:]):
         return "identifier"  # "id": "…", RequestId: a UUID outside a secret's place
     quoted = before[-1:] in ("'", '"', "`")
+    if re.search(r"(?:Private|Public|Peer)Key\s*=\s*$|\bPrivPubKeyPair\s*=\s*$", before) and not KEY_MATERIAL.match(value):
+        return "identifier"  # PrivateKey=ALICE_secp112r2: the name of a key in a test file
     if not quoted and SECRET_NAME.fullmatch(value):
         return "reference"
     if (not quoted and re.fullmatch(r"[A-Za-z_]+", value) and UNQUOTED_CODE_AFTER.match(text[end:end + 5])
@@ -241,10 +258,119 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
     if not quoted and value.isdigit() and re.match(r"\s*,", text[end:end + 5]) and re.search(
             r"\b[A-Z]\w*_[A-Z]\w*\s*=\s*$", before):
         return "code"  # an enum member: IoErr_Auth = 7178,
+    if (not quoted and re.fullmatch(r"[A-Za-z_]\w*", value) and (m := re.search(r"(?<![\w.])([a-z_][\w.]*)\s*=\s*$", before))
+            and value.lower() == m.group(1).rsplit(".", 1)[-1].lower().lstrip("_")):
+        return "code"  # self.password = password: a variable
     key = re.search(r"([A-Za-z_][\w.-]*)\W{0,4}$", before)
     if (key and (value.isupper() or "-" in value) and re.search(r"[A-Za-z0-9][_-][A-Za-z0-9]", value)
             and re.sub(r"[-.]", "_", value.lower()) in key.group(1).lower()):
         return "code"  # REFRESH_TOKEN = "REFRESH_TOKEN": the value names its own key
+    return None
+
+
+# Formats that make a value a credential wherever it is (LABELING.md 형식만으로 자격증명인 값). TYPE_BY_FORMAT covers more.
+CREDENTIAL_FORMAT = re.compile(r"^(?:gh[pousr]_|github_pat_|glpat-|xox[abposr]-|xapp-|AIza|sk-|sk_(?:live|test)_|rk_live_|pk_(?:live|test)_"
+                               r"|hf_|npm_|PMAK-|phc_|SG\.[\w-]{16,}\.|dckr_pat_|shp[a-z]{2}_|dop_v1_|ya29\.|pypi-Ag|TlRMTVNT"
+                               r"|(?:AKIA|ASIA)[A-Z0-9]{16}$|SK[0-9a-f]{32}$|eyJ[\w-]+\.eyJ[\w-]+\.)")
+# A key's name right before the value, with the value in key-material form: Key = 9f2c..., hexkey:9f2c...
+KEY_NAME = re.compile(rf"(?i)(?:\b|_|-|(?-i:[a-z](?=K)))(?:hex|n|wrapped|signing|encryption|decryption|consumer|shared|master)?(?:key|secret)(?:[_-]?material(?!Id)\w*|[_-]?seed|[_-]?raw)?"
+                      rf"{Qo}\s*(?:\(|,|{ASSIGN})\s*(?:b|String\()?{Qo}$")
+KEY_MATERIAL = re.compile(r"^[A-Fa-f0-9]{16,}$|^(?=\S*\d)(?=\S*[a-z])(?=\S*[A-Z])[A-Za-z0-9+/]{20,}={0,2}$"
+                          r"|^(?=\S*\d)(?=\S*[a-z])(?=\S*[A-Z])(?!(?:[^_-]*[_-]){4})[A-Za-z0-9+/_-]{32,}={0,2}$")
+# An auth scheme without its header's name: var token = "Bearer x", "value": "Basic x"
+AUTH_SCHEME_BEFORE = re.compile(r"\b(?:Bearer|Basic|bearer|basic)[ \t]+$")
+OPAQUE = re.compile(r"^(?=\S*[a-z])(?=\S*[A-Z0-9])[A-Za-z0-9+/._~-]{8,}={0,2}$")
+# Private key material without a PEM wrapper: PEM in base64, a PKCS#8 body, OpenSSH, PASERK, an NKEY seed
+PRIVATE_MATERIAL = re.compile(r"^(?:LS0tLS1CRUd|MII[A-Za-z0-9+/]{16}|b3BlbnNzaC1rZXk|k[1-4]\.(?:local|secret)|S[A-Z][A-Z2-7]{50,}$)")
+JWK_PRIVATE = re.compile(r"""(?:^|[{,\s"'])[dkpq]["']?\s*:\s*["'][\w-]{16,}""")
+
+
+def has_credential_format(value: str) -> bool:
+    return bool(CREDENTIAL_FORMAT.match(value)) or expected_type(value) is not None
+
+
+def is_key_material(text: str, start: int, end: int) -> bool:
+    before = text[max(0, start - BEFORE):start]
+    if AUTH_SCHEME_BEFORE.search(before) and OPAQUE.match(text[start:end]):
+        return True
+    return bool(KEY_MATERIAL.match(text[start:end]) and KEY_NAME.search(before)
+                and not re.search(r"(?i)(?:public|peer)[_-]?\w*\W{0,6}$", before))
+
+
+def extend_pem(text: str, start: int, end: int) -> tuple[int, int]:
+    """A private key span from the BEGIN line through the END line (LABELING.md 경계), when the BEGIN line sits right
+    before the body: a source that marks only the base64 body."""
+    m = None
+    for m in PEM_BEGIN.finditer(text, max(0, start - 120), end):
+        pass
+    if m is None or re.search(r"[A-Za-z0-9+/=]{16}", text[m.end():start].replace("\\n", "").replace("\\r", "")):
+        return start, end
+    last = PEM_END.search(text, m.end(), end + 8000)
+    return m.start(), last.end() if last else end
+
+
+def pem_has_body(value: str) -> bool:
+    """A BEGIN line with real base64 after it. A line of 16+ base64 characters: not "...", "secrets" or a code expression."""
+    m = PEM_BEGIN.search(value)
+    return bool(m and re.search(r"[A-Za-z0-9+/=]{16,}", re.sub(r"\\+[nr]", "\n", value[m.end():])))
+
+
+# The SLOT rules that only say a key comes before the value. After such a key an unquoted word may be a variable.
+KEY_RULES = {"key_value", "secret_key_value", "camel_key_value"}
+
+
+def is_literal(text: str, start: int, end: int) -> bool:
+    """Whether a value after a key reads as a literal rather than code: token = Token::SAR, password: string;.
+    Quoted, or opaque in form, or a word in a config form (UPPER_CASE=word, spring.mail.password=word, key: word)."""
+    value = text[start:end]
+    if start and text[start - 1] in QUOTES:
+        return True
+    if TYPE_WORD.match(value) or re.search(r"::|->|\$|\(|\)", value):
+        return False
+    if value.isdigit() or (OPAQUE.match(value) and "_" not in value):
+        return True
+    if re.match(r"\s*[,;)}\]]|\(|[ \t]+\S", text[end:end + 3]):
+        return False  # a call, a list, or more words on the line: PasswordField(, ConvertTo-SecureString 'x'
+    before = text[text.rfind("\n", 0, start) + 1:start]
+    if re.search(r"(?:^|[\s?&;:])[\w.-]+=$", before) and "(" not in before:
+        return True  # no spaces around =: an env file, a command line, a query string, a connection string
+    # a config line: key: word, or key = word at the left margin (code is indented, or ends in ;)
+    return bool(re.fullmatch(r"\s*(?:[-+#!;/*]+\s*)?[\w.-]+\s*:\s+|[\w.-]+\s*=\s*", before))
+
+
+TYPE_WORD = re.compile(r"(?i)^(?:str|string|int|integer|bool|boolean|text|bytes|object|any|optional|required|null|none|true|false)$")
+SLOT_LITERAL = re.compile(rf"""(?ix)(?<![\w-])(?P<key>(?:[\w.-]*[_.-])?(?:password|passwd|passphrase|pwd|api[_-]?key|apikey|secret[_-]?key|client[_-]?secret
+                              |access[_-]?token|auth[_-]?token|refresh[_-]?token)\d?)["'`]?[ \t]*(?P<op>===?|!==?|=>|:=|[:=])[ \t]*
+                              (?:"(?P<d>[^"\n\\]+)"|'(?P<s>[^'\n\\]+)'|(?P<u>[^\s"'`,;()<>{{}}\[\]$%]+)(?=[ \t]*(?:\r?\n|\\n|$)))""", re.M)
+
+
+def slot_literals(text: str):
+    """(start, end) of the literal values in plain credential positions of the text, for lines a source did not label.
+    A quoted literal after a credential key anywhere; an unquoted one only in a config form (UPPER_CASE=, a.b.c=, key: ),
+    where a word is a value rather than a variable. classify and exclusion_kind still decide."""
+    for m in SLOT_LITERAL.finditer(text):
+        group = m.lastgroup
+        start, end = m.span(group)
+        if group == "u":
+            key = m.group("key")
+            if TYPE_WORD.match(m.group("u")) or not (key.isupper() or "." in key or m.group("op") == ":"):
+                continue
+            if not re.match(r"[ \t]*(?:[-+#]\s*)?(?:export\s+)?$", text[text.rfind("\n", 0, m.start()) + 1:m.start()]):
+                continue
+        start, end = normalize_span(text, start, end)
+        if start < end and not exclusion_kind(text, start, end) and classify(text, start, end)[0] == "slot":
+            yield start, end
+
+
+def position_type(text: str, start: int) -> str | None:
+    """The type the position decides (LABELING.md 유형), or None: a password key, an auth scheme, a cookie."""
+    before = text[max(0, start - 80):start]
+    if re.search(r"(?i)(?:bearer|basic|ntlm)\s+$", before) or SLOT_BY_NAME["cookie"].search(before):
+        return "TOKEN"
+    if SLOT_BY_NAME["url_userinfo"].search(before):
+        return None  # a password or a token: https://oauth2:<token>@
+    if re.search(rf"(?i)(?:password|passwd|passphrase|pwd)(?:_?\d|[_-]?confirm\w*)?{Qo}\*{{0,2}}\s*{ASSIGN}\*{{0,2}}\s*(?:Some\()?{Qo}$|CURLOPT_\w*(?:PASSWORD|PASSWD|USERPWD)\s*,\s*{Q}$", before):
+        return "PASSWORD"
     return None
 
 
@@ -256,6 +382,12 @@ def is_phrase(value: str) -> bool:
     words = re.findall(r"[^\W\d_]{3,}", value)
     wordish = sum(1 for w in words if not w.isascii() or w.lower() in common_words())
     return len(words) >= 2 and wordish * 2 >= len(words) + 1
+
+
+def is_foreign_word(value: str) -> bool:
+    """Letters mostly outside ASCII and no digit: a translated screen string (პაროლი), not a generated value."""
+    letters = [c for c in value if c.isalpha()]
+    return bool(letters) and not any(c.isdigit() for c in value) and sum(not c.isascii() for c in letters) * 2 >= len(letters)
 
 
 def is_example(text: str, start: int) -> bool:
@@ -320,6 +452,10 @@ def normalize_span(text: str, start: int, end: int) -> tuple[int, int]:
         end -= 1
     while end - start >= 2 and text[start] in QUOTES and text[end - 1] == text[start]:
         start, end = start + 1, end - 1
+        while start < end and text[start].isspace():
+            start += 1
+        while end > start and text[end - 1].isspace():
+            end -= 1
     m = AUTH_SCHEME.match(text, start, end)
     if m:
         start = m.end()
