@@ -34,7 +34,7 @@ The card's tool_output format applies to most tool results; plain output is fine
 Never write a credential yourself: no passwords, API keys, tokens, private keys, connection strings with passwords, or anything that looks like one. Every credential in the session is one of the card's placeholders, copied character for character, for example `{{password:s1}}`, `{{github_classic:s2}}`, `{{token:s1|base64}}`. A program replaces each placeholder with a generated value and records its position, so:
 
 - The same placeholder written twice is the same value. Repeat it wherever the real session would show that value again.
-- A placeholder is the whole value. Do not put letters, digits or `_` directly before or after it, and do not add a prefix or suffix to it (`{{token:s1}}` already includes a prefix such as `ghp_` when the format has one).
+- A placeholder is the whole value. Do not put letters, digits or `_` directly before or after it, and do not add a prefix or suffix to it (`{{token:s1}}` already includes a prefix such as `ghp_` when the format has one). The one exception is an option written against its value, such as `mysql -p{{password:s1}}`.
 - Put it where a reader can tell it is a credential: a key such as `password`, `secret`, `token`, `api_key`, `access_key`, `private_key`, `auth`, `credentials` followed by `=` or `:`; an option such as `-p`, `--password`, `--token`; an `Authorization` or `Cookie` header; the password part of a URL; `echo '...' | sudo -S` in a script or shell history; or a sentence that says it is the password, token or key ("the staging DB password is {{password:s1}}", "비밀번호는 {{password:s1}}이야").
 - Do not put it right after the words `for`, `user`, `as`, `by`, `id`, after `-u`, or right after a `/`: those positions read as a user name or a path.
 - A placeholder may end a sentence; write the punctuation after it as usual.
@@ -89,6 +89,8 @@ When a secret on the card says `later the agent reuses it in a tool_input as {{m
 | `public_key_raw` | a bare public key (WireGuard `PublicKey`, a JWK `x`) | peer configs, JWK sets |
 | `template_ko` | 한국어 안내문 such as `발급받은 키를 여기에 입력하세요` | Korean sample configs and docs |
 | `auth_setting` | an auth mode such as `externalbrowser`, `AutoGenerate`, `scram-sha-256` | settings next to where a credential would be |
+| `integrity_hash` | a package integrity value such as `sha512-…` | `"integrity":` in package-lock.json, yarn.lock, `<script integrity=…>` |
+| `base64_blob` | a long base64 payload or `data:` URI that holds no credential | an embedded image, a test fixture, a serialized message |
 
 A `prefix_*` negative names the secret kind whose prefix it keeps (`{{neg:prefix_redaction|of=github_classic}}`); copy it exactly like the others.
 

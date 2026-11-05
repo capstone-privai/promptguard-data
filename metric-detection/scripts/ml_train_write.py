@@ -50,6 +50,7 @@ SCHEMA = {
     "required": ["items"], "additionalProperties": False,
 }
 CARD_FIELDS = ("context", "format", "primary_type", "language", "tool_output_format", "tool_input_format")
+DENSE_TOGETHER = 4  # secrets of a dense card that must share one item
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -80,6 +81,9 @@ def card_message(card: dict) -> str:
         lines += [f"  - {s['placeholder']} ({s['type']}): first in {s['channel']}, repeat {s['repeat']}"
                   + (f"; later the agent reuses it in a tool_input as {s['mask']}" if s.get("mask") else "")
                   for s in card["secrets"]]
+        if card.get("dense"):
+            lines.append("- These secrets sit together in one file or one output (a long .env, a full config dump, a "
+                         "big diff), among ordinary settings.")
     else:
         lines.append("- Secrets: none. The session holds no credential at all; it still looks like work where one "
                      "could appear.")
@@ -90,6 +94,9 @@ def card_message(card: dict) -> str:
                   for n in card["negatives"]]
     if card["boundary"]:
         lines.append(f"- Boundary rule ({card['boundary']['rule']}): {card['boundary']['instruction']}")
+    if card.get("lookalike"):
+        lines.append(f"- Show this command somewhere in the session, character for character; it holds no credential: "
+                     f"`{card['lookalike']}`.")
     return "\n".join(lines) + "\n\nCard JSON:\n" + json.dumps(card, ensure_ascii=False)
 
 
@@ -201,6 +208,19 @@ def follows_card(card: dict, items: list[dict]) -> list[str]:
             problems.append(f"secret {ph} in one channel, card asks multi_channel")
         if s.get("mask") and not any(s["mask"] in i["text"] for i in items if i["channel"] == "tool_input"):
             problems.append(f"mask {s['mask']} not in a tool_input")
+    if card["boundary"] and card["boundary"]["rule"] == "command_option":
+        rule = card["boundary"]
+        placeholder = card["secrets"][rule["secret"] - 1]["placeholder"]
+        program = rule["command"].split(placeholder)[0].split()[0]  # mysql, MYSQL_PWD=, echo
+        lines = [line for i in items if i["channel"] != "tool_input" for line in i["text"].split("\n")]
+        if not any(placeholder in line and program in line for line in lines):
+            problems.append(f"command {program} with {placeholder} missing")
+    if card.get("lookalike") and not any(card["lookalike"] in i["text"].replace('\\"', '"') for i in items):
+        problems.append(f"look-alike {card['lookalike']!r} missing")
+    if card.get("dense"):
+        placed = [s["placeholder"] for s in card["secrets"] if s["kind"] != "literal"]
+        if max(sum(ph in i["text"] for ph in placed) for i in items) < min(len(placed), DENSE_TOGETHER):
+            problems.append(f"secrets not together in one item, card asks {DENSE_TOGETHER} of {len(placed)}")
     for placeholder, n in Counter(neg["placeholder"] for neg in card["negatives"]).items():
         if sum(i["text"].count(placeholder) for i in items) < n:
             what = "contrast" if any(neg.get("contrast") and neg["placeholder"] == placeholder

@@ -75,6 +75,57 @@ BOUNDARY = {
 }
 
 
+# Boundary rule command_option: a credential in a command line written out as plain text. family -> (kind, form).
+# A family takes its turn before a form does, so the common commands do not crowd out the rest.
+COMMAND_FORMS = {
+    "mysql": [("password", "mysql -uroot -p{p} -h db.internal"), ("password", "mysqldump -uroot -p{p} app"),
+              ("password", "mysqladmin -uroot -p{p} status"), ("password", "MYSQL_PWD={p} mysql -h db.internal")],
+    "postgres_client": [("password", "psql --password={p} -h db.internal"), ("password", "PGPASSWORD={p} psql -h db.internal"),
+                        ("password", "psql 'host=db.internal user=app password={p}'")],
+    "other_db": [("password", "redis-cli -a {p} ping"), ("password", "redis-cli --pass {p} ping"),
+                 ("password", "mongosh -u admin -p {p}"), ("password", "mongosh --password {p} app")],
+    "remote": [("password", "sshpass -p {p} ssh deploy@host.internal"), ("password", "smbclient //host.internal/s -U admin%{p}"),
+               ("password", "net use \\\\host.internal\\s /user:admin {p}")],
+    "env": [("api_key", "export API_KEY={p}"), ("password", "export DB_PASSWORD={p}"), ("token", "API_TOKEN={p} ./deploy.sh"),
+            ("token", "TOKEN={p} curl https://api.internal/v1/me"),
+            ("aws_secret_access_key", "AWS_SECRET_ACCESS_KEY={p} aws s3 ls")],
+    "container": [("password", "docker login -u ci -p {p} registry.internal"), ("password", "docker run -e POSTGRES_PASSWORD={p} postgres"),
+                  ("api_key", "docker run --env API_KEY={p} app"),
+                  ("password", "kubectl create secret generic db --from-literal=password={p}")],
+    "deploy": [("password", "helm install app ./chart --set db.password={p}"), ("password", "terraform apply -var 'db_password={p}'"),
+               ("password", "ansible-playbook site.yml -e 'ansible_password={p}'"), ("api_key", "heroku config:set API_KEY={p}"),
+               ("token", "gh secret set DEPLOY_TOKEN --body {p}"), ("password", "vault kv put secret/app password={p}"),
+               ("token", "vault login {p}")],
+    "http": [("api_key", "curl -H 'X-API-Key: {p}' https://api.internal/v1"), ("api_key", "curl 'https://api.internal/v1?api_key={p}'"),
+             ("password", "curl -d 'password={p}' https://app.internal/login"),
+             ("password", "curl -d '{{\"password\":\"{p}\"}}' https://app.internal/login"),
+             ("password", "wget --password={p} https://files.internal/a.tar")],
+    "cloud_package": [("aws_secret_access_key", "aws configure set aws_secret_access_key {p}"),
+                      ("password", "az login -u me@example.invalid -p {p}"),
+                      ("api_key", "az login --service-principal -u app -p {p} --tenant t"),
+                      ("pypi_token", "twine upload -u __token__ -p {p} dist/*"),
+                      ("npm_token", "npm config set //registry.internal/:_authToken {p}")],
+    "crypto": [("password", "openssl enc -aes-256-cbc -pass pass:{p} -in a.tar"), ("password", "openssl pkcs12 -in a.p12 -passin pass:{p}"),
+               ("password", "zip -P {p} a.zip b.txt"), ("password", "unzip -P {p} a.zip"), ("password", "7z a -p{p} a.7z b.txt"),
+               ("password", "gpg --batch --passphrase {p} -d a.gpg"), ("password", "ssh-keygen -t ed25519 -N {p} -f deploy_key")],
+    "account": [("password", "echo 'root:{p}' | chpasswd"), ("password", "echo '{p}' | sudo -S systemctl restart app"),
+                ("password", "htpasswd -b .htpasswd admin {p}")],
+    "stdin": [("password", "echo {p} | docker login -u ci --password-stdin registry.internal"),
+              ("github_classic", "echo {p} | gh auth login --with-token"),
+              ("github_classic", "gh auth login --with-token <<< {p}")],
+}
+TYPE_OF_COMMAND_KIND = {"password": "PASSWORD", "token": "TOKEN", "api_key": "SECRET", "aws_secret_access_key": "SECRET",
+                        "pypi_token": "TOKEN", "npm_token": "TOKEN", "github_classic": "TOKEN"}
+# Commands that read like one of the forms and hold no credential: a port, a flag, a prompt, a reference
+COMMAND_LOOKALIKES = ("ssh -p 2222 deploy@host.internal", "scp -P 2222 a.tar host.internal:/tmp",
+                      "docker run -p 8080:80 app", "psql -h db.internal -p 5432 app", "redis-cli -p 6379 ping",
+                      "mysql -h db.internal -P 3306 -uroot -p", "mkdir -p /etc/app/secrets", "cp -p a.conf b.conf",
+                      "mysql -uroot -p", "psql --password", "curl -u admin https://api.internal/v1",
+                      "docker login -u ci --password-stdin registry.internal", 'mysql -uroot -p"$DB_PASS"',
+                      'sshpass -p "$SSHPASS" ssh deploy@host.internal', "export API_KEY=$API_KEY",
+                      "kubectl create secret generic db --from-file=./pw.txt")
+
+
 def load(path: Path) -> dict:
     with path.open("rb") as f:
         return tomllib.load(f)
@@ -166,8 +217,30 @@ def with_transform(s: dict, transform: str, d: value_gen.Draw) -> tuple[dict, di
     return s, fill
 
 
+def command_option(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
+    """A command form that holds one secret of the card, and where the secret starts."""
+    kind, form = d.choice(COMMAND_FORMS[d.choice(sorted(COMMAND_FORMS))])
+    want = TYPE_OF_COMMAND_KIND[kind]
+    fits = (lambda s: s["type"] == "PASSWORD" and s["kind"] not in ("db_uri", "literal")) if kind == "password" else \
+        (lambda s: s["kind"] == kind)
+    target = next((i for i, s in enumerate(secrets) if fits(s) and "|" not in s["placeholder"]), None)
+    if target is None:
+        secrets.append(secret(d, cfg, want, len(secrets) + 1, {kind: 1}))
+        target = len(secrets) - 1
+    if d.int(1000) < cfg["boundary"]["command_prompt_share"] * 1000:
+        secrets[target] = {**secrets[target], "channel": "prompt"}
+    p = secrets[target]["placeholder"]
+    command = form.replace("{{", "{").replace("}}", "}").replace("{p}", p)
+    return {"rule": "command_option", "secret": target + 1, "command": command,
+            "instruction": f"Where {p} first appears, show this command line as plain text (a message the developer "
+                           f"types, a README or runbook line, shell history, a CI trace; never a tool_input): `{command}`. "
+                           "Names, hosts and paths may change; keep the command, the option and the placeholder."}
+
+
 def boundary_rule(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
     rule = d.weighted(pairs(cfg["boundary"]["rules"]))
+    if rule == "command_option":
+        return command_option(d, cfg, secrets)
     need, transform, text = BOUNDARY[rule]
     # db_uri expands to a whole URI and takes no transform, so it cannot carry a rule; nor can a secret already
     # transformed by its catalog row
@@ -209,12 +282,21 @@ def contrast(row: dict) -> dict:
     return {"placeholder": placeholder, "kind": c["kind"], "position": c["position"], "contrast": True}
 
 
+def plain_negative(d: value_gen.Draw, cfg: dict) -> dict:
+    """A hard negative drawn from [negatives.kinds]. Some kinds have no credential position to sit in."""
+    kind = d.weighted(pairs(cfg["negatives"]["kinds"]))
+    position = d.weighted([("credential", 1), ("anywhere", 1)])
+    return {"placeholder": f"{{{{neg:{kind}}}}}", "kind": kind,
+            "position": "anywhere" if kind in cfg["negatives"]["anywhere_only"] else position}
+
+
 def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, primary: str, ood: dict | None,
          row: dict | None = None) -> dict:
     ctx = cfg["contexts"].get(context)
     fmt = d.choice(ctx["formats"]) if ctx else cfg["ood"]["contexts"][context]
     secrets: list[dict] = []
     fill: dict[str, str] = {}
+    dense = False
     if primary != "none":
         if ood and ood.get("kind"):
             kinds = {ood["kind"]: 1}
@@ -226,20 +308,33 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
         if row and row["transform"] and kinds and row["kind"] in kinds:
             secrets[0], fill = with_transform(secrets[0], row["transform"], d)
         extra_types = pairs(cfg["extra_secrets"]["types"])
-        for _ in range(int(d.weighted(pairs(cfg["extra_secrets"]["weights"])))):
+        extra = int(d.weighted(pairs(cfg["extra_secrets"]["weights"])))
+        many = cfg["extra_secrets"]["dense"]
+        dense = context in many["contexts"] and d.int(1000) < many["share"] * 1000
+        if dense:
+            extra = span(d, many["extra"])
+        for _ in range(extra):
             secrets.append(secret(d, cfg, d.weighted(extra_types), len(secrets) + 1))
     boundary = None
     if secrets and d.int(1000) < cfg["boundary"]["share"] * 1000:
         boundary = boundary_rule(d, cfg, secrets)
+    # next to a command that holds a secret, and alone in some sessions, so a look-alike does not predict a secret
+    lookalike = None
+    if (boundary and boundary["rule"] == "command_option") or \
+            (not secrets and d.int(1000) < cfg["negatives"]["lookalike_share_none"] * 1000):
+        lookalike = d.choice(COMMAND_LOOKALIKES)
+    if dense:  # all in one file or output, so they all start in tool_output and only the first may come back
+        secrets = [{**s, "channel": "tool_output", "repeat": s["repeat"] if i == 0 else "once"}
+                   for i, s in enumerate(secrets)]
     share = cfg["negatives"]["share_none" if not secrets else "share_positive"]
     negatives = []
     if d.int(1000) < share * 1000:
         for _ in range(int(d.weighted(pairs(cfg["negatives"]["count"])))):
-            kind = d.weighted(pairs(cfg["negatives"]["kinds"]))
-            negatives.append({"placeholder": f"{{{{neg:{kind}}}}}", "kind": kind,
-                              "position": d.weighted([("credential", 1), ("anywhere", 1)])})
+            negatives.append(plain_negative(d, cfg))
     if row and row["contrast"] and d.int(1000) < cfg["catalog"]["contrast_share"] * 1000:
-        negatives.append(contrast(row))
+        # a kind most rows pair with would crowd out the others: past its share the card draws another negative
+        keep = cfg["catalog"]["contrast_keep"].get(row["contrast"]["kind"], 1.0)
+        negatives.append(contrast(row) if d.int(1000) < keep * 1000 else plain_negative(d, cfg))
     items = span(d, d.weighted(pairs(cfg["session"]["items"])))
     turns = min(span(d, d.weighted(pairs(cfg["session"]["turns"]))), max(1, items // 2))
     tool_output = ood["tool_output_format"] if ood and ood.get("tool_output_format") else \
@@ -265,8 +360,9 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
             "boundary": boundary, "language": d.weighted(pairs(cfg["language"]["weights"])),
             "tool_output_format": tool_output, "tool_input_format": d.weighted(pairs(cfg["tool_input_format"]["weights"])),
             "items": items, "turns": turns,
-            "longest_output_chars": span(d, d.weighted(pairs(cfg["session"]["longest_output"]))),
-            "ood": ood}
+            "longest_output_chars": max(span(d, d.weighted(pairs(cfg["session"]["longest_output"]))),
+                                        cfg["extra_secrets"]["dense"]["min_output_chars"] if dense else 0),
+            "dense": dense, "lookalike": lookalike, "ood": ood}
 
 
 def assign_rows(slots: list, rows: list[dict], base: str) -> list[dict]:
@@ -352,6 +448,8 @@ def summary(cards: list[dict], catalog: list[dict], by_source: bool = False) -> 
                                                 for c in in_dist).items())),
            "secrets": len(secrets), "secrets_by_channel": dict(sorted(Counter(s["channel"] for s in secrets).items())),
            "secrets_masked_in_tool_input": sum(bool(s["mask"]) for s in secrets),
+           "dense_cards": sum(c["dense"] for c in cards),
+           "with_lookalike": sum(bool(c["lookalike"]) for c in cards),
            "with_negatives": sum(bool(c["negatives"]) for c in cards),
            "negatives": sum(len(c["negatives"]) for c in cards),
            "contrasts": sum(n.get("contrast", False) for c in cards for n in c["negatives"]),

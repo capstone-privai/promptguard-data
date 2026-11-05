@@ -612,7 +612,21 @@ def neg_auth_setting(d: Draw) -> str:
                      "managed_identity", "azure_cli", "keyring", "sso", "iam"))
 
 
+def neg_integrity_hash(d: Draw) -> str:
+    # a package or subresource integrity value: high entropy, and a checksum of public content
+    name, size = d.weighted([(("sha512", 64), 5), (("sha384", 48), 1), (("sha256", 32), 1), (("sha1", 20), 1)])
+    return f"{name}-{base64.b64encode(d.raw(size)).decode()}"
+
+
+def neg_base64_blob(d: Draw) -> str:
+    # encoded data that holds no credential. As long as a secret at the short end, so length alone does not decide
+    body = base64.b64encode(d.raw(d.between(24, 450))).decode()
+    return d.weighted([(body, 3), ("data:image/png;base64,iVBORw0KGgo" + body, 2)])
+
+
 NEGATIVE_KINDS.update({
+    "integrity_hash": (neg_integrity_hash, None),
+    "base64_blob": (neg_base64_blob, None),
     "prefix_redaction": (neg_prefix_redaction, "redaction"),
     "prefix_example": (neg_prefix_example, "doc_example"),
     "prefix_template": (neg_prefix_template, "template"),

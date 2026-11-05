@@ -103,8 +103,8 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 | 문맥 유형 | PASSWORD | SECRET | TOKEN | ACCESS_KEY | PRIVATE_KEY | 음성 | 합계 |
 |---|---|---|---|---|---|---|---|
 | 설정 파일 (env, yaml, json, toml, ini, properties, compose, k8s, terraform) | 340 | 300 | 160 | 90 | 50 | 360 | 1,300 |
-| 명령 출력 (env, ps, docker inspect, kubectl, git config, cloud CLI) | 260 | 170 | 170 | 80 | 40 | 280 | 1,000 |
-| 로그 (앱, 액세스, JSON 로그, CI) | 230 | 120 | 170 | 30 | 0 | 250 | 800 |
+| 명령 출력 (env, ps, docker inspect, kubectl, git config, cloud CLI, 셸 히스토리) | 260 | 170 | 170 | 80 | 40 | 280 | 1,000 |
+| 로그 (앱, 액세스, JSON 로그, CI, `set -x` 추적) | 230 | 120 | 170 | 30 | 0 | 250 | 800 |
 | 스택트레이스·오류 출력 | 160 | 60 | 60 | 20 | 0 | 200 | 500 |
 | diff·git 이력 | 120 | 120 | 80 | 60 | 40 | 180 | 600 |
 | HTTP (curl -v, 요청·응답 덤프, HAR, 쿠키) | 60 | 60 | 280 | 20 | 0 | 180 | 600 |
@@ -125,7 +125,9 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 | tool_output 형식 | 날 텍스트 셸 출력 40%, 줄 번호 붙은 파일 보기(Read, `cat -n`) 25%, grep 결과(`경로:줄:`) 10%, JSON으로 감싼 결과 15%, 잘린 출력(앞뒤 생략 표시) 10% |
 | tool_input 형식 | 셸 명령 60%, JSON 인자 30%, 파일 편집 인자 10% |
 | 세션 구조 | item 3~30개(중앙값 8), 턴 1~8. 같은 고유값이 여러 item에 다시 나오는 경우 30%, 여러 채널에 나오는 경우 20% |
-| 서비스 형식 | 4.2절의 형식마다 고유값 최소 150개 |
+| 긴 출력 | 세션의 가장 긴 tool_output은 8%가 6,000~15,000자다. 실제 트래픽의 tool_output은 3,000자 초과가 17~21%, 6,000자 초과가 약 10%다(openhands-feedback, SWE-Gym 집계) |
+| 비밀이 몰린 item | 설정 파일, 명령 출력, diff 세션의 양성 카드 15%는 비밀 4~7개를 한 파일이나 출력에 둔다 |
+| 서비스 형식 | 4.2절의 형식마다 고유값 최소 150개. 카탈로그로 형식이 391종으로 늘어 값 변형 3개로는 대부분 미달이다. 생성 뒤 값 변형으로 채우며 API 비용은 들지 않는다 |
 
 ### 3.4 어려운 음성과 경계 규칙
 
@@ -145,6 +147,10 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 | `empty` | 300 | `DB_PASSWORD=` |
 | 자격증명 단어지만 값이 아님 | 400 | `max_tokens = 4096`, `password_min_length = 12`, 화면 문구 |
 | 공개키·인증서 | 300 | `ssh-ed25519 AAAA…`, `BEGIN CERTIFICATE`, BEGIN 줄만 있는 PEM |
+| `integrity_hash` | 300 | 락파일의 `sha512-…`. 자격증명 자리에는 두지 않는다 |
+| `base64_blob` | 300 | 내장 이미지, 테스트 픽스처의 base64, `data:` URI. 자격증명 자리에는 두지 않는다 |
+
+카탈로그 행 대부분이 대조군으로 `reference`를 받아 그것만 어려운 음성의 3분의 1을 넘었으므로, `reference` 대조군의 절반은 일반 추첨으로 바꾼다(`catalog.contrast_keep`).
 
 | 경계·퍼뜨림 규칙 (LABELING.md) | 최소 정답 수 |
 |---|---|
@@ -152,6 +158,7 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 | `Bearer`, `Basic`, `token` 스킴 | 각 200 |
 | URL 속 비밀번호·토큰 (스킴 6종 이상) | 400 |
 | `사용자명:비밀번호` 쌍, 연결 문자열 `Password=…;` | 각 200 |
+| 명령줄 속 비밀값 (DB 클라이언트, 환경변수, 컨테이너, 배포, HTTP, 클라우드, 암호화, 계정, stdin 등 12계열, `ml_train_cards.COMMAND_FORMS`). 개발자 메시지, 문서, 히스토리, CI 추적에 나온 것이고, 40%는 개발자 메시지에서 처음 나온다. 에이전트가 쓰는 tool_input은 가림 표시다. 카드마다 `ssh -p 2222`, `docker run -p 8080:80`, `mysql -uroot -p` 같은 닮은 명령을 함께 넣는다. 닮은 명령이 비밀의 신호가 되지 않도록 비밀 없는 세션의 10%에도 넣는다 | 300 |
 | 쿠키 (`Cookie`, `Set-Cookie`, 속성 포함) | 200 |
 | PEM 전체, 잘린 PEM, JSON 이스케이프 PEM | 각 150 |
 | 터미널 폭으로 끊긴 값 | 150 |
