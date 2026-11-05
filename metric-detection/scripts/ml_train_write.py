@@ -147,6 +147,8 @@ LITERAL_AFTER_KEY = re.compile(
     r"""(?i)(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret"""
     r"""|auth(?:orization)?|credentials?)["'`]?[ \t]*[:=][ \t]*["'`]?(?:(?:bearer|basic|token|digest)[ \t]+)?"""
     r"""(?!PLACEHOLDER\b)(?!(?:bearer|basic|token|digest)[ \t])((?:(?!\\[nrt"])[^\s"',;{}()<>\]\[`]){6,})""")
+# Not a credential by LABELING.md, but GitHub push protection refuses a commit that holds one
+TWILIO_SID = re.compile(r"(?<![0-9A-Za-z])(?:AC|SK)[0-9a-f]{32}(?![0-9A-Za-z])")
 TYPE_NAMES = {"string", "boolean", "number", "object", "integer", "unknown", "option", "optional"}
 # Text of the file itself that uses double braces: Go and Helm templates, PHP's {closure} frames
 FOREIGN_BRACES = re.compile(r"(?<!\\)\{\{(?! )([^{}]*)\}\}")
@@ -172,6 +174,7 @@ def literal_secrets(texts: list[str]) -> list[str]:
     found = []
     for text in texts:
         bare = strip_placeholders(text, "PLACEHOLDER")
+        found += [f"literal Twilio SID {m[:6]}..." for m in TWILIO_SID.findall(bare)]
         for token in re.findall(r"[A-Za-z0-9_\-./+=:]{12,}", bare):
             if expected_type(token):
                 found.append(f"literal {expected_type(token)} {token[:12]}...")

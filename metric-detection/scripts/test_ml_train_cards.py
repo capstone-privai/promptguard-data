@@ -176,6 +176,11 @@ class LiteralCheck(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertTrue(W.literal_secrets([text]))
 
+    def test_rejects_a_twilio_sid_that_push_protection_would_refuse(self):
+        sid = "AC" + "0123456789abcdef" * 2  # joined here so this file does not hold one
+        self.assertTrue(W.literal_secrets(["account: " + sid]))
+        self.assertEqual(W.literal_secrets(["account: " + sid + "0"]), [])
+
     def test_passes_what_holds_no_value(self):
         for text in ("Authorization: Bearer {{token:s1}}", 'authorization="Bearer {{token:s1}}"',
                      "Authorization:Bearer {{token:s1}}", "Authorization: `Bearer ${token}`",
