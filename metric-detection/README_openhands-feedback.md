@@ -2,7 +2,7 @@
 
 [all-hands/openhands-feedback](https://huggingface.co/datasets/all-hands/openhands-feedback)를 우리 세션 형식으로 바꾼 데이터다. OpenHands 사용자들이 피드백 버튼을 누르며 **공개로 공유한 실제 세션 275개**다. 과제가 정해져 있지 않다: 게임 만들기, 웹 스크래핑, 저장소 수정, 웹 브라우징, 패키지 설치 등 사용자가 시킨 일이 그대로 들어 있다. 기존 데이터에 없던 **실제 사용자와 에이전트가 주고받은 트래픽**을 시험한다.
 
-업스트림이 공개 전에 민감정보를 검토해 지웠다고 밝혔고, 실제로 토큰 자리에 `ghp_-XXX`, `sk--XXX` 같은 흔적이 남아 있다. 그래서 정답은 161개(값 23종, 세션 13개)뿐이고 **대부분 음성인 데이터**다. 주로 실제 에이전트 트래픽에서의 과잉 마스킹을 재는 데 쓴다.
+업스트림이 공개 전에 민감정보를 검토해 지웠다고 밝혔고, 실제로 토큰 자리에 `ghp_-XXX`, `sk--XXX` 같은 흔적이 남아 있다. 그래서 정답은 175개(값 22종, 세션 16개)뿐이고 **대부분 음성인 데이터**다. 주로 실제 에이전트 트래픽에서의 과잉 마스킹을 재는 데 쓴다.
 
 외부 데이터이므로 `meta.origin`은 `external`, `allowed_use`는 `["rule_eval", "ml_eval"]`이다. 원본 라이선스는 MIT다. 변환 결과는 git에 올리지 않고 아래 순서대로 다시 만든다. 정답 판정은 [reviews/openhands-feedback.jsonl](reviews/openhands-feedback.jsonl)에 값 없이 남아 있다.
 
@@ -28,7 +28,7 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_openhands-feedback.jsonl` | 정답 span |
 | `labels_from_openhands-feedback.jsonl` | 검토한 후보 값의 모든 등장 위치와 판정, 이유. 값은 들어 있지 않다 |
 
-세션 275개, item 12,526개, 정답 span 161개(PASSWORD 69 / SECRET 53 / TOKEN 38 / PRIVATE_KEY 1). 정답이 있는 세션은 13개다.
+세션 275개, item 12,526개, 정답 span 175개(PASSWORD 81 / SECRET 55 / TOKEN 38 / PRIVATE_KEY 1). 정답이 있는 세션은 16개다.
 
 | channel | item | 정답 span |
 |---|---|---|
@@ -36,7 +36,7 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `tool_input` | 5,778 | 80 |
 | `tool_output` | 5,645 | 80 |
 
-`tool_input`의 정답 80개(에이전트가 `write`/`edit`로 쓴 코드와 테스트 안의 값)는 데이터에 그대로 두지만 채점하지 않는다. 모델이 직접 쓴 도구 인자라 가릴 대상이 아니기 때문이다([채점 기준](README.md#단위)). 채점하는 정답은 `prompt`와 `tool_output`의 81개(SECRET 46 / PASSWORD 26 / TOKEN 8 / PRIVATE_KEY 1)다.
+`tool_input`의 정답 84개(에이전트가 `write`/`edit`로 쓴 코드와 테스트 안의 값)는 데이터에 그대로 두지만 채점하지 않는다. 모델이 직접 쓴 도구 인자라 가릴 대상이 아니기 때문이다([채점 기준](README.md#단위)). 채점하는 정답은 `prompt`와 `tool_output`의 91개(SECRET 48 / PASSWORD 34 / TOKEN 8 / PRIVATE_KEY 1)다.
 
 ## 변환 규칙
 

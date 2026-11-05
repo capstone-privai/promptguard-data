@@ -26,16 +26,16 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_privesc-llm-data.jsonl` | 자동으로 만든 정답 span. `gold.jsonl`과 같은 형식 |
 | `labels_from_privesc-llm-data.jsonl` | 정답 span과 정답에서 뺀 후보(아래)를 item 좌표로 남긴 분석용 파일. 값 자체는 들어 있지 않다 |
 
-세션 2,200개, item 122,286개, gold span 15,716개(PASSWORD 15,557 / PRIVATE_KEY 159).
+세션 2,200개, item 122,286개, gold span 15,724개(PASSWORD 15,565 / PRIVATE_KEY 159).
 
 | channel | item | gold span |
 |---|---|---|
 | `instructions` | 2,200 | 2,200 |
 | `prompt` | 2,200 | 0 |
-| `tool_input` | 58,943 | 6,324 |
-| `tool_output` | 58,943 | 7,192 |
+| `tool_input` | 58,943 | 6,326 |
+| `tool_output` | 58,943 | 7,198 |
 
-`tool_input`의 정답 6,324개는 데이터에 그대로 두지만 채점하지 않는다. 에이전트가 직접 쓴 명령이라 가릴 대상이 아니라, 실행 직전에 placeholder를 원래 값으로 되돌리는 자리이기 때문이다([채점 기준](README.md#단위)). 채점하는 정답은 `instructions`와 `tool_output`의 9,392개(PASSWORD 9,233 / PRIVATE_KEY 159)다.
+`tool_input`의 정답 6,326개는 데이터에 그대로 두지만 채점하지 않는다. 에이전트가 직접 쓴 명령이라 가릴 대상이 아니라, 실행 직전에 placeholder를 원래 값으로 되돌리는 자리이기 때문이다([채점 기준](README.md#단위)). 채점하는 정답은 `instructions`와 `tool_output`의 9,398개(PASSWORD 9,239 / PRIVATE_KEY 159)다.
 
 시나리오 10종(`meta.scenario`)이 각각 220개씩이다: `capabilities_gtfobins`, `cron_wildcard`, `cron_writable_script`, `password_file`, `password_history`, `password_reuse`, `ssh_key_reuse`, `sudo_gtfobins`, `suid_gtfobins`, `weak_password`. `meta.split`은 원본의 training/validation이고, `meta.upstream_file`과 `meta.upstream_line`으로 원본 줄을 찾을 수 있다.
 

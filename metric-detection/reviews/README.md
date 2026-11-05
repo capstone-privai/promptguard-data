@@ -4,8 +4,8 @@
 
 | 파일 | 데이터 | 판정한 값 | credential | 설명 |
 |---|---|---|---|---|
-| `openhands-feedback.jsonl` | [README_openhands-feedback.md](../README_openhands-feedback.md) | 475 | 10 | 규칙 352, 사람 123 |
-| `SWE-Gym.jsonl` | [README_SWE-Gym.md](../README_SWE-Gym.md) | 852 | 2 | 규칙 787, 사람 65 |
+| `openhands-feedback.jsonl` | [README_openhands-feedback.md](../README_openhands-feedback.md) | 475 | 23 | 규칙 342, 사람 133 |
+| `SWE-Gym.jsonl` | [README_SWE-Gym.md](../README_SWE-Gym.md) | 852 | 23 | 규칙 775, 사람 77 |
 
 ## 파일 형식
 
@@ -18,7 +18,7 @@
 ```
 
 - `where`: 그 값이 나오는 한 곳 (session_id, item_id, start, end). 변환 규칙이 바뀌어 위치가 어긋나면 변환기가 멈춘다. 그때는 아래 순서로 다시 검토한다.
-- `verdict`: `credential` 또는 `not_credential`. `credential`이면 `where`가 정답이고, 같은 세션 안의 다른 등장 위치는 [LABELING.md](../LABELING.md)의 퍼뜨림 기준(`label_rules.classify`, `is_common`, `is_gold`)으로 정한다.
+- `verdict`: `credential` 또는 `not_credential`. `credential`이면 `where`가 정답이고, 같은 세션 안의 다른 등장 위치는 [LABELING.md](../LABELING.md)의 퍼뜨림 기준(`label_rules.classify`, `is_common`, `is_gold`)으로 정한다. 자격증명 자리의 리터럴(`label_rules.slot_literals`)은 파일에 없거나 `reviewed_by: rule`로 음성이어도 변환기가 정답으로 한다. 사람이 음성으로 정한 값(`reviewed_by: manual`)은 그대로 둔다.
 - `reviewed_by`: `rule`(아래 규칙으로 정해짐) 또는 `manual`(사람이 판단).
 - `found_by`: 그 값을 후보로 낸 탐지기와 정규식.
 

@@ -44,6 +44,7 @@ SLOT = [
     ("camel_key_value", re.compile(rf"[A-Za-z0-9](?:Password|Passwd|Pass|Secret|SecretKey|Token|ApiKey|AccessKey){Qo}\s*{ASSIGN}\s*{Qo}$")),
     ("url_userinfo", re.compile(r"[a-z][\w+.-]*://[^\s/:@'\"]*:$")),  # scheme://user:⟦pw⟧@host
     ("env_default", re.compile(rf"(?i)(?:\benviron\.get|\bgetenv|\benv\.get)\(\s*{Q}[\w.-]*(?:password|passwd|secret|token|api_?key)[\w.-]*{Q}\s*,\s*{Q}$")),
+    ("user_arg", re.compile(r"""\\{0,3}["'][\w.@\\-]*user\w*\\{0,3}["'][ \t]*,[ \t]*\\{0,3}["']$""")),  # DirectoryEntry(url, "domain\\user", "pw")
     ("setter", re.compile(rf"(?i)\bset\w*(?:password|passwd|secret|secretkey|token|apikey|accesskey)\(\s*{Q}$|ConvertTo-SecureString\s+(?:-String\s+)?{Q}$")),
     ("curl_option", re.compile(rf"CURLOPT_(?:USERPWD|PASSWORD|KEYPASSWD|PROXYPASSWORD|PROXYUSERPWD|XOAUTH2_BEARER)\s*,\s*{Q}$")),
     ("auth_header", re.compile(rf"(?i)\bauthorization{Qo}\s*[:=,]\s*(?:-\s+)?{Qo}(?:bearer|basic|digest|token|apikey)\s+$")),
@@ -53,7 +54,12 @@ SLOT = [
     ("cookie", re.compile(r"(?i)\b(?:set-)?cookie\W{1,4}(?:[^\s=;]+=[^;\n]*;\s*)*[^\s=;]+=$")),
     ("requirepass", re.compile(rf"--requirepass\s+{Qo}$")),
     ("option", re.compile(rf"(?i)--?(?:password|passwd|pass)(?:\s+|=){Qo}$")),
-    ("cli_p", re.compile(rf"(?:docker\s+login|test_credentials|htpasswd|smbclient|ftp|psql)\b[^|;\n]*?\s-p\s+{Qo}$")),
+    ("cli_p", re.compile(rf"(?:docker\s+login|test_credentials|htpasswd|smbclient|ftp|psql"
+                         rf"|mongosh|mongo|mongodump|mongorestore|mongoexport|mongoimport)\b[^|;\n]*?\s-p\s+{Qo}$")),
+    ("redis_cli_a", re.compile(rf"\bredis-cli\b[^|;\n]*?\s-a\s+{Qo}$")),
+    # htpasswd -b FILE USER PW, htpasswd -nb USER PW: the password is the last argument, not the user before it
+    ("htpasswd_b", re.compile(rf"\bhtpasswd\s+(?=(?:-\w+\s+)*-\w*b)(?:(?=(?:-\w+\s+)*-\w*n)(?:-\w+\s+)+\S+"
+                              rf"|(?!(?:-\w+\s+)*-\w*n)(?:-\w+\s+)+\S+\s+\S+)\s+{Qo}$")),
     ("echo_pipe", re.compile(rf"(?:echo|printf)(?:\s|\\n)+(?:(?:-[en]+|{Q}%s[^'\"]*{Q})\s+)*{Qo}$")),
     ("here_string", re.compile(rf"<<<\s*\$?{Q}$")),
     ("chpasswd", re.compile(rf"(?:echo|printf|print)\s+(?:-[en]+\s+)?{Qo}[\w.-]+:$")),
@@ -82,6 +88,7 @@ PROSE = [
     ("prose", re.compile(rf"(?i)(?<!\[sudo\] )\bpass(?:word|phrase)\b(?:(?!\", \")[^\n\\:;=]){{0,40}}?"
                          rf"(?:\s(?:is|to|was|=)|:|=)\s*{Qo}$")),
     ("prose_quoted", re.compile(rf"(?i)\bpass(?:word|phrase)\s+{Q}$")),
+    ("prose_direct", re.compile(rf"(?i)\bpass(?:word|phrase),?[ \t]+{Qo}$")),  # use the password 123456: never a dictionary word
 ]
 # Identifier positions: (name, text before, text after); None matches anything.
 IDENT = [
@@ -134,6 +141,10 @@ PEM_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")
 EXAMPLE_BEFORE = re.compile(r"(?i)(?:\bsuch as|\be\.g\.,?|\bfor (?:example|instance),?|\bexamples?:|\blike|\bsample:)"
                             r"\s*[\"'`*]*$")
 
+# "For example:" or "### Example Header", then the value's line, in a code fence or not.
+EXAMPLE_BLOCK = re.compile(r"(?im)(?:^#{1,6}[^\n]*(?<![@.\w-])examples?(?![.\w-])[^\n]*|(?<![@.\w-])examples?(?![.\w-])[^\n]{0,20}:[*`]*[ \t]*)"
+                           r"\n+(?:[ \t]*```\w*\n)?[^\n]{0,80}\Z")
+
 # LABELING.md "정답이 아닌 것": (kind, pattern on the value). The first match decides.
 EXCLUDED_VALUE = [
     ("empty", re.compile(r"^\s*$")),
@@ -154,11 +165,11 @@ EXCLUDED_VALUE = [
                               r"|парол[ья])(?![^\W_])|密码|密碼|パスワード|비밀번호")),
     ("doc_example", re.compile(r"example(?!\.(?:com|org|net|edu|invalid|test|local)\b)", re.I)),  # AKIA...EXAMPLE, not example.com
     # ${TOKEN}, %PASS%, {token}, or the NAME of an environment variable (GITHUB_PASSWORD)
-    ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|^#\{|\$t\(|os\.environ|process\.env|getenv"
+    ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|^#\{|\$t\(|^/[\w./@-]+$|os\.environ|process\.env|getenv"
                              r"|^(?:[A-Z0-9]+_)*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|KEY|APIKEY|AUTH|USER)(?:_[A-Z0-9]+)*$")),
     ("code", re.compile(r"^[A-Za-z_$][\w.$]*[(\[]|[{}]$|^[A-Za-z_]{1,16}=$|\bself\.|\bthis\.|^[A-Za-z_]+(?:\.[A-Za-z_]+)+,?$"
                         r"|^(?:true|false|null|none|nil|undefined)$|^[).,;:\]}>]|\s\+$|^:\w+$|^&\w+$|\[$|^\W$|^\d+/\w+$"
-                        r"|^\W{1,3}$|^&[\w.]+$|^\(\d+ bit\)$|\\u00[0-9a-fA-F]{2}|&(?:lt|gt|amp|quot);"  # punctuation, symbols, escaped markup
+                        r"|^\W{1,3}$|^&[\w.]+$|^\*{1,2}[A-Za-z]|^\(\d+ bit\)$|\\u00[0-9a-fA-F]{2}|&(?:lt|gt|amp|quot);"  # punctuation, symbols, escaped markup
                         r"|^[\^~>=<]*v?\d+(?:\.\d+)+(?:[-+.]\w+)*$", re.I)),  # also version numbers
 ]
 # (kind, pattern on the text right before the value)
@@ -175,6 +186,9 @@ EXCLUDED_BEFORE = [
                               r"|DESC|DESCRIPTION|NOTIFICATION|PLACEHOLDER)_\w*\W{0,4}$")),
     ("code", re.compile(r"\b(?:artisan|rake|rails)\s+[\w-]*:$")),  # php artisan credentials:edit
     ("reference", re.compile(r"\bfrom_secret:\s*$")),  # Drone CI: the name of a stored secret
+    # a list of passwords not to use
+    ("doc_example", re.compile(r"(?i)\b(?:unacceptable|prohibited|forbidden|banned|weak)\s+passwords?\b[^\n]*(?:\n\s*[-*]\s*[^\n]*){0,6}"
+                               r"\n\s*[-*]\s*[\"'`]?$")),
 ]
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 SECRET_WORD = re.compile(r"(?i)secret|token|passw|pwd|api[ _-]?key|access[ _-]?key|private|auth|credential")
@@ -219,7 +233,7 @@ def classify(text: str, start: int, end: int, negative_context: re.Pattern | Non
         if (b is None or b.search(before)) and (a is None or a.search(after)):
             return "ident", name
     for name, pattern in PROSE:
-        if pattern.search(before):
+        if pattern.search(before) and not (name == "prose_direct" and text[start:end].lower() in english_words()):
             return "slot", name
     if negative_context is not None and negative_context.search(text[max(0, start - 400):start]):
         return "negative", "context"
@@ -258,7 +272,7 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
     if not quoted and value.isdigit() and re.match(r"\s*,", text[end:end + 5]) and re.search(
             r"\b[A-Z]\w*_[A-Z]\w*\s*=\s*$", before):
         return "code"  # an enum member: IoErr_Auth = 7178,
-    if (not quoted and re.fullmatch(r"[A-Za-z_]\w*", value) and (m := re.search(r"(?<![\w.])([a-z_][\w.]*)\s*=\s*$", before))
+    if (not quoted and re.fullmatch(r"[A-Za-z_]\w*", value) and (m := re.search(r"(?<![\w.])([a-z_][\w.]*)(?:\s+=\s*|\s*=\s+)$", before))
             and value.lower() == m.group(1).rsplit(".", 1)[-1].lower().lstrip("_")):
         return "code"  # self.password = password: a variable
     key = re.search(r"([A-Za-z_][\w.-]*)\W{0,4}$", before)
@@ -325,12 +339,12 @@ def is_literal(text: str, start: int, end: int) -> bool:
     value = text[start:end]
     if start and text[start - 1] in QUOTES:
         return True
-    if TYPE_WORD.match(value) or re.search(r"::|->|\$|\(|\)", value):
-        return False
+    if TYPE_WORD.match(value) or re.search(r"::|->|\$|\(|\)", value) or re.match(r"""\(|[ \t]+["']""", text[end:end + 3]):
+        return False  # a call: PasswordField(, ConvertTo-SecureString 'x'
     if value.isdigit() or (OPAQUE.match(value) and "_" not in value):
         return True
-    if re.match(r"\s*[,;)}\]]|\(|[ \t]+\S", text[end:end + 3]):
-        return False  # a call, a list, or more words on the line: PasswordField(, ConvertTo-SecureString 'x'
+    if re.match(r"\s*[,;)}\]]|[ \t]+\S", text[end:end + 3]):
+        return False  # a list, or more words on the line
     before = text[text.rfind("\n", 0, start) + 1:start]
     if re.search(r"(?:^|[\s?&;:])[\w.-]+=$", before) and "(" not in before:
         return True  # no spaces around =: an env file, a command line, a query string, a connection string
@@ -339,32 +353,59 @@ def is_literal(text: str, start: int, end: int) -> bool:
 
 
 TYPE_WORD = re.compile(r"(?i)^(?:str|string|int|integer|bool|boolean|text|bytes|object|any|optional|required|null|none|true|false)$")
-SLOT_LITERAL = re.compile(rf"""(?ix)(?<![\w-])(?P<key>(?:[\w.-]*[_.-])?(?:password|passwd|passphrase|pwd|api[_-]?key|apikey|secret[_-]?key|client[_-]?secret
+SLOT_LITERAL = re.compile(rf"""(?ix)(?<![\w-])(?P<key>(?:[\w.-]*[_.-])?(?:password|passwd|passphrase|pwd|api[_-]?key|apikey|secret[_-]?(?:access[_-]?)?key|client[_-]?secret
                               |access[_-]?token|auth[_-]?token|refresh[_-]?token)\d?)["'`]?[ \t]*(?P<op>===?|!==?|=>|:=|[:=])[ \t]*
                               (?:"(?P<d>[^"\n\\]+)"|'(?P<s>[^'\n\\]+)'|(?P<u>[^\s"'`,;()<>{{}}\[\]$%]+)(?=[ \t]*(?:\r?\n|\\n|$)))""", re.M)
 
 
 def slot_literals(text: str):
     """(start, end) of the literal values in plain credential positions of the text, for lines a source did not label.
-    A quoted literal after a credential key anywhere; an unquoted one only in a config form (UPPER_CASE=, a.b.c=, key: ),
-    where a word is a value rather than a variable. classify and exclusion_kind still decide."""
+    A quoted literal after a credential key anywhere; an unquoted one when it reads as a literal (is_literal).
+    classify and exclusion_kind still decide."""
     for m in SLOT_LITERAL.finditer(text):
-        group = m.lastgroup
-        start, end = m.span(group)
-        if group == "u":
-            key = m.group("key")
-            if TYPE_WORD.match(m.group("u")) or not (key.isupper() or "." in key or m.group("op") == ":"):
-                continue
-            if not re.match(r"[ \t]*(?:[-+#]\s*)?(?:export\s+)?$", text[text.rfind("\n", 0, m.start()) + 1:m.start()]):
-                continue
+        start, end = m.span(m.lastgroup)
+        if m.lastgroup == "u" and not is_literal(text, start, end):
+            continue
         start, end = normalize_span(text, start, end)
-        if start < end and not exclusion_kind(text, start, end) and classify(text, start, end)[0] == "slot":
+        if (start < end and not exclusion_kind(text, start, end) and classify(text, start, end)[0] == "slot"
+                and not re.match(r"[a-z][\w+.-]*://(?![^/\s]*@)", text[start:end])):  # a URL under a key is not its value
             yield start, end
+
+
+def common_outside_slot(text: str, start: int, end: int) -> bool:
+    """A common value counts only in a credential position (LABELING.md 퍼뜨림 기준)."""
+    return (is_common(text[start:end]) and classify(text, start, end)[0] != "slot"
+            and not is_key_material(text, start, end))
+
+
+def cut_inside_word(text: str, start: int, end: int) -> bool:
+    """A span that stops in the middle of a word: a source's offsets are off."""
+    return end < len(text) and bool(re.match(r"\w\w", text[end - 1:end + 1]))
+
+
+WEBHOOK_URL = re.compile(r"https://(?:hooks\.slack\.com/|discord(?:app)?\.com/api/webhooks/|[\w.-]*webhook\.office\.com/"
+                         r"|outlook\.office\.com/webhook/)[^\s\"'`<>)]+")
+
+
+def extend_webhook(text: str, start: int, end: int) -> tuple[int, int]:
+    """The whole URL when a span sits inside a webhook URL (LABELING.md 경계: 자격증명 자체인 URL)."""
+    for m in WEBHOOK_URL.finditer(text):
+        if m.start() <= start and end <= m.end():
+            return m.span()
+    return start, end
+
+
+def literal_type(text: str, start: int) -> str:
+    """The type of a literal found by slot_literals: from its position, or from a token key."""
+    return (position_type(text, start)
+            or ("TOKEN" if re.search(r"(?i)token\W{0,6}$", text[max(0, start - 40):start]) else "SECRET"))
 
 
 def position_type(text: str, start: int) -> str | None:
     """The type the position decides (LABELING.md 유형), or None: a password key, an auth scheme, a cookie."""
     before = text[max(0, start - 80):start]
+    if re.search(r"(?i)client[_-]?secret\W{0,6}$", before):
+        return "SECRET"
     if re.search(r"(?i)(?:bearer|basic|ntlm)\s+$", before) or SLOT_BY_NAME["cookie"].search(before):
         return "TOKEN"
     if SLOT_BY_NAME["url_userinfo"].search(before):
@@ -391,8 +432,9 @@ def is_foreign_word(value: str) -> bool:
 
 
 def is_example(text: str, start: int) -> bool:
-    """Whether the text right before start presents the value as an example."""
-    return bool(EXAMPLE_BEFORE.search(text[max(0, start - 40):start]))
+    """Whether the text right before start presents the value as an example, or the line above it announces one."""
+    return bool(EXAMPLE_BEFORE.search(text[max(0, start - 40):start])
+                or EXAMPLE_BLOCK.search(text[max(0, start - 160):start]))
 
 
 def _wordlist(name: str) -> frozenset[str]:
@@ -400,6 +442,11 @@ def _wordlist(name: str) -> frozenset[str]:
     if "\n---\n" in text:  # SCOWL: notice, then the words
         text = text.split("\n---\n", 1)[1]
     return frozenset(w.strip().lower() for w in text.split("\n") if w.strip() and not w.startswith("#"))
+
+
+@lru_cache(maxsize=1)
+def english_words() -> frozenset[str]:
+    return _wordlist("scowl-en_US-60.txt")
 
 
 @lru_cache(maxsize=1)
@@ -459,6 +506,10 @@ def normalize_span(text: str, start: int, end: int) -> tuple[int, int]:
     m = AUTH_SCHEME.match(text, start, end)
     if m:
         start = m.end()
+    if text[start:start + 2] in ('\\"', "\\'") and end - start > 3:  # \"value\", from a string inside a string
+        start += 2
+        if text[end - 1] == "\\" and text[end:end + 1] in QUOTES:
+            end -= 1
     closed = start > 0 and text[start - 1] in QUOTES and text[end:end + 1] == text[start - 1]
     if not closed:
         while end > start + 1:

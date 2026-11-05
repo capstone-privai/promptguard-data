@@ -28,7 +28,7 @@ import json
 from pathlib import Path
 import re
 
-from label_rules import is_common, judge_occurrence, occurrences
+from label_rules import expected_type, is_common, judge_occurrence, literal_type, occurrences, slot_literals
 REVIEWS_DIR = Path(__file__).resolve().parents[1] / "reviews"
 KEY = r"(?:pass(?:word|wd)?|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|auth|credential|client[_-]?secret)"
 REGEXES = {
@@ -70,8 +70,21 @@ def apply_review(sessions: list[dict], review: dict[tuple[str, str], dict], name
     """Gold and label rows from a review file (see review_candidates.py). Each verdict names one place the value
     occurs; the value is read back from there and checked against its SHA-256, so the file stores no values. A
     value judged a credential is gold where it was judged, and at its other occurrences in that session by the
-    propagation rule of LABELING.md (label_rules.judge_occurrence)."""
+    propagation rule of LABELING.md (label_rules.judge_occurrence). A literal in a credential position
+    (label_rules.slot_literals) is judged a credential too, unless a person judged that value otherwise."""
     texts = {(s["session_id"], i["item_id"]): i["text"] for s in sessions for i in s["items"]}
+    review = dict(review)
+    if review:
+        for (sid, iid), text in texts.items():
+            for a, b in slot_literals(text):
+                value = text[a:b]
+                key = (sid, sha256(value))
+                row = review.get(key)
+                if row is None or (row["verdict"] == "not_credential" and row.get("reviewed_by") == "rule"):
+                    review[key] = {"sha256": key[1], "where": [sid, iid, a, b], "length": len(value), "verdict": "credential",
+                                   "type": expected_type(value) or literal_type(text, a),
+                                   "reason": "literal in a credential position (label_rules.slot_literals)",
+                                   "reviewed_by": "rule", "found_by": ["slot_literals"], "sessions": [sid]}
     channels = {(s["session_id"], i["item_id"]): i["channel"] for s in sessions for i in s["items"]}
     items_of_session: dict[str, list[int]] = {}
     for sid, iid in texts:

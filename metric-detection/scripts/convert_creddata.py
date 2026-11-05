@@ -50,8 +50,8 @@ import subprocess
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
 from label_rules import (JWK_PRIVATE, KEY_RULES, PEM_BEGIN, PEM_END, PRIVATE_MATERIAL, classify, exclusion_kind, expected_type,
-                         extend_pem, has_credential_format, is_common, is_key_material, is_literal, judge_occurrence, normalize_span,
-                         occurrences, pem_has_body, position_type, slot_literals)
+                         extend_pem, has_credential_format, is_common, is_key_material, is_literal, judge_occurrence, literal_type,
+                         normalize_span, occurrences, pem_has_body, position_type, slot_literals)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "CredData"
@@ -191,11 +191,6 @@ def judge(kind_type: str, text: str, start: int, end: int) -> tuple[bool, str, s
     return False, "identifier" if verdict == "ident" else "not_credential_position", rule
 
 
-def slot_literal_type(text: str, start: int) -> str:
-    """The type of a literal with no CredData row, from its key: a password key is decided by position_type."""
-    return "TOKEN" if re.search(r"(?i)token\W{0,6}$", text[max(0, start - 40):start]) else "SECRET"
-
-
 def propagate(items: list[dict], item_spans: list[list[dict]], session_id: str, labels: list[dict], stats: Counter):
     """Other occurrences of a gold value in the session, by the propagation rule (label_rules.judge_occurrence)."""
     values = {}
@@ -300,7 +295,7 @@ def convert(creddata: Path, context: int):
                     spans.append({"start": start, "end": end, "type": kind, "category": row.raw["Category"]})
             for start, end in slot_literals(text):  # a line CredData has no row for
                 if not any(s < end and start < e for s, e in row_ranges):
-                    kind = expected_type(text[start:end]) or position_type(text, start) or slot_literal_type(text, start)
+                    kind = expected_type(text[start:end]) or literal_type(text, start)
                     labels.append({"session_id": session_id, "item_id": item_id, "start": start, "end": end, "gold": True,
                                    "kind": "unlabeled_slot", "rule": None, "category": "", "type": kind, "creddata_id": None})
                     stats["gold_unlabeled_slot"] += 1

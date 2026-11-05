@@ -42,7 +42,8 @@ import subprocess
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
-from label_rules import exclusion_kind, expected_type, is_common, judge_occurrence, normalize_span, occurrences
+from label_rules import (common_outside_slot, exclusion_kind, expected_type, extend_pem, extend_webhook, is_common,
+                         judge_occurrence, literal_type, normalize_span, occurrences, position_type, slot_literals)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "noseyparker"
@@ -134,13 +135,21 @@ def captures(rules: list[dict], text: str) -> list[dict]:
                 a, b = m.span(g)
                 lead, trail = EDGE_LEAD.match(text, a, b), EDGE_TRAIL.search(text, a, b)
                 a, b = normalize_span(text, lead.end(), max(lead.end(), trail.start()))
+                if gold_type(rule, g) == "PRIVATE_KEY":
+                    a, b = extend_pem(text, a, b)
+                a, b = extend_webhook(text, a, b)
                 value = text[a:b]
                 kind = judge(rule, value)
                 if kind == "gold" and a < b and gold_type(rule, g) != "PRIVATE_KEY":
-                    kind = exclusion_kind(text, a, b) or "gold"
-                out.append({"start": a, "end": b, "rule": rule["id"], "group": g,
-                            "kind": kind, "type": expected_type(value) or gold_type(rule, g)})
-    return [c for c in out if c["end"] > c["start"]]
+                    kind = exclusion_kind(text, a, b) or ("not_propagated" if common_outside_slot(text, a, b) else "gold")
+                out.append({"start": a, "end": b, "rule": rule["id"], "group": g, "kind": kind,
+                            "type": expected_type(value) or position_type(text, a) or gold_type(rule, g)})
+    out = [c for c in out if c["end"] > c["start"]]
+    for a, b in slot_literals(text):  # a literal no rule captures
+        if not any(c["start"] < b and a < c["end"] for c in out):
+            out.append({"start": a, "end": b, "rule": None, "group": None, "kind": "gold",
+                        "type": expected_type(text[a:b]) or literal_type(text, a)})
+    return out
 
 
 def merge(spans: list[dict], stats: Counter) -> list[dict]:

@@ -19,7 +19,7 @@ metric-detection의 모든 데이터셋(합성 3종, CredData, privesc-llm-data,
 
 | 경우 | 예 |
 |---|---|
-| 자격증명 자리에 들어간 리터럴 | `DB_PASSWORD=admin`, `"api_key": "test_api_key"`, `-p hunter2`, `sshpass -p '…'`, `echo '…' \| sudo -S`, `--requirepass …`, `Password=…;`(연결 문자열) |
+| 자격증명 자리에 들어간 리터럴 | `DB_PASSWORD=admin`, `"api_key": "test_api_key"`, `-p hunter2`, `sshpass -p '…'`, `echo '…' \| sudo -S`, `--requirepass …`, `redis-cli -a …`, `mongosh -p …`, `htpasswd -b 파일 사용자 ⟦값⟧`, `Password=…;`(연결 문자열) |
 | 인증 헤더·쿠키의 값 | `Authorization: Bearer ⟦값⟧`, `Authorization: Basic ⟦값⟧`, `Cookie: session=⟦값⟧` |
 | URL에 든 자격증명 | `postgresql://app:⟦값⟧@db:5432/app`, `https://x-access-token:⟦값⟧@github.com/…` |
 | 형식만으로 자격증명인 값 | 서비스 접두어가 있는 토큰(`ghp_…`, `xoxb-…`, `sk-…`, `AKIA…`), 개인키 블록, 인증 자리의 JWT |
