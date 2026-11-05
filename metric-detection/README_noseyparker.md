@@ -27,7 +27,7 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_noseyparker.jsonl` | 정답 span |
 | `labels_from_noseyparker.jsonl` | 모든 규칙의 모든 캡처와 우리 판정(규칙 id, 그룹 번호 포함). 값은 들어 있지 않다 |
 
-세션 573개(양성 예시 430 + 음성 예시 143), 정답 span 396개(SECRET 150 / TOKEN 145 / PASSWORD 89 / ACCESS_KEY 6 / PRIVATE_KEY 6). 정답이 있는 세션은 379개다. 양성 예시 430개 중 344개, 음성 예시 143개 중 35개에 정답이 있다(아래).
+세션 573개(양성 예시 430 + 음성 예시 143), 정답 span 402개(SECRET 156 / TOKEN 139 / PASSWORD 95 / ACCESS_KEY 6 / PRIVATE_KEY 6). 정답이 있는 세션은 383개다. 양성 예시 425개 중 342개, 음성 예시 148개 중 41개에 정답이 있다(아래). 어떤 규칙도 잡지 않은 자격증명 자리의 리터럴(`label_rules.slot_literals`)도 정답이고, 웹훅 URL과 PEM 블록은 규칙이 일부만 잡아도 전체를 정답으로 한다.
 
 예시는 에이전트가 읽은 파일 조각으로 보고 모두 `tool_output`에 둔다. CredData 변환과 같다.
 

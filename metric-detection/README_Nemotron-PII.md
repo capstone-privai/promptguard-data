@@ -28,12 +28,12 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_Nemotron-PII.jsonl` | 정답 span. `gold.jsonl`과 같은 형식 |
 | `labels_from_Nemotron-PII.jsonl` | 원본의 모든 span(자격증명이 아닌 PII 포함)을 item 좌표로 옮기고 우리 판정을 붙인 분석용 파일. 값은 들어 있지 않다 |
 
-세션 6,000개: 정답이 있는 문서 3,000개, 정답이 없는 문서 3,000개. 정답 span 3,857개(PASSWORD 2,104 / SECRET 1,269 / TOKEN 484). 29개 업종, 1,365가지 문서 유형이고, 미국식(`us`)과 국제식(`intl`) 문서가 반씩이다.
+세션 6,000개: 정답이 있는 문서 3,000개, 정답이 없는 문서 3,000개. 정답 span 3,846개(PASSWORD 2,095 / SECRET 1,199 / TOKEN 552). 29개 업종, 1,365가지 문서 유형이고, 미국식(`us`)과 국제식(`intl`) 문서가 반씩이다.
 
 | channel | item | 정답 span |
 |---|---|---|
-| `prompt` | 3,056 | 1,876 |
-| `tool_output` | 2,944 | 1,981 |
+| `prompt` | 3,063 | 1,881 |
+| `tool_output` | 2,937 | 1,965 |
 
 정답이 많은 문서 유형은 Application Setup Guide, Temporary Password Notification, API Endpoint, API Documentation, Test Login Script, System Configuration File 순이다.
 
