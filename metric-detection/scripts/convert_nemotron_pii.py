@@ -50,7 +50,8 @@ import re
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
-from label_rules import exclusion_kind, expected_type, is_common, is_example, judge_occurrence, normalize_span, occurrences
+from label_rules import (common_outside_slot, cut_inside_word, exclusion_kind, expected_type, is_common, is_example,
+                         judge_occurrence, literal_type, normalize_span, occurrences, position_type, slot_literals)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "Nemotron-PII"
@@ -164,13 +165,24 @@ def document_spans(text: str, spans: list[dict], stats: Counter) -> tuple[list[d
         a, b = normalize_span(text, *trim(text, a, b))
         if kind_type and a < b and (excluded := exclusion_kind(text, a, b)):
             kind, kind_type = excluded, None  # the generator's span holds a label or phrase, not a value
+        elif kind_type and a < b and cut_inside_word(text, a, b):
+            kind, kind_type = "cut_inside_word", None
+        elif kind_type and a < b and common_outside_slot(text, a, b):
+            kind, kind_type = "not_propagated", None
         if kind_type:
-            kind_type = expected_type(text[a:b]) or kind_type
+            kind_type = expected_type(text[a:b]) or position_type(text, a) or kind_type
         stats[f"{label}:{kind}"] += 1
         if kind_type and a < b:
             gold.append({"start": a, "end": b, "type": kind_type, "kind": kind})
         labels.append({"start": a if kind_type else start, "end": b if kind_type else end, "source_label": label,
                        "gold": bool(kind_type), "kind": kind, **({"type": kind_type} if kind_type else {})})
+    for a, b in slot_literals(text):  # a literal the source did not label
+        if not any(g["start"] < b and a < g["end"] for g in gold) and not any(
+                r["start"] < b and a < r["end"] and r.get("source_label") in CREDENTIAL_LABELS for r in labels):
+            kind_type = expected_type(text[a:b]) or literal_type(text, a)
+            gold.append({"start": a, "end": b, "type": kind_type, "kind": "unlabeled_slot"})
+            labels.append({"start": a, "end": b, "source_label": None, "gold": True, "kind": "unlabeled_slot", "type": kind_type})
+            stats["gold_unlabeled_slot"] += 1
     # Other occurrences of a gold value: spread to them by the propagation rule (LABELING.md).
     extra, others = [], []
     for value, kind_type in sorted({(text[g["start"]:g["end"]], g["type"]) for g in gold}):

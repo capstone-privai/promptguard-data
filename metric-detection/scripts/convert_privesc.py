@@ -48,7 +48,7 @@ import re
 
 from dataset_build import write_jsonl
 from dataset_policy import ALLOWED_USE
-from label_rules import BREAK, is_common, judge_occurrence, occurrences
+from label_rules import BREAK, is_common, judge_occurrence, occurrences, path_tokens
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NAME = "privesc-llm-data"
@@ -96,8 +96,8 @@ def common_values(values, metadata: dict, texts: list[str]) -> set[str]:
     part of a path here (the weak_password scenario reuses the username as the password)."""
     identifiers = {n.lower() for n in usernames(metadata)}
     identifiers |= {h.lower() for text in texts for m in HOST.findall(text) for h in m if h}
-    path_tokens = {t for text in texts for t in re.split(r"[\s'\"]+", text) if "/" in t}
-    return {v for v in values if is_common(v, identifiers) or any(v in t for t in path_tokens)}
+    paths = {t for text in texts for t in path_tokens(text)}
+    return {v for v in values if is_common(v, identifiers) or any(v in t for t in paths)}
 
 
 def find_values(text: str, channel: str, values, common: set[str]) -> tuple[list[dict], list[dict]]:

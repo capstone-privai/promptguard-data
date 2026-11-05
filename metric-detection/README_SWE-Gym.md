@@ -2,7 +2,7 @@
 
 [SWE-Gym/OpenHands-SFT-Trajectories](https://huggingface.co/datasets/SWE-Gym/OpenHands-SFT-Trajectories)를 우리 세션 형식으로 바꾼 데이터다. OpenHands 에이전트가 실제 파이썬 저장소(moto, MONAI, pandas, dask, mypy, conan, pydantic 등)의 GitHub 이슈를 고친 **성공 궤적 491개**다. 코딩 에이전트의 전형적인 트래픽(소스 파일 보기, 테스트 실행, 수정, 재현 스크립트)을 그대로 담고 있다.
 
-자격증명을 심은 실행이 아니므로 정답은 2개뿐이고 **거의 전부 음성인 데이터**다. moto(AWS 모의 라이브러리, 155개)처럼 테스트용 가짜 키와 비밀번호가 많은 저장소가 들어 있어, 탐지기가 **실제 코딩 에이전트 트래픽에서 얼마나 자주 잘못 가리는지**를 재기에 좋다.
+자격증명을 심은 실행이 아니므로 정답은 61개뿐이고 **거의 전부 음성인 데이터**다. moto(AWS 모의 라이브러리, 155개)처럼 테스트용 가짜 키와 비밀번호가 많은 저장소가 들어 있어, 탐지기가 **실제 코딩 에이전트 트래픽에서 얼마나 자주 잘못 가리는지**를 재기에 좋다.
 
 외부 데이터이므로 `meta.origin`은 `external`, `allowed_use`는 `["rule_eval", "ml_eval"]`이다. 원본 라이선스는 MIT다. 변환 결과는 git에 올리지 않고 아래 순서대로 다시 만든다. 정답 판정은 [reviews/SWE-Gym.jsonl](reviews/SWE-Gym.jsonl)에 값 없이 남아 있다.
 
@@ -28,7 +28,7 @@ python metric-detection/scripts/dataset_verify.py metric-detection/data_test/ses
 | `data_answer/gold_from_SWE-Gym.jsonl` | 정답 span |
 | `labels_from_SWE-Gym.jsonl` | 검토한 후보 값의 모든 등장 위치와 판정, 이유. 값은 들어 있지 않다 |
 
-세션 491개, item 18,900개, 약 60만 줄, 정답 span 58개(PASSWORD 46 / SECRET 9 / TOKEN 3, 세션 15개). 채점하는 정답은 `tool_input`을 뺀 27개(PASSWORD 20 / SECRET 4 / TOKEN 3)다.
+세션 491개, item 18,900개, 약 60만 줄, 정답 span 61개(PASSWORD 46 / SECRET 9 / TOKEN 6, 세션 16개). 채점하는 정답은 `tool_input`을 뺀 28개(PASSWORD 20 / SECRET 4 / TOKEN 4)다.
 
 | channel | item | 정답 span |
 |---|---|---|
