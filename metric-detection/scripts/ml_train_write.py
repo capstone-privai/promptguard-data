@@ -94,6 +94,9 @@ def card_message(card: dict) -> str:
                   for n in card["negatives"]]
     if card["boundary"]:
         lines.append(f"- Boundary rule ({card['boundary']['rule']}): {card['boundary']['instruction']}")
+    if card.get("lookalike"):
+        lines.append(f"- Show this command somewhere in the session, character for character; it holds no credential: "
+                     f"`{card['lookalike']}`.")
     return "\n".join(lines) + "\n\nCard JSON:\n" + json.dumps(card, ensure_ascii=False)
 
 
@@ -212,8 +215,8 @@ def follows_card(card: dict, items: list[dict]) -> list[str]:
         lines = [line for i in items if i["channel"] != "tool_input" for line in i["text"].split("\n")]
         if not any(placeholder in line and program in line for line in lines):
             problems.append(f"command {program} with {placeholder} missing")
-        if not any(rule["lookalike"] in i["text"].replace('\\"', '"') for i in items):
-            problems.append(f"look-alike {rule['lookalike']!r} missing")
+    if card.get("lookalike") and not any(card["lookalike"] in i["text"].replace('\\"', '"') for i in items):
+        problems.append(f"look-alike {card['lookalike']!r} missing")
     if card.get("dense"):
         placed = [s["placeholder"] for s in card["secrets"] if s["kind"] != "literal"]
         if max(sum(ph in i["text"] for ph in placed) for i in items) < min(len(placed), DENSE_TOGETHER):

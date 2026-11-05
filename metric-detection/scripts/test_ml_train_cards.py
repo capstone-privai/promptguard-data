@@ -46,10 +46,27 @@ class Cards(unittest.TestCase):
             target = c["secrets"][rule["secret"] - 1]
             self.assertIn(target["placeholder"], rule["command"])
             self.assertIn(rule["command"], rule["instruction"])
-            self.assertIn(rule["lookalike"], rule["instruction"])
+            self.assertIn(c["lookalike"], C.COMMAND_LOOKALIKES)
+            self.assertIn(c["lookalike"], W.card_message(c).split("\n\nCard JSON:")[0])
             self.assertNotEqual(target["channel"], "tool_input")
         prompt = sum(c["secrets"][c["boundary"]["secret"] - 1]["channel"] == "prompt" for c in cards)
         self.assertGreater(prompt / len(cards), 0.3)
+
+    def test_some_sessions_without_secrets_show_a_look_alike(self):
+        none = [c for c in self.cards if not c["secrets"] and c["split"] != "test_ood"]
+        share = sum(bool(c["lookalike"]) for c in none) / len(none)
+        self.assertGreater(share, 0.05)
+        self.assertLess(share, 0.15)
+        for c in none:
+            if c["lookalike"]:
+                self.assertIn(c["lookalike"], W.card_message(c).split("\n\nCard JSON:")[0])
+
+    def test_only_command_cards_and_cards_without_secrets_show_a_look_alike(self):
+        for c in self.cards:
+            if c["boundary"] and c["boundary"]["rule"] == "command_option":
+                self.assertTrue(c["lookalike"])
+            elif c["secrets"]:
+                self.assertIsNone(c["lookalike"])
 
     def test_command_forms_cover_most_families_and_forms(self):
         rules = [c["boundary"] for c in self.cards if c["boundary"] and c["boundary"]["rule"] == "command_option"]
@@ -109,10 +126,10 @@ class CommandOption(unittest.TestCase):
 
     def card(self, command="mysql -uroot -p{{password:s1}}"):
         return {"items": 2, "turns": 1, "language": "en", "negatives": [], "dense": False,
+                "lookalike": 'mysql -uroot -p"$DB_PASS"',
                 "secrets": [{"placeholder": "{{password:s1}}", "kind": "password", "type": "PASSWORD",
                              "channel": "prompt", "repeat": "once", "mask": None}],
-                "boundary": {"rule": "command_option", "secret": 1, "command": command,
-                             "lookalike": 'mysql -uroot -p"$DB_PASS"', "instruction": ""}}
+                "boundary": {"rule": "command_option", "secret": 1, "command": command, "instruction": ""}}
 
     def test_a_card_needs_its_command_and_look_alike(self):
         good = [{"turn_id": "t0", "channel": "prompt", "text": "run mysql -uroot -p{{password:s1}} please"},

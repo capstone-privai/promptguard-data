@@ -218,7 +218,7 @@ def with_transform(s: dict, transform: str, d: value_gen.Draw) -> tuple[dict, di
 
 
 def command_option(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
-    """A command form that holds one secret of the card, the look-alike to show with it, and where the secret starts."""
+    """A command form that holds one secret of the card, and where the secret starts."""
     kind, form = d.choice(COMMAND_FORMS[d.choice(sorted(COMMAND_FORMS))])
     want = TYPE_OF_COMMAND_KIND[kind]
     fits = (lambda s: s["type"] == "PASSWORD" and s["kind"] not in ("db_uri", "literal")) if kind == "password" else \
@@ -231,13 +231,10 @@ def command_option(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
         secrets[target] = {**secrets[target], "channel": "prompt"}
     p = secrets[target]["placeholder"]
     command = form.replace("{{", "{").replace("}}", "}").replace("{p}", p)
-    lookalike = d.choice(COMMAND_LOOKALIKES)
-    return {"rule": "command_option", "secret": target + 1, "command": command, "lookalike": lookalike,
+    return {"rule": "command_option", "secret": target + 1, "command": command,
             "instruction": f"Where {p} first appears, show this command line as plain text (a message the developer "
                            f"types, a README or runbook line, shell history, a CI trace; never a tool_input): `{command}`. "
-                           "Names, hosts and paths may change; keep the command, the option and the placeholder. "
-                           f"Elsewhere in the session show this look-alike character for character; it holds no "
-                           f"credential: `{lookalike}`."}
+                           "Names, hosts and paths may change; keep the command, the option and the placeholder."}
 
 
 def boundary_rule(d: value_gen.Draw, cfg: dict, secrets: list[dict]) -> dict:
@@ -321,6 +318,11 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
     boundary = None
     if secrets and d.int(1000) < cfg["boundary"]["share"] * 1000:
         boundary = boundary_rule(d, cfg, secrets)
+    # next to a command that holds a secret, and alone in some sessions, so a look-alike does not predict a secret
+    lookalike = None
+    if (boundary and boundary["rule"] == "command_option") or \
+            (not secrets and d.int(1000) < cfg["negatives"]["lookalike_share_none"] * 1000):
+        lookalike = d.choice(COMMAND_LOOKALIKES)
     if dense:  # all in one file or output, so they all start in tool_output and only the first may come back
         secrets = [{**s, "channel": "tool_output", "repeat": s["repeat"] if i == 0 else "once"}
                    for i, s in enumerate(secrets)]
@@ -360,7 +362,7 @@ def card(d: value_gen.Draw, cfg: dict, card_id: str, split: str, context: str, p
             "items": items, "turns": turns,
             "longest_output_chars": max(span(d, d.weighted(pairs(cfg["session"]["longest_output"]))),
                                         cfg["extra_secrets"]["dense"]["min_output_chars"] if dense else 0),
-            "dense": dense, "ood": ood}
+            "dense": dense, "lookalike": lookalike, "ood": ood}
 
 
 def assign_rows(slots: list, rows: list[dict], base: str) -> list[dict]:
@@ -447,6 +449,7 @@ def summary(cards: list[dict], catalog: list[dict], by_source: bool = False) -> 
            "secrets": len(secrets), "secrets_by_channel": dict(sorted(Counter(s["channel"] for s in secrets).items())),
            "secrets_masked_in_tool_input": sum(bool(s["mask"]) for s in secrets),
            "dense_cards": sum(c["dense"] for c in cards),
+           "with_lookalike": sum(bool(c["lookalike"]) for c in cards),
            "with_negatives": sum(bool(c["negatives"]) for c in cards),
            "negatives": sum(len(c["negatives"]) for c in cards),
            "contrasts": sum(n.get("contrast", False) for c in cards for n in c["negatives"]),
