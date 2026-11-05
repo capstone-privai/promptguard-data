@@ -68,6 +68,12 @@ def prompt() -> tuple[str, str]:
     return text, hashlib.sha256(text.encode()).hexdigest()[:12]
 
 
+# The model most often breaks these two: it repeats a value inside one item, or counts a mask as the other channel
+REPEAT_NOTE = {"once": "", "multi_item": " (in two different items; twice inside one item does not count)",
+               "multi_channel": " (also written as this placeholder in prompt, instructions or tool_output, whichever "
+                                "is not its first channel; a tool_input mask does not count)"}
+
+
 def card_message(card: dict) -> str:
     """The user turn: the card as a work order, then the card itself."""
     lines = [f"Card {card['card_id']}.",
@@ -79,6 +85,7 @@ def card_message(card: dict) -> str:
     if card["secrets"]:
         lines.append("- Secrets (copy each placeholder exactly):")
         lines += [f"  - {s['placeholder']} ({s['type']}): first in {s['channel']}, repeat {s['repeat']}"
+                  + REPEAT_NOTE[s["repeat"]]
                   + (f"; later the agent reuses it in a tool_input as {s['mask']}" if s.get("mask") else "")
                   for s in card["secrets"]]
         if card.get("dense"):
@@ -134,10 +141,25 @@ def card_of(custom_id: str) -> tuple[str, int]:
 # ---- checks -----------------------------------------------------------------------
 
 PLACEHOLDER_TEXT = re.compile(r"\\\{\{|\{\{[^{}]*\}\}")
-# A credential key with a literal value after it (what the placeholders should have been)
+# A credential key with a literal value after it (what the placeholders should have been). An auth scheme is not the
+# value: the check looks past it. The value ends at a written-out \n or \" of JSON-wrapped output.
 LITERAL_AFTER_KEY = re.compile(
     r"""(?i)(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret"""
-    r"""|auth(?:orization)?|credentials?)["']?[ \t]*[:=][ \t]*["']?(?!PLACEHOLDER\b)([^\s"',;{}()<>\]\[]{6,})""")
+    r"""|auth(?:orization)?|credentials?)["'`]?[ \t]*[:=][ \t]*["'`]?(?:(?:bearer|basic|token|digest)[ \t]+)?"""
+    r"""(?!PLACEHOLDER\b)(?!(?:bearer|basic|token|digest)[ \t])((?:(?!\\[nrt"])[^\s"',;{}()<>\]\[`]){6,})""")
+TYPE_NAMES = {"string", "boolean", "number", "object", "integer", "unknown", "option", "optional"}
+# Text of the file itself that uses double braces: Go and Helm templates, PHP's {closure} frames
+FOREIGN_BRACES = re.compile(r"(?<!\\)\{\{(?! )([^{}]*)\}\}")
+
+
+def escape_foreign_braces(text: str) -> str:
+    """Write {{.Names}} or {{end}} as the \\{{ the prompt asks for. A placeholder shape or a known kind stays as it is,
+    so the card checks still see a misspelled or unnamed secret."""
+    def escape(m):
+        inner = m.group(1)
+        placeholder = re.match(r"[a-z][a-z0-9_]*:|[A-Z][A-Z_]*=", inner) or inner.split("|")[0] in B.KINDS
+        return m.group(0) if placeholder else "\\" + m.group(0)
+    return FOREIGN_BRACES.sub(escape, text)
 
 
 def strip_placeholders(text: str, mark: str = " ") -> str:
@@ -156,7 +178,12 @@ def literal_secrets(texts: list[str]) -> list[str]:
         if "PRIVATE KEY-----" in bare and re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----\s*\S", bare):
             found.append("literal private key block")
         for m in LITERAL_AFTER_KEY.finditer(bare):
-            if not exclusion_kind(bare, m.start(1), m.end(1)) and not m.group(1).replace(".", "").isdigit():
+            value = m.group(1)
+            if value.rstrip("?!").lower() in TYPE_NAMES or bare[m.end(1):m.end(1) + 1] == "(":  # token: string, f(
+                continue
+            if m.group(0).upper().startswith("PWD=") and value.startswith("/"):  # the shell's working directory
+                continue
+            if not exclusion_kind(bare, m.start(1), m.end(1)) and not value.replace(".", "").isdigit():
                 found.append(f"literal value after a credential key: {bare[m.start():m.end()][:40]!r}")
     return found
 
@@ -167,7 +194,7 @@ def gitleaks(candidates: dict[str, list[str]]) -> dict[str, list[str]]:
         return {}
     with tempfile.TemporaryDirectory() as directory:
         for cid, texts in candidates.items():
-            Path(directory, f"{cid}.txt").write_text("\n\n".join(map(strip_placeholders, texts)), encoding="utf-8")
+            Path(directory, f"{cid}.txt").write_text("\n\n".join(strip_placeholders(t, "xxxxxxxx") for t in texts), encoding="utf-8")
         report = Path(directory) / "report.json"
         subprocess.run(["gitleaks", "dir", directory, "--report-format", "json", "--report-path", str(report),
                         "--no-banner", "--exit-code", "0", "--log-level", "error"], check=True)
@@ -181,7 +208,7 @@ def gitleaks(candidates: dict[str, list[str]]) -> dict[str, list[str]]:
 
 def follows_card(card: dict, items: list[dict]) -> list[str]:
     problems = []
-    if not card["items"] - 1 <= len(items) <= card["items"] + 1:
+    if abs(len(items) - card["items"]) > max(1, card["items"] // 5):  # the size is a target, not a label
         problems.append(f"{len(items)} items, card asks {card['items']}")
     turns = [i["turn_id"] for i in items]
     if len(set(turns)) > card["turns"] + 1:
@@ -227,10 +254,10 @@ def follows_card(card: dict, items: list[dict]) -> list[str]:
                                      for neg in card["negatives"]) else "negative"
             problems.append(f"{what} {placeholder} missing")
     in_input = {m for i in items if i["channel"] == "tool_input"
-                for m in re.findall(r"\{\{(?!neg:|mask:)[^{}]*\}\}", i["text"]) if not m.startswith("{{ ")}
+                for m in re.findall(r"(?<!\\)\{\{(?!neg:|mask:)[^{}]*\}\}", i["text"]) if not m.startswith("{{ ")}
     if in_input:
         problems.append(f"secret placeholders in tool_input (the agent writes masks there): {sorted(in_input)[:3]}")
-    stray = {m for i in items for m in re.findall(r"\{\{(?!neg:|mask:)[^{}]*\}\}", i["text"])} - allowed
+    stray = {m for i in items for m in re.findall(r"(?<!\\)\{\{(?!neg:|mask:)[^{}]*\}\}", i["text"])} - allowed
     stray = {m for m in stray if not m.startswith("{{ ")}
     if stray:
         problems.append(f"placeholders not on the card: {sorted(stray)[:4]}")
@@ -375,7 +402,7 @@ def cmd_process(args):
             why.append(f"stop_reason {r['stop_reason']}")
         else:
             try:
-                items = json.loads(r["text"])["items"]
+                items = [{**i, "text": escape_foreign_braces(i["text"])} for i in json.loads(r["text"])["items"]]
                 candidates[r["custom_id"]] = (card, items)
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 why.append(f"not the schema's JSON: {e}")

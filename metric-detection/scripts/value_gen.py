@@ -473,7 +473,7 @@ def neg_doc_example(d: Draw) -> str:
 
 
 def neg_descriptor(d: Draw) -> str:
-    return d.choice(("new password", "your password", "temporary password", "Authentication token",
+    return d.choice(("new password", "account password", "temporary password", "Authentication token",
                      "current password", "API access key", "service account secret", "the shared secret"))
 
 

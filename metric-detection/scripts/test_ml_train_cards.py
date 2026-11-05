@@ -169,5 +169,47 @@ class Blobs(unittest.TestCase):
         exclusion_kind(text, 14, len(text) - 1)  # must not raise
 
 
+class LiteralCheck(unittest.TestCase):
+    def test_keeps_real_literals(self):
+        for text in ('curl -H "Authorization: Bearer abc123def456"', "Authorization: Basic dXNlcjpwYXNz",
+                     "PASSWORD: changeme", "access-key: AKIA4TQ2ORDERSVC7Z", "DB_PWD=/home/a/b".replace("/", "x")):
+            with self.subTest(text=text):
+                self.assertTrue(W.literal_secrets([text]))
+
+    def test_passes_what_holds_no_value(self):
+        for text in ("Authorization: Bearer {{token:s1}}", 'authorization="Bearer {{token:s1}}"',
+                     "Authorization:Bearer {{token:s1}}", "Authorization: `Bearer ${token}`",
+                     'PASSWORD=\\nAPI_KEY=\\nLOG_LEVEL=info\\n', "token: string", "apiKey: String?",
+                     "api_key = _read_secret_file(path)", "PWD=/home/analyst/notebooks"):
+            with self.subTest(text=text):
+                self.assertEqual(W.literal_secrets([text]), [])
+
+
+class ForeignBraces(unittest.TestCase):
+    def test_file_templates_are_escaped_and_build_as_text(self):
+        for text in ("{{.Names}}", "{{end}}", "{{closure}}", "{{$k}}"):
+            with self.subTest(text=text):
+                self.assertEqual(W.escape_foreign_braces(text), "\\" + text)
+        template = {"session_id": "b", "meta": {"split": "train", "group_id": "b", "variants": 1, "value_profile": "mltrain"},
+                    "items": [{"turn_id": "t0", "channel": "prompt", "text": W.escape_foreign_braces("docker ps --format '{{.Names}} {{end}}'")}]}
+        sessions = B.build_lines([json.dumps(template)], "b", "b", "metric-detection/templates/ml_train/b.jsonl")[0]
+        self.assertIn("{{.Names}} {{end}}", sessions[0]["items"][0]["text"])
+
+    def test_placeholders_stay_for_the_card_checks(self):
+        for text in ("{{password:s1}}", "{{token:s1|base64}}", "{{password}}", "{{neg:hash}}", "{{mask:s1}}",
+                     "{{PASSWORD=x}}", "{{ github.sha }}", "\\{{.y}}"):
+            with self.subTest(text=text):
+                self.assertEqual(W.escape_foreign_braces(text), text)
+
+
+class Descriptors(unittest.TestCase):
+    def test_every_value_reads_as_a_descriptor_in_a_credential_position(self):
+        d = value_gen.Draw("test-descriptors")
+        for value in {value_gen.neg_descriptor(d) for _ in range(200)}:
+            with self.subTest(value=value):
+                text = "KEY=" + value + "\n"
+                self.assertEqual(exclusion_kind(text, 4, 4 + len(value)), "descriptor")
+
+
 if __name__ == "__main__":
     unittest.main()
