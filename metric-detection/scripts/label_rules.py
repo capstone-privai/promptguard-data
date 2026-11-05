@@ -32,14 +32,21 @@ NL = r"(?:^|\n|\\n)"
 AUTH_CMD = (r"(?:timeout\s+\d+\s+)?(?:/usr/bin/)?(?:su\b|sudo\b[^|;\n]*?\s-\w*S|passwd\b|chpasswd\b|openssl\b|ssh\b"
             r"|script\b|login\b|newgrp\b|unix_chkpwd\b)")
 CRON = r"(?:[\d*,/-]+\s+){5}"
+# What joins a key to its literal: an assignment (=, :, :=, =>), or a comparison (==, ===, !=, !==) with a quoted
+# literal on the same line (without the quote, "=== PASSWD ===" is a banner and "password == other" compares variables).
+ASSIGN = rf"(?:(?:!==?|===?)[ \t]*(?={Q})|=>|:=|[:=])"
 
 # Credential positions: the text right before the value. Checked before the identifier positions.
 SLOT = [
-    ("key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:password|passwd|passphrase|pass|pwd|pw|secret){Qo}\s*[:=]\s*{Qo}$")),
-    ("secret_key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:secret_?key|api_?key|access_?key|private_?key|client_?secret"
-                                    rf"|(?:auth|access|refresh|bearer|api|session)?_?token|auth|(?<!test_)credentials?){Qo}\s*[:=]\s*{Qo}$")),
-    ("camel_key_value", re.compile(rf"[a-z](?:Password|Passwd|Secret|SecretKey|Token|ApiKey|AccessKey){Qo}\s*[:=]\s*{Qo}$")),
+    ("key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:password|passwd|passphrase|pass|pwd|pw|secret){Qo}\*{{0,2}}\s*{ASSIGN}\*{{0,2}}\s*{Qo}$")),
+    ("secret_key_value", re.compile(rf"(?i)(?:\b|_|\\n)(?:secret_?key|api_?key|access_?key(?:_?id)?|private_?key|client_?secret"
+                                    rf"|(?:auth|access|refresh|bearer|api|session)?_?token|auth|(?<!test_)credentials?){Qo}\s*{ASSIGN}\s*{Qo}$")),
+    ("camel_key_value", re.compile(rf"[a-z](?:Password|Passwd|Secret|SecretKey|Token|ApiKey|AccessKey){Qo}\s*{ASSIGN}\s*{Qo}$")),
     ("url_userinfo", re.compile(r"[a-z][\w+.-]*://[^\s/:@'\"]*:$")),  # scheme://user:⟦pw⟧@host
+    ("env_default", re.compile(rf"(?i)(?:\benviron\.get|\bgetenv|\benv\.get)\(\s*{Q}[\w.-]*(?:password|passwd|secret|token|api_?key)[\w.-]*{Q}\s*,\s*{Q}$")),
+    ("auth_header", re.compile(rf"(?i)\bauthorization{Qo}\s*[:=,]\s*{Qo}(?:bearer|basic|digest|token)\s+$")),
+    ("cookie", re.compile(r"(?i)\b(?:set-)?cookie\W{1,4}(?:[^\s=;]+=[^;\n]*;\s*)*[^\s=;]+=$")),
+    ("requirepass", re.compile(rf"--requirepass\s+{Qo}$")),
     ("option", re.compile(rf"(?i)--?(?:password|passwd|pass)(?:\s+|=){Qo}$")),
     ("cli_p", re.compile(rf"(?:docker\s+login|test_credentials|htpasswd|smbclient|ftp|psql)\b[^|;\n]*?\s-p\s+{Qo}$")),
     ("echo_pipe", re.compile(rf"(?:echo|printf)(?:\s|\\n)+(?:(?:-[en]+|{Q}%s[^'\"]*{Q})\s+)*{Qo}$")),
@@ -119,13 +126,24 @@ EXAMPLE_BEFORE = re.compile(r"(?i)(?:\bsuch as|\be\.g\.,?|\bfor (?:example|insta
 # LABELING.md "정답이 아닌 것": (kind, pattern on the value). The first match decides.
 EXCLUDED_VALUE = [
     ("empty", re.compile(r"^\s*$")),
-    ("redaction", re.compile(r"\*{3}|x{4}|X{4}|#{4}|redacted|_removed\b|\.\.\.|…", re.I)),
-    ("template", re.compile(r"<[^<>\n]*(?:pass|token|key|secret|your|user|name|value|here|id)[^<>\n]*>|\{\{|\byour[_-]?"
-                            r"|_here\b|placeholder|change[_-]?this"
+    # one-way hashes: crypt ($6$, $2a$, $y$, $argon2id$), an LDAP {SCHEME}, Django pbkdf2_sha256$...
+    ("hash", re.compile(r"^(?:\{[A-Za-z0-9-]+\})?\$(?:1|2[abxy]?|5|6|y|gy|7|P|H|apr1|md5|sha\d*|scrypt|argon2(?:id|i|d)"
+                        r"|krb5\w*|pbkdf2[\w-]*)\$"
+                        r"|^\{(?:S?SHA\d*|S?MD5|CRYPT|BCRYPT|PBKDF2[\w-]*)\}|^(?:pbkdf2|argon2|bcrypt|scrypt)[\w-]*\$")),
+    ("redaction", re.compile(r"\*{3}|x{4}|X{4}|#{4}|redacted|_removed\b|\.\.\.|…|(?:^|[-_:])x{3}$", re.I)),
+    ("template", re.compile(r"^<[^<>\n]+>$|^\[[A-Z][A-Z0-9_ -]*\]$"  # the whole value is a slot: <define>, [FUZZ]
+                            r"|<[^<>\n]*(?:pass|token|key|secret|your|user|name|value|here|id)[^<>\n]*>|\{\{"
+                            r"|(?<![a-z0-9])your|_here(?![a-z0-9])|placeholder|change[_-]?this"
                             r"|^(?:my|some|the|a)[_-]?(?:password|passwd|pass|secret|token|key|api[_-]?key)$", re.I)),
+    ("non_credential", re.compile(r"^\d{3}-\d{2}-\d{4}$")),  # a US SSN
+    # the word "password" in another language: a translated screen string ('password' => 'lozinka'), not a value.
+    # As a whole word: senha123 stays a value.
+    ("descriptor", re.compile(r"(?i)(?<![^\W_])(?:wachtwoord|lozink[aeiu]|hesl[oa]|has[lł]o|senha|contrase[nñ]a|contrasenya|passwort"
+                              r"|[cg]yfrinair|kennwort|mot de passe|parola|passord|l[oö]senord|salasana|adgangskode|jelsz[oó]|geslo"
+                              r"|парол[ья])(?![^\W_])|密码|密碼|パスワード|비밀번호")),
     ("doc_example", re.compile(r"example(?!\.(?:com|org|net|edu|invalid|test|local)\b)", re.I)),  # AKIA...EXAMPLE, not example.com
     # ${TOKEN}, %PASS%, {token}, or the NAME of an environment variable (GITHUB_PASSWORD)
-    ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|os\.environ|process\.env|getenv"
+    ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|^#\{|os\.environ|process\.env|getenv"
                              r"|^(?:[A-Z0-9]+_)*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|KEY|APIKEY|AUTH|USER)(?:_[A-Z0-9]+)*$")),
     ("code", re.compile(r"^[A-Za-z_$][\w.$]*[(\[]|[{}]$|^[A-Za-z_]{1,16}=$|\bself\.|\bthis\.|^[A-Za-z_]+(?:\.[A-Za-z_]+)+,?$"
                         r"|^(?:true|false|null|none|nil|undefined)$|^[).,;:\]}>]|\s\+$|^:\w+$|^&\w+$|\[$|^\W$|^\d+/\w+$"
@@ -136,6 +154,10 @@ EXCLUDED_VALUE = [
 EXCLUDED_BEFORE = [
     ("identifier", re.compile(r"(?i)(?:PublicKeyToken|ClientToken|ChangeToken|ClientRequestToken|client_request_token"
                               r"|next_?token|page_?token|idempotency_?key)\W{0,4}$")),
+    # a CSRF token, or a PIN, CVV, SSN, card or account number, named right before the value (a table row has padding)
+    ("non_credential", re.compile(r"(?i)(?:csrf|xsrf)[\w-]*\W{0,4}$"
+                                  r"|(?<!/)(?:\b|_)(?:pin|cvv|cvc|ssn|iban|card(?:[ _-]?(?:number|no))?|account[ _-]?(?:number|no))"
+                                  r"\W{0,30}$")),
     ("descriptor", re.compile(r"(?:^|\n)[ \t]*(?:-\w,[ \t]*)?--?[\w-]+[ \t]{2,}$")),  # --password   help text column
     ("code", re.compile(r"\b(?:artisan|rake|rails)\s+[\w-]*:$")),  # php artisan credentials:edit
 ]
@@ -200,6 +222,8 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
             return kind
     if is_phrase(value):
         return "descriptor"
+    if text[end:end + 3] == "..." or text[end:end + 1] == "…":
+        return "redaction"  # a value cut short: Bearer vp7jx... (normalize_span leaves the dots out of the span)
     before = text[max(0, start - BEFORE):start]
     for kind, pattern in EXCLUDED_BEFORE:
         if pattern.search(before) and not (kind == "identifier" and value.startswith("akab-")):  # Akamai client token
@@ -258,6 +282,12 @@ def is_common(value: str, session_identifiers: set[str] = frozenset()) -> bool:
     return v.isdigit() or v in common_words() or v in session_identifiers
 
 
+def path_tokens(text: str) -> set[str]:
+    """Whitespace- or quote-separated tokens that are paths. A URL is not one: in scheme://user:pw@host the pw is a
+    credential, not a path part."""
+    return {t for t in re.split(r"[\s'\"]+", text) if "/" in t and "://" not in t}
+
+
 def is_gold(common: bool, verdict: str) -> bool:
     return verdict == "slot" or (not common and verdict != "ident")
 
@@ -313,10 +343,12 @@ def _closes(text: str, start: int, end: int) -> bool:
 
 # Formats that decide the type on their own (LABELING.md "유형").
 TYPE_BY_FORMAT = [
-    ("PRIVATE_KEY", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
+    ("PRIVATE_KEY", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----|^PuTTY-User-Key-File-\d")),
     ("ACCESS_KEY", re.compile(r"^(?:AKIA|ASIA)[A-Z0-9]{16}$|^pk_(?:live|test)_\w+$|^pk\.ey")),
     ("TOKEN", re.compile(r"^(?:gh[pousr]_|github_pat_|glpat-|xox[abposr]-)\w|^eyJ[\w-]+\.eyJ[\w-]+\.[\w-]*$")),
-    ("SECRET", re.compile(r"^(?:sk-|sk_live_|AIza)[\w-]{10,}$|^https://hooks\.slack\.com/")),
+    ("SECRET", re.compile(r"^(?:sk-|sk_live_|AIza)[\w-]{10,}$|^https://hooks\.slack\.com/"
+                         r"|^https://discord(?:app)?\.com/api/webhooks/|^https://[\w.-]*webhook\.office\.com/"
+                         r"|^https://outlook\.office\.com/webhook/")),
 ]
 
 

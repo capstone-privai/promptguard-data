@@ -39,7 +39,7 @@ metric-detection의 모든 데이터셋(합성 3종, CredData, privesc-llm-data,
 | `reference` | 변수·환경변수·속성 참조 | `${TOKEN}`, `$DB_PASS`, `%PASS%`, `os.environ["KEY"]`, `self.api_key`, `{token}` |
 | `code` | 값이 아닌 코드 표현식, 타입, 함수 호출 | `values[EnvAPIPassword]`, `password: string;`, `kwargs.get(`, `generate_password_hash(` |
 | `doc_example` | 공개 문서·표준·도구 설명서에 실린 예시 값, 또는 글에서 예시라고 밝힌 값 | `AKIAIOSFODNN7EXAMPLE`, jwt.io 예시 JWT, RFC 7617의 `open sesame`, `EXAMPLE`이 든 값, 정책 문서의 "such as `Ocean@2025`", man 페이지의 `--password pass` |
-| `descriptor` | 값이 아니라 그 값을 가리키는 말 | `new password`, `your password`, `temporary password` |
+| `descriptor` | 값이 아니라 그 값을 가리키는 말. 다른 언어로 쓴 "비밀번호"도 같다 | `new password`, `your password`, `temporary password`, `'password' => 'lozinka'` |
 | `hash` | 비밀번호 해시와 같은 단방향 해시 | `$6$…`, `$2a$04$…`, `$y$…`, Kerberos 해시 |
 | `identifier` | 사용자명, 이메일, 계정·리소스·클라이언트 id, request id, 커밋 해시, 이름 | `x-github-request-id`, `"_postman_id": "…"`, `"uid": "…"`, OAuth client id, AWS 계정 id, ARN, `/etc/passwd`의 사용자명 |
 | `non_credential` | 자격증명이 아닌 비밀·개인정보 | PIN, CVV, 카드 번호, 계좌 번호, CSRF 토큰, 추적·환경설정 쿠키 |
