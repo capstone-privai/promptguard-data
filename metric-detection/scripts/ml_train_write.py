@@ -147,7 +147,8 @@ LITERAL_AFTER_KEY = re.compile(
     r"""(?i)(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret"""
     r"""|auth(?:orization)?|credentials?)["'`]?[ \t]*[:=][ \t]*["'`]?(?:(?:bearer|basic|token|digest)[ \t]+)?"""
     r"""(?!PLACEHOLDER\b)(?!(?:bearer|basic|token|digest)[ \t])((?:(?!\\[nrt"])[^\s"',;{}()<>\]\[`]){6,})""")
-# Not a credential by LABELING.md, but GitHub push protection refuses a commit that holds one
+# Not a credential by LABELING.md, but GitHub push protection refuses a commit that holds one, so a template with
+# one stays in the git-ignored raw/NAME_local.jsonl
 TWILIO_SID = re.compile(r"(?<![0-9A-Za-z])(?:AC|SK)[0-9a-f]{32}(?![0-9A-Za-z])")
 TYPE_NAMES = {"string", "boolean", "number", "object", "integer", "unknown", "option", "optional"}
 # Text of the file itself that uses double braces: Go and Helm templates, PHP's {closure} frames
@@ -174,7 +175,6 @@ def literal_secrets(texts: list[str]) -> list[str]:
     found = []
     for text in texts:
         bare = strip_placeholders(text, "PLACEHOLDER")
-        found += [f"literal Twilio SID {m[:6]}..." for m in TWILIO_SID.findall(bare)]
         for token in re.findall(r"[A-Za-z0-9_\-./+=:]{12,}", bare):
             if expected_type(token):
                 found.append(f"literal {expected_type(token)} {token[:12]}...")
@@ -294,13 +294,18 @@ def builds(line: dict, stem: str) -> list[str]:
 
 def paths(name: str) -> dict[str, Path]:
     return {"state": DIR / "batches" / f"{name}.json", "raw": DIR / "raw" / f"{name}.jsonl",
-            "rejected": DIR / "raw" / f"rejected_{name}.jsonl", "templates": DIR / f"{name}.jsonl"}
+            "rejected": DIR / "raw" / f"rejected_{name}.jsonl", "templates": DIR / f"{name}.jsonl",
+            "local": DIR / "raw" / f"{name}_local.jsonl"}
+
+
+def accepted_cards(p: dict[str, Path]) -> set[str]:
+    return {t["session_id"] for key in ("templates", "local") if p[key].is_file() for t in read_jsonl(p[key])}
 
 
 def pending(cards: list[dict], name: str) -> list[tuple[dict, int]]:
     """(card, attempt) for every card of cards without an accepted template in NAME."""
     p = paths(name)
-    accepted = {t["session_id"] for t in read_jsonl(p["templates"])} if p["templates"].is_file() else set()
+    accepted = accepted_cards(p)
     tried = Counter(card_of(r["custom_id"])[0] for r in read_jsonl(p["raw"])) if p["raw"].is_file() else Counter()
     state = json.loads(p["state"].read_text()) if p["state"].is_file() else {"batches": []}
     tried.update(card_of(cid)[0] for b in state["batches"] if not b.get("collected") for cid in b["custom_ids"])
@@ -389,7 +394,7 @@ def cost(rows: list[dict]) -> float:
 def cmd_process(args):
     p = paths(args.name)
     cards = {c["card_id"]: c for c in read_jsonl(args.cards)}
-    accepted_ids = {t["session_id"] for t in read_jsonl(p["templates"])} if p["templates"].is_file() else set()
+    accepted_ids = accepted_cards(p)
     done = {r["custom_id"] for r in read_jsonl(p["rejected"])} if p["rejected"].is_file() else set()
     rows = [r for r in read_jsonl(p["raw"]) if r["custom_id"] not in done
             and card_of(r["custom_id"])[0] not in accepted_ids]
@@ -412,26 +417,30 @@ def cmd_process(args):
         if why:
             reasons[r["custom_id"]] = why
     leaks = gitleaks({cid: [i["text"] for i in items] for cid, (_, items) in candidates.items()})
-    accepted, rejected = [], []
+    accepted, local, rejected = [], [], []
     for cid, (card, items) in candidates.items():
         why = follows_card(card, items) + literal_secrets([i["text"] for i in items]) + leaks.get(cid, [])
         r = next(x for x in rows if x["custom_id"] == cid)
         line = template_line(card, items, {"model": r["model"], "prompt": r["prompt"], "batch_id": r["batch_id"],
                                            "custom_id": cid, "message_id": r["message_id"]})
+        keep_local = any(TWILIO_SID.search(i["text"]) for i in items)
         if not why:
-            why = builds(line, args.name)
+            why = builds(line, f"{args.name}_local" if keep_local else args.name)
         if why or card["card_id"] in accepted_ids:
             reasons.setdefault(cid, []).extend(why or ["card already accepted"])
         else:
-            accepted.append(line)
+            (local if keep_local else accepted).append(line)
             accepted_ids.add(card["card_id"])
     for cid, why in reasons.items():
         r = next(x for x in rows if x["custom_id"] == cid)
         rejected.append({"custom_id": cid, "reasons": why, "text": r.get("text", "")})
     write_jsonl(p["templates"], accepted, append=True)
+    if local:
+        write_jsonl(p["local"], local, append=True)
     write_jsonl(p["rejected"], rejected, append=True)
     first = Counter(w.split(":")[0].split(" {")[0][:40] for x in rejected for w in x["reasons"][:1])
-    print(json.dumps({"responses": len(rows), "accepted": len(accepted), "rejected": len(rejected),
+    print(json.dumps({"responses": len(rows), "accepted": len(accepted), "kept_local": len(local),
+                      "rejected": len(rejected),
                       "templates_total": len(accepted_ids), "cards_without_template": len(set(cards) - accepted_ids),
                       "rejected_by_first_reason": dict(first.most_common(10)),
                       "batch_cost_usd": round(cost(rows), 2)}, ensure_ascii=False, indent=2))

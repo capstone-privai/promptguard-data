@@ -14,6 +14,7 @@
 | `batches/NAME.json` | batch id, 카드 파일 sha256, 프롬프트 버전, 요청 custom_id. 본문은 없다 | 올림 |
 | `raw/` | 응답 원문과 거절 사유. 거절된 응답에는 모델이 쓴 리터럴 비밀이 있을 수 있다 | 안 올림 |
 | `NAME.jsonl` | 통과한 템플릿. placeholder만 있고 값은 없다. 다시 만들 수 없는 원본이라 이 저장소에 커밋한다(본 생성분 약 10MB). 커밋 전에 gitleaks로 한 번 더 본다 | 올림 |
+| `raw/NAME_local.jsonl` | 통과했지만 리터럴 Twilio SID가 들어 있어 GitHub 푸시 보호에 걸리는 템플릿. 따로 빌드해 합친다. 저장소만으로는 다시 만들 수 없다 | 안 올림 |
 
 ## 순서
 

@@ -1,6 +1,12 @@
 """Regression tests for the coverage parts of the ML training cards (stdlib unittest)."""
+import argparse
+import contextlib
+import io
 import json
+from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
 from label_rules import exclusion_kind
 import ml_train_build as B
@@ -176,11 +182,6 @@ class LiteralCheck(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertTrue(W.literal_secrets([text]))
 
-    def test_rejects_a_twilio_sid_that_push_protection_would_refuse(self):
-        sid = "AC" + "0123456789abcdef" * 2  # joined here so this file does not hold one
-        self.assertTrue(W.literal_secrets(["account: " + sid]))
-        self.assertEqual(W.literal_secrets(["account: " + sid + "0"]), [])
-
     def test_passes_what_holds_no_value(self):
         for text in ("Authorization: Bearer {{token:s1}}", 'authorization="Bearer {{token:s1}}"',
                      "Authorization:Bearer {{token:s1}}", "Authorization: `Bearer ${token}`",
@@ -188,6 +189,33 @@ class LiteralCheck(unittest.TestCase):
                      "api_key = _read_secret_file(path)", "PWD=/home/analyst/notebooks"):
             with self.subTest(text=text):
                 self.assertEqual(W.literal_secrets([text]), [])
+
+
+class KeepLocal(unittest.TestCase):
+    def test_a_twilio_sid_stays_out_of_the_committed_file_and_is_not_written_again(self):
+        sid = "AC" + "0123456789abcdef" * 2  # joined here so this file does not hold one
+        self.assertEqual(W.literal_secrets(["account: " + sid]), [])
+        self.assertIsNone(W.TWILIO_SID.search("account: " + sid + "0"))
+        cfg = C.load(C.CONFIG)
+        card = next(c for c in C.draw(cfg, C.load_catalog(cfg)) if not c["secrets"] and not c["negatives"]
+                    and not c["lookalike"] and c["language"] == "en" and c["split"] == "train")
+        items = [{"turn_id": "t0", "channel": "tool_output" if n else "prompt", "text": f"line {n}"}
+                 for n in range(card["items"])]
+        items[-1]["text"] = "account: " + sid
+        row = {"custom_id": card["card_id"] + "-1", "type": "succeeded", "stop_reason": "end_turn", "model": "claude-opus-5-5",
+               "prompt": "v1 test", "batch_id": "b", "message_id": "m", "usage": {"input_tokens": 0, "output_tokens": 0},
+               "text": json.dumps({"items": items})}
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(W, "DIR", Path(directory)):
+            (Path(directory) / "raw").mkdir()
+            cards = Path(directory) / "cards.jsonl"
+            cards.write_text(json.dumps(card))
+            W.write_jsonl(W.paths("t")["raw"], [row])
+            with contextlib.redirect_stdout(io.StringIO()):
+                W.cmd_process(argparse.Namespace(name="t", cards=cards))
+            p = W.paths("t")
+            self.assertEqual(W.read_jsonl(p["templates"]), [])
+            self.assertEqual([t["session_id"] for t in W.read_jsonl(p["local"])], [card["card_id"]])
+            self.assertEqual(W.pending([card], "t"), [])
 
 
 class ForeignBraces(unittest.TestCase):
