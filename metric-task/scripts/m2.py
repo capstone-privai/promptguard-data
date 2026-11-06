@@ -53,7 +53,7 @@ import detector_capture  # noqa: E402
 import m2_tasks as mt  # noqa: E402
 
 REPO_ROOT = mt.REPO_ROOT
-RUNS_DIR = REPO_ROOT / "runs" / "metric-task"
+RUNS_DIR = Path(os.environ.get("M2_RUNS_DIR") or REPO_ROOT / "runs" / "metric-task")
 WORK_ROOT = Path(tempfile.gettempdir()) / "promptguard-m2"
 DETECTOR = Path(__file__).resolve().parent / "detector_worker.py"
 FIXTURE_MCP = Path(__file__).resolve().parent / "fixture_mcp.py"
