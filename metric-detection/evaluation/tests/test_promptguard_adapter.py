@@ -37,10 +37,10 @@ class PromptGuardAdapterTests(unittest.TestCase):
     def test_repository_examples_are_masked_exactly(self) -> None:
         self.assertEqual(self._status("s-0001", 2, "mysecret123"), SpanStatus.EXACT)
         self.assertEqual(self._status("s-0001", 2, "secret123@"), SpanStatus.EXACT)
-        # The mod substitutes from the end of the text, so the later value gets the lower number.
+        # The mod numbers top to bottom, so the earlier value gets the lower number.
         text = self.result.outputs[("s-0001", 2)].text
-        self.assertIn("DB_PASSWORD=[PASSWORD_2]\n", text)
-        self.assertIn("postgresql://admin:[PASSWORD_1]@prod-db.internal:5432/payments", text)
+        self.assertIn("DB_PASSWORD=[PASSWORD_1]\n", text)
+        self.assertIn("postgresql://admin:[PASSWORD_2]@prod-db.internal:5432/payments", text)
 
     def test_placeholders_are_session_scoped(self) -> None:
         outputs = self.result.outputs
@@ -116,14 +116,14 @@ class FailOpenTests(unittest.TestCase):
             with self.subTest(override=override):
                 self._assert_failed_open(found(finding(self.TEXT, "mysecret123", **override)))
 
-    def test_numbers_taken_before_the_failure_stay_taken(self) -> None:
+    def test_a_failed_result_takes_no_numbers(self) -> None:
         first, second = "key=abcdefgh\n", "other=zzzzzzzz\n"
-        # The later finding is numbered first; the earlier one then overlaps it and the hook throws.
+        # The two findings overlap. The mod checks every span before numbering any, so the ledger stays empty.
         worker = ScriptedWorker({first: found(finding(first, "abcdef", value_hash="a"), finding(first, "efgh")),
                                  second: found(finding(second, "zzzzzzzz"))})
         outputs = PromptGuardAdapter(worker, on_failure="pass").run_session(_session(first, second))
         self.assertEqual(outputs[0].text, first)
-        self.assertEqual(outputs[1].text, "other=[PASSWORD_2]\n")
+        self.assertEqual(outputs[1].text, "other=[PASSWORD_1]\n")
 
     def test_known_values_are_remasked_with_edits(self) -> None:
         first, second = "A_PASSWORD=Qw3rTy9uIo\n", "🔐 echo Qw3rTy9uIo B_PASSWORD=Zx8cVb7nMm Qw3rTy9uIo\n"

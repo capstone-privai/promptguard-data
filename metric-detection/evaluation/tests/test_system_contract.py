@@ -40,7 +40,7 @@ const { mod, sessions } = JSON.parse(raw)
 const out = []
 for (const [index, steps] of sessions.entries()) {
   const handlers = {}
-  ;(await import(pathToFileURL(mod).href + '?session=' + index)).register((name, ...rest) => { handlers[name] = rest.at(-1) })
+  ;(await import(pathToFileURL(mod).href + '?session=' + index)).register((name, ...rest) => { handlers[name] = rest.at(-1); return { catch() {} } })
   const texts = []
   for (const { text, result } of steps) {
     const $ = {
@@ -49,7 +49,8 @@ for (const [index, steps] of sessions.entries()) {
       mcp: { call: async (_server, _tool, { items }) => ({ isError: false, content: [{ type: 'text',
         text: JSON.stringify({ ok: Boolean(result.ok), items: items.map(item => ({ id: item.id, ...result })) }) }] }) },
     }
-    try { texts.push((await handlers['prompt.submit']($, { text }, async e => e)).text) } catch { texts.push(null) }
+    const answer = (await handlers['prompt.submit']($, { text }, async e => e)).text
+    texts.push(answer === '[PROMPTGUARD_BLOCKED: detector failure]' ? null : answer)
   }
   out.push(texts)
 }
@@ -134,6 +135,16 @@ def _scripted_sessions() -> list[list[dict[str, Any]]]:
         [{"text": repeated, "result": found(finding(repeated, "Qw3rTy9uIo"))},
          {"text": "echo Qw3rTy9uIo; B=Zx8cVb7nMm\n", "result": found(finding("echo Qw3rTy9uIo; B=Zx8cVb7nMm\n", "Zx8cVb7nMm"))},
          {"text": "x=Qw3rTy9uIoQw3rTy9uIo y=Zx8cVb7nMm\n", "result": found()}],
+        # A run of a known value's characters is masked as a part, unless it is only words or too short.
+        [{"text": "P=Qw3rTy9uIo7Hg2Lk5Z S=password-of-mine\n",
+          "result": found(finding("P=Qw3rTy9uIo7Hg2Lk5Z S=password-of-mine\n", "Qw3rTy9uIo7Hg2Lk5Z"),
+                          finding("P=Qw3rTy9uIo7Hg2Lk5Z S=password-of-mine\n", "password-of-mine"))},
+         {"text": "cut: Qw3rTy9uIo7, short Qw3rTy9, word password-of, joined [Qw3rTy9uIo7Hg2Lk5Z]\n", "result": found()}],
+        # One placeholder per value hash, whatever type a later finding names; numbered top to bottom.
+        [{"text": "A=aaaaaaaa1 B=bbbbbbbb2\n",
+          "result": found(finding("A=aaaaaaaa1 B=bbbbbbbb2\n", "bbbbbbbb2", "TOKEN", value_hash="b"),
+                          finding("A=aaaaaaaa1 B=bbbbbbbb2\n", "aaaaaaaa1", "TOKEN", value_hash="a"))},
+         {"text": "C=aaaaaaaa1\n", "result": found(finding("C=aaaaaaaa1\n", "aaaaaaaa1", "API_KEY", value_hash="a"))}],
     ]
 
 
