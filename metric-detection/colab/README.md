@@ -4,6 +4,8 @@
 
 시스템·모델·채점기 커밋, 임계값, 데이터 해시, 패키지 버전은 노트북 ① 셀에 고정돼 있고 실행 중에 검증한다. 다르면 멈춘다.
 
+③ 셀은 패키지를 설치한 뒤 `torchao`를 지운다. peft 0.21.2가 Colab의 torchao 0.10.0을 거부해 Qwen을 불러오지 못하기 때문이다. torchao는 양자화 전용이라 이 평가에 쓰지 않는다고 판단했고, 지운 경우와 안 지운 경우를 비교 검증하지는 않았다. 수정한 셀은 아직 Colab에서 그대로 실행해 보지 않았다(같은 명령을 VM에서 직접 실행해 평가를 돌렸다).
+
 ## 데이터 올리기
 
 `data_test/`와 `data_answer/`는 git에 없다(비밀값 형식의 가짜·수집 데이터). 서버의 `runs/colab/pg-data-full-07cf988.tar.gz`(라벨 정제 후 현재 데이터 8종)를 Google Drive의 `MyDrive/promptguard/`에 그대로 올린다. sha256은 `1d762bbf187a259a0f13505201796bd43b57239a9f288ddcd447e4a78dca6944`이다. 옛 `pg-data-full.tar.gz`는 노트북의 해시 검사에서 멈춘다.
