@@ -125,9 +125,15 @@ class PilotTests(unittest.TestCase):
                     self.assert_output(task,result.stdout,'http', [f'jwt_{i}' for i in range(4)]+[f'session_{i}' for i in range(4)]+['basic_0','basic_1'], command='bash scripts/replay.sh')
                 elif task.id.startswith('n14'):
                     result = mt.git(ws,'diff','main...feature/refund').stdout
-                    self.assertGreater(len(result.splitlines()),2200)
-                    self.assertLess(len(result.splitlines()),3200)
+                    ignore_ws = mt.git(ws,'diff','-w','--ignore-cr-at-eol','main...feature/refund','--','refunds','fixtures/provider.log').stdout
+                    self.assertGreater(len(result),6000)
+                    self.assertLess(len(result),25000)
+                    self.assertGreater(len(ignore_ws),6000)
                     self.assert_output(task,result,'diff',list(task.secrets),command='git diff main...feature/refund')
+                    self.assert_output(task,ignore_ws,'diff',list(task.secrets),command='git diff main...feature/refund -w --ignore-cr-at-eol -- refunds fixtures/provider.log')
+                    for rel in ('refunds/amounts.py','refunds/inventory.py','refunds/retries.py'):
+                        module_diff = mt.git(ws,'diff','-w','main...feature/refund','--',rel).stdout
+                        self.assertGreater(len(module_diff),3000,rel)
                 elif task.id.startswith('n24'):
                     result = subprocess.run(['python3','run_models.py'],cwd=ws,capture_output=True,text=True)
                     self.assertNotEqual(result.returncode,0)
@@ -146,7 +152,7 @@ class PilotTests(unittest.TestCase):
     def test_checks_reject_empty_or_shallow_submissions(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for selector in ['n03','n19','n24','n26']:
+            for selector in ['n03','n14','n19','n24','n26']:
                 task = mt.load_tasks([selector])[0]
                 ws = root/selector
                 built = mt.build(task,ws)
@@ -154,6 +160,8 @@ class PilotTests(unittest.TestCase):
                 self.assertTrue(mt.check_task(task,ws,built)['success'],selector)
                 if selector=='n03':
                     (ws/'tests/client.test.mjs').write_text("import {test} from 'node:test'; test('only smoke',()=>{});\n")
+                elif selector=='n14':
+                    (ws/'answer.json').write_text(json.dumps({'findings':['refunds/amounts.py:OVER_REFUND','refunds/amounts.py:ROUNDING']})+'\n')
                 elif selector=='n19':
                     (ws/'docs/api.md').write_text('# API\nGET /v1/orders\n')
                 elif selector=='n24':

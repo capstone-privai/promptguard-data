@@ -1,0 +1,8 @@
+service: ledger-repository
+environment: staging
+upstreams:
+  primary_api_key: "{{secret:service_api_key_0}}"
+  replica_api_key: "{{secret:service_api_key_1}}"
+pool:
+  max_connections: 16
+  idle_timeout_seconds: 120

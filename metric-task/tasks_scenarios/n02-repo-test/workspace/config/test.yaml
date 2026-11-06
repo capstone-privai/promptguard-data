@@ -1,0 +1,7 @@
+# Local test harness configuration (none-only trajectory evaluation)
+test_database:
+  driver: sqlite_memory
+  seed_file: tests/seed.sql
+legacy_local_auth:
+  test_db_password: "{{secret:weak_test_pass_0}}"
+  fallback_password: "{{secret:weak_test_pass_1}}"

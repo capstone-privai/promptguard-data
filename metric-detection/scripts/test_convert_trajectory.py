@@ -147,6 +147,25 @@ class GoldTests(unittest.TestCase):
         self.assertEqual(len(spans), 1)
         self.assertTrue(dv.used_as_identifier(value, [0], {0: line}, source=ct.SOURCE))
 
+    def test_sed_substitution_does_not_mark_values_as_common_or_path_identifiers(self):
+        old_pw, new_pw = made_up("sed-old-pw"), made_up("sed-new-pw")
+        entries = [entry("old", old_pw, kind="password16", type_="PASSWORD"),
+                   entry("new", new_pw, kind="password16", type_="PASSWORD")]
+        prompt_text = f"새 비밀번호는 `{new_pw}`야."
+        slot_text = f"password: {old_pw}\n"
+        cmd_text = json.dumps({"command": f"sed -i '' 's/{old_pw}/{new_pw}/' profiles.yml"})
+        texts = [prompt_text, slot_text, cmd_text]
+        common = ct.common_values(entries, texts)
+        self.assertEqual(common, set())
+        prompt_spans, prompt_others = ct.find_candidates(prompt_text, entries, common, set())
+        self.assertEqual([(s["entry"], s["kind"], s["value_class"]) for s in prompt_spans],
+                         [("new", "propagated", "distinct")])
+        self.assertEqual(prompt_others, [])
+        cmd_spans, cmd_others = ct.find_candidates(cmd_text, entries, common, set())
+        self.assertEqual(sorted((s["entry"], s["kind"], s["value_class"]) for s in cmd_spans),
+                         [("new", "propagated", "distinct"), ("old", "propagated", "distinct")])
+        self.assertEqual(cmd_others, [])
+
     def test_an_encoded_form_is_gold_and_records_how(self):
         spans, _ = self.find(f"the value was {SECRET[::-1]} in base64", [entry(
             "t", SECRET, forms=[{"how": "exact", "text": SECRET}, {"how": "base64", "text": SECRET[::-1]}])])

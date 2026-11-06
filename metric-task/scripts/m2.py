@@ -304,9 +304,22 @@ def server_stats(task: mt.Task, run_dir: Path) -> dict | None:
     return api_capture.scan(api_capture.load(path), mt.leak_forms(task.secrets))
 
 
+def check_none_only(tasks: list[mt.Task], conditions: list[str]):
+    """Tasks with meta.none_only = true contain short or common passwords for trajectory evaluation only and cannot
+    run under masking conditions (gold, promptguard, plain)."""
+    none_only_ids = [t.id for t in tasks if t.none_only]
+    non_none_conds = [c for c in conditions if c != "none"]
+    if none_only_ids and non_none_conds:
+        raise SystemExit(
+            f"none-only task(s) {none_only_ids} cannot run with condition(s) {non_none_conds}; "
+            f"only condition 'none' is allowed"
+        )
+
+
 def run_one(task: mt.Task, condition: str, rep: int, run_dir: Path, pg_root: Path, model: str | None,
             headless: bool = True, budget: float = 2.0, timeout: int = 900, capture: bool = True,
             record_detector: bool = False) -> dict:
+    check_none_only([task], [condition])
     run_dir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=f"{task.id[:5]}-{condition}-", dir=_work_root()))
     ws = work / "workspace"
@@ -486,8 +499,9 @@ def print_result(r: dict, run_dir: Path):
 
 
 def cmd_play(args):
-    pg_root = system_root(args.system_root)
     task = mt.load_tasks([args.task])[0]
+    check_none_only([task], [args.condition])
+    pg_root = system_root(args.system_root)
     run_dir = RUNS_DIR / "play" / f"{datetime.now():%Y%m%d-%H%M%S}_{task.id}_{args.condition}"
     print(f"task:      {task.id} ({task.spec['title']})")
     print(f"condition: {args.condition}")
@@ -574,12 +588,13 @@ def prepare_batch(batch: Path, metadata: dict, *, resume: bool) -> dict:
 
 
 def cmd_run(args):
-    pg_root = system_root(args.system_root)
     tasks = mt.load_tasks(args.tasks)
     conditions = args.conditions.split(",")
     unknown = set(conditions) - set(CONDITIONS)
     if unknown:
         raise SystemExit(f"unknown condition(s) {sorted(unknown)}; choose from {CONDITIONS}")
+    check_none_only(tasks, conditions)
+    pg_root = system_root(args.system_root)
     batch = RUNS_DIR / (args.name or f"batch_{datetime.now():%Y%m%d-%H%M%S}")
     prepare_batch(batch, batch_metadata(args, pg_root, tasks), resume=args.resume)
     jobs = [(t, c, rep) for rep in range(1, args.reps + 1) for t in tasks for c in conditions]

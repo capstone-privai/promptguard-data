@@ -150,9 +150,9 @@ python3 metric-detection/scripts/dataset_verify.py metric-detection/data_test/se
 
 ### 관찰과 다음 결정
 
-- **n14의 긴 diff가 모델에게 그대로 전달되지 않았다.** 첫 Bash 결과는 `<persisted-output>` 표식이 있는 2,278자 출력이었고, 다음 호출은 `git diff -w`를 사용한 2,242자 출력이었다. 리뷰 정답은 맞혔지만 선언 비밀 14개 중 정답이 된 값은 없었다. 긴 저장소나 긴 명령 원출력이 긴 세션 출력을 보장하지 않는 사례다. diff 문맥을 채우려면 후보 설계를 다시 볼 필요가 있다.
+- **n14의 긴 diff가 모델에게 그대로 전달되지 않았다.** 첫 Bash 결과는 `<persisted-output>` 표식이 있는 2,278자 출력이었고, 다음 호출은 `git diff -w`를 사용한 2,242자 출력이었다. 리뷰 정답은 맞혔지만 선언 비밀 14개 중 정답이 된 값은 없었다. 긴 저장소나 긴 명령 원출력이 긴 세션 출력을 보장하지 않는 사례다. 이후 `m2_trajectory.py`의 `n14` 생성기에서 무의미한 들여쓰기·공백 치환을 제거하고 설정 상수 전환과 인증·반올림·감사 계약 변경을 실제 비공백 diff(전체 약 20,120자/457줄, 파일별 `git diff -w` 5,335~6,458자)로 구성해 `git diff -w`에서도 선언 비밀 14개가 모두 포함되도록 오프라인 수정·검증했다(추가 Claude 재실행은 하지 않음).
 - **n26은 스크립트로 분리했어도 일부 원문을 읽었다.** Read 출력 14,977자와 Bash 출력 8,624자가 기록됐고, 이후 Python AST를 사용한 분리 명령이 있었다. 도달은 9/12로 측정됐다. 읽지 않고 분리할 수 있다는 우려만으로 도달률을 추정하지 않는다.
-- **n24에는 판정 검토점이 있다.** 새 비밀번호 두 항목은 prompt와 tool_input에 실제로 등장했지만 현행 변환기는 prompt를 `not_propagated`, tool_input을 `identifier`/`path`로 제외했다. 이 때문에 원문 등장 여부와 집계 도달률이 다르다. LABELING·변환기를 수정하거나 임의로 정답에 추가하지 않았으며, 별도 검토가 필요하다. 기본 review 목록은 이 항목들을 자동 검토 대상으로 보내지 않는다.
+- **n24에는 판정 검토점이 있었다.** 새 비밀번호 두 항목은 prompt와 tool_input에 실제로 등장했지만 초기 변환기는 `sed` 치환식(`s/old/new/`)의 `/` 구분자를 경로로 읽어 prompt를 `not_propagated`(`value_class="common"`), tool_input을 `identifier`/`path`로 제외했다(초기 집계: n24 도달 3/7, 전체 도달 39/63 [61.9%], 전체 정답 52 span, 채점 대상 52 span). `label_rules.py`에서 확인 가능한 인라인 `sed` 명령의 `s/pattern/replacement/` 구분자를 파일 경로 성분·경로 식별자에서 제외한 뒤 같은 파일럿 기록을 별도 경로(`/tmp/pilot_reconverted`)로 오프라인 재변환·검증한 결과, n24 도달은 5/7, 전체 도달은 41/63(65.1%), 전체 정답은 58 span(채점 대상 54 span: `tool_output` 52 + `prompt`/`natural_language` 2, 비채점 `tool_input` 4), `to_review`는 0건이며 기존 기준선 135세션의 정답·라벨은 변경 없이 그대로 유지됐다.
 - 파일럿의 두 하한 기준은 통과했지만 출력 중앙값과 6,000자 초과 비율은 분포 목표보다 높다. 이 5회만으로 나머지 25개 구현을 확정하지 않는다. 후보는 총 30개이고 이번에 구현한 5개를 모두 실행했으며, 나머지 25개는 아직 미구현·미실행이다. 추가 구현·유료 실행과 결과 문서의 커밋은 사용자 결정 뒤 진행한다.
 
 ### 검증과 재현
@@ -160,3 +160,12 @@ python3 metric-detection/scripts/dataset_verify.py metric-detection/data_test/se
 커밋 전 gitleaks 8.30.1로 변경 파일 514개를 검사해 탐지 0건이었다. 생성 재현 5개, selftest 5개, `test_m2_*.py` 40개, `test_convert_trajectory.py` 22개가 통과했다. 첫 제한 환경에서는 n03 selftest가 실패했고, 로컬 소켓과 Node 24.18.0을 사용할 수 있는 실행 환경에서 전체 검사를 다시 통과했다. 이 실패를 과제 성공으로 계산하지 않았다.
 
 실행 후 고정된 실행 워크트리에서 `m2_planted.py` → `convert_trajectory.py` → `dataset_verify.py --trajectory`를 순서대로 실행했다. 검증기는 5세션·52 span에 대해 `labeling=passed`, `reproduction=passed`를 반환했다. `origin=recorded`, `split=test`, `allowed_use=[rule_eval, ml_eval]`이며 학습을 허용하지 않는다. 실행 기록과 생성 세션·정답·planted.json은 git에서 제외했고 값은 이 문서에 기록하지 않았다. main과 PromptGuard 코드는 수정하지 않았다.
+
+
+### 독립 검증 (2026-11-07)
+
+Codex가 agy 변경을 직접 검토하고 생성 재현, selftest 5개, metric-task 테스트 40개, label_rules 테스트와 변환기 테스트를 다시 실행했다. 최초 agy 수정에는 실제 상대 경로 `s/ledger/settled/`도 치환식으로 오인하는 반례가 있었다. 인라인 sed 명령의 스크립트 인자만 예외로 좁히고 실제 경로·sed 입력 파일·외부 스크립트 입력을 보존하는 회귀 검사를 추가했다. 수정 후 label_rules 18개와 변환기 23개 테스트가 통과했다.
+
+n14의 실제 함수도 별도로 실행해 과다 환불·손상 재고 복구·성공 응답 재시도 3개 버그와 정상 반올림·인증 검사를 확인했다. 기본 diff, -w, -U0 -w 모두 선언 비밀 14개를 보존하고 25,000자 미만이었다. 이는 오프라인 검사이며 새 에이전트 실행의 도달률 측정이 아니다.
+
+기존 커밋의 label_rules와 수정본으로 같은 원본을 각각 변환해 기준선 135세션의 sessions·gold·labels가 모두 동일한 것을 직접 비교했다. 파일럿은 n24만 라벨이 달라졌고, 전체 정답 52→58, 채점 대상 52→54, 도달 39/63→41/63으로 재현됐다. 별도 /tmp/codex-pilot-reconverted 산출물의 라벨·바이트 재현 검증도 통과했다. privesc 공개 원본은 여전히 없어 해당 원본의 재변환은 검증하지 못했으며, 레거시 path_tokens 함수는 변경하지 않았다. LABELING 정책, 동결 실행 워크트리, 원본 실행 기록은 수정하지 않았다.

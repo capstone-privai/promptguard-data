@@ -5,7 +5,8 @@ Run from the repository root:
 """
 import unittest
 
-from label_rules import classify, exclusion_kind, is_common, is_gold, is_literal, normalize_span, position_type
+from label_rules import (classify, exclusion_kind, is_common, is_gold, is_literal, judge_occurrence, normalize_span,
+                         path_components, path_tokens, position_type)
 
 
 def at(text: str, value: str, nth: int = 0) -> tuple[int, int]:
@@ -52,6 +53,33 @@ class CommandLinePositions(unittest.TestCase):
         self.assert_not_slot("htpasswd -b .htpasswd admin 1234", "admin")
         self.assert_not_slot("htpasswd -nb admin 1234", "admin")
         self.assert_not_slot("htpasswd .htpasswd admin 1234", "1234")
+
+    def test_sed_substitution_delimiters_are_not_paths(self):
+        cmd = "sed -i '' 's/oldVal91x/newVal82y/; s/oldVal73z/newVal64w/g' /etc/app/profiles.yml"
+        self.assertEqual(path_components(cmd), {"etc", "app", "profiles.yml"})
+        self.assertIn("s/oldVal91x/newVal82y/;", path_tokens(cmd))
+        for tok in ("oldVal91x", "newVal82y", "oldVal73z", "newVal64w"):
+            self.assertEqual(classify(cmd, *at(cmd, tok)), ("residual", None), tok)
+            self.assertEqual(judge_occurrence(cmd, *at(cmd, tok), common=False), (True, "residual", None), tok)
+        self.assertEqual(classify(cmd, *at(cmd, "profiles.yml")), ("ident", "path"))
+
+
+    def test_sed_shaped_relative_paths_stay_identifiers(self):
+        for text in ('directory s/ledger/settled/', 'open s/ledger/settled/g',
+                     "sed 's/old/new/' s/ledger/settled/", "sed -f rules.sed s/ledger/settled/"):
+            with self.subTest(text=text):
+                self.assertIn('ledger', path_components(text))
+                self.assertEqual(classify(text, *at(text, 'ledger')), ('ident', 'path'))
+
+    def test_only_inline_sed_script_delimiters_are_exempt(self):
+        for text in ("sed -e 's/oldLedger/newLedger/g' config.ini",
+                     "sed -i '' 's/oldLedger/newLedger/; s/oldValue/newValue/' config.ini",
+                     'sed "s/oldLedger/newLedger/" config.ini'):
+            for value in ('oldLedger', 'newLedger'):
+                with self.subTest(value=value, text=text):
+                    self.assertNotIn(value, path_components(text))
+                    self.assertEqual(classify(text, *at(text, value)), ('residual', None))
+
 
 
 class Exclusions(unittest.TestCase):

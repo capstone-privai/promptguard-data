@@ -1,0 +1,31 @@
+{
+  "project": "n04-deploy-snapshot",
+  "resource": "credits",
+  "primary_key": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "nullable": false
+    },
+    "state": {
+      "type": "enum",
+      "values": [
+        "pending",
+        "captured",
+        "returned",
+        "cancelled",
+        "disputed",
+        "reversed"
+      ]
+    },
+    "amount_cents": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "invariant": "Credits expire in their original currency; expiry never creates a new charge."
+}

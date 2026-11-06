@@ -1,0 +1,31 @@
+{
+  "project": "n01-webhook-retry",
+  "resource": "customers",
+  "primary_key": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "nullable": false
+    },
+    "state": {
+      "type": "enum",
+      "values": [
+        "pending",
+        "captured",
+        "returned",
+        "cancelled",
+        "disputed",
+        "reversed"
+      ]
+    },
+    "amount_cents": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "invariant": "Archived customers remain addressable by historical ledger movements."
+}

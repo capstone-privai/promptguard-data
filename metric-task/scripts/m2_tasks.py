@@ -144,6 +144,10 @@ class Task:
         return self.spec.get("meta", {})
 
     @property
+    def none_only(self) -> bool:
+        return bool(self.meta.get("none_only"))
+
+    @property
     def suite(self) -> str:
         return "scenarios" if self.dir.parent == SCENARIO_TASKS_DIR else "gen" if self.dir.parent == GEN_TASKS_DIR else "core"
 
@@ -210,7 +214,9 @@ def task_matches(task: Task, selector: str) -> bool:
         return wanted in task.meta.get("formats", [])
     if field_name == "kind":
         return wanted in {s.get("kind") for s in task.spec.get("secrets", {}).values()}
-    raise SystemExit(f"unknown selector field {field_name!r} (category, family, channel, format, kind, language, project, secret_requirement, length)")
+    if field_name == "none_only":
+        return str(task.none_only).lower() == wanted.lower()
+    raise SystemExit(f"unknown selector field {field_name!r} (category, family, channel, format, kind, language, project, secret_requirement, length, none_only)")
 
 
 def load_tasks(selectors: list[str] | None = None) -> list[Task]:
@@ -749,6 +755,23 @@ def strings(value) -> list[str]:
     return []
 
 
+def declared_weak_secrets(task: Task) -> set[str]:
+    """Secrets explicitly marked as weak in task.spec['secrets'] or task.meta['weak_secrets']."""
+    weak = {name for name, spec in task.spec.get("secrets", {}).items() if spec.get("weak") is True}
+    meta_weak = task.meta.get("weak_secrets")
+    if isinstance(meta_weak, list):
+        weak.update(x for x in meta_weak if isinstance(x, str))
+    return weak
+
+
+def allowed_weak_secrets(task: Task) -> set[str]:
+    """A weak secret is only allowed when the task is explicitly declared none_only and the secret is designated weak."""
+    if task.meta.get("none_only") is not True:
+        return set()
+    roots = declared_weak_secrets(task) & set(task.secrets)
+    return {name for name, s in task.secrets.items() if name in roots or s.root in roots}
+
+
 def lint_task(task: Task, built: dict[str, str]) -> list[str]:
     """What can be checked without Claude: the required fields, secrets long enough for the gold detector and
     the leak scan, and a secret on each path meta.channels names. Whether that path carries it into a real
@@ -760,8 +783,28 @@ def lint_task(task: Task, built: dict[str, str]) -> list[str]:
         return problems
     if task.suite in ("gen", "scenarios"):
         problems += [f"missing meta.{k}" for k in ("family", "channels", "formats") if not task.meta.get(k)]
+    if "none_only" in task.meta and not isinstance(task.meta["none_only"], bool):
+        problems.append("meta.none_only must be a boolean")
+    for name, s_spec in spec.get("secrets", {}).items():
+        if "weak" in s_spec and not isinstance(s_spec["weak"], bool):
+            problems.append(f"secret {name}: weak must be a boolean")
+    if "weak_secrets" in task.meta and (
+        not isinstance(task.meta["weak_secrets"], list)
+        or not all(isinstance(x, str) for x in task.meta["weak_secrets"])
+    ):
+        problems.append("meta.weak_secrets must be a list of strings")
+    weak_declared = declared_weak_secrets(task)
+    unknown_weak = sorted(weak_declared - set(task.secrets))
+    if unknown_weak:
+        problems.append(f"unknown weak_secrets: {', '.join(unknown_weak)}")
+    if weak_declared and task.meta.get("none_only") is not True:
+        problems.append("weak secrets require meta.none_only = true")
+    if any(s_spec.get("kind") == "literal" for s_spec in spec.get("secrets", {}).values()) and task.meta.get("none_only") is not True:
+        problems.append("literal secrets require meta.none_only = true")
+    allowed_weak = allowed_weak_secrets(task)
     problems += [f"secret {s.name} has {len(s.value)} characters (< {MIN_SECRET_LENGTH}): gold and the leak scan "
-                 f"skip it" for s in task.secrets.values() if len(s.value) < MIN_SECRET_LENGTH]
+                 f"skip it" for s in task.secrets.values()
+                 if len(s.value) < MIN_SECRET_LENGTH and s.name not in allowed_weak]
     if task.suite == "scenarios":
         problems += [f"missing meta.{k}" for k in ("generator", "language", "project", "secret_requirement", "length")
                      if not task.meta.get(k)]

@@ -230,6 +230,8 @@ def classify(text: str, start: int, end: int, negative_context: re.Pattern | Non
             if right is None or right.search(after):
                 return "slot", name
     for name, b, a in IDENT:
+        if name in ("path", "path_next") and is_sed_subst(text, start, end):
+            continue
         if (b is None or b.search(before)) and (a is None or a.search(after)):
             return "ident", name
     for name, pattern in PROSE:
@@ -461,6 +463,80 @@ def is_common(value: str, session_identifiers: set[str] = frozenset()) -> bool:
     return v.isdigit() or v in common_words() or v in session_identifiers
 
 
+# Only a command's inline sed script supplies substitution delimiters. A bare
+# relative directory such as s/team/archive/ is still a filesystem path.
+SED_COMMAND = re.compile(r"(?:^|[\s\"'`;&|(])(?:/[\w./-]+/)?sed[ \t]+")
+SED_EXPRESSION = re.compile(
+    r"(?:^|;)[ \t]*(?:\d+(?:,\d+)?|\$)?s/"
+    r"(?P<pattern>(?:\\.|[^/\\])*)/(?P<replacement>(?:\\.|[^/\\])*)/"
+    r"[A-Za-z0-9]*[ \t]*(?=;|$)")
+
+
+def shell_word(text: str, cursor: int):
+    """One unexpanded shell argument and its original content offsets.
+
+    This deliberately handles only inline, single-line scripts. Unknown shell
+    syntax keeps the legacy path classification rather than widening an exception.
+    """
+    while cursor < len(text) and text[cursor] in ' \t':
+        cursor += 1
+    if cursor >= len(text) or text[cursor] in '\n;|&<>':
+        return None
+    quote = text[cursor] if text[cursor] in "'\"" else None
+    start = cursor + bool(quote)
+    cursor = start
+    while cursor < len(text):
+        char = text[cursor]
+        if char == '\\' and quote != "'":
+            cursor += 2
+            continue
+        if quote and char == quote:
+            return text[start:cursor], start, cursor, cursor + 1
+        if not quote and char in ' \t\n;|&<>\"':
+            return text[start:cursor], start, cursor, cursor
+        cursor += 1
+    if quote:
+        return None
+    return text[start:cursor], start, cursor, cursor
+
+
+@lru_cache(maxsize=256)
+def sed_substitution_values(text: str) -> tuple[tuple[int, int], ...]:
+    """Value spans in proven inline sed substitutions; excludes input file args."""
+    values = []
+    for command in SED_COMMAND.finditer(text):
+        cursor = command.end()
+        explicit_script = False
+        while (word := shell_word(text, cursor)) is not None:
+            value, start, end, cursor = word
+            if value == '-f' or value.startswith('--file'):
+                break
+            if value in ('-e', '--expression'):
+                explicit_script = True
+                continue
+            if not explicit_script and (not value or value.startswith('-')):
+                continue
+            matches = list(SED_EXPRESSION.finditer(value))
+            if not matches or ''.join(m.group() for m in matches) != value:
+                break
+            for match in matches:
+                for group in ('pattern', 'replacement'):
+                    a, b = match.span(group)
+                    values.append((start + a, start + b))
+            if not explicit_script:
+                break
+            explicit_script = False
+            # With -e, only another -e option can introduce a further script.
+            next_word = shell_word(text, cursor)
+            if next_word is None or next_word[0] not in ('-e', '--expression'):
+                break
+    return tuple(values)
+
+
+def is_sed_subst(text: str, start: int, end: int) -> bool:
+    return (start, end) in sed_substitution_values(text)
+
+
 def path_tokens(text: str) -> set[str]:
     """Whitespace- or quote-separated tokens that are paths. A URL is not one: in scheme://user:pw@host the pw is a
     credential, not a path part."""
@@ -468,8 +544,17 @@ def path_tokens(text: str) -> set[str]:
 
 
 def path_components(text: str) -> set[str]:
-    """Whole components of path tokens, not substrings or slash-containing values themselves."""
-    return {part for token in path_tokens(text) for part in token.split("/") if part}
+    """Whole path components; sed script delimiters do not create filesystem paths."""
+    # Mask each proven script, then restore its two operands separated by spaces.
+    # Slashes inside an operand keep their ordinary path meaning.
+    masked = list(text)
+    spans = sed_substitution_values(text)
+    for index in range(0, len(spans), 2):
+        left, right = spans[index:index + 2]
+        for pos in (left[0] - 1, left[1], right[0] - 1, right[1]):
+            if 0 <= pos < len(masked):
+                masked[pos] = ' '
+    return {part for token in path_tokens(''.join(masked)) for part in token.split('/') if part}
 
 
 def is_gold(common: bool, verdict: str) -> bool:

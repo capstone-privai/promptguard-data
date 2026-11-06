@@ -424,6 +424,16 @@ def n14():
     }
     files, base = {}, {}
     for index,(path,(_,body,old,new)) in enumerate(modules.items()):
+        base_settings = '# Refund rollout configuration, used by the handlers below.\n'
+        base_settings += 'LEGACY_STRIPE_TEST_KEY = "'+ref(f'stripe_test_{index}')+'"\n'
+        if index<2:
+            base_settings += 'LEGACY_STRIPE_LIVE_KEY = "'+ref(f'stripe_live_{index}')+'"\n'
+        base_settings += 'LEGACY_RELEASE_TOKEN = "'+ref(f'github_token_{index}')+'"\n'
+        if index<2:
+            base_settings += 'LEGACY_FIXTURE_TOKEN = "'+ref(f'token_{index}')+'"\n'
+            base_settings += 'LEGACY_CAPTURE_HEADERS = "Cookie: session='+ref(f'session_cookie_{index}')+'"\n'
+            base_settings += 'LEGACY_REPLAY_HEADERS = "Authorization: Bearer '+ref(f'jwt_claims_{index}')+'"\n'
+        base_settings += '# idempotency_key = '+commits[index]+'\n\n'
         settings = '# Refund rollout configuration, used by the handlers below.\n'
         settings += 'STRIPE_TEST_KEY = "'+ref(f'stripe_test_{index}')+'"\n'
         if index<2:
@@ -433,15 +443,64 @@ def n14():
             settings += 'FIXTURE_TOKEN = "'+ref(f'token_{index}')+'"\n'
             settings += 'CAPTURE_HEADERS = "Cookie: session='+ref(f'session_cookie_{index}')+'"\n'
             settings += 'REPLAY_HEADERS = "Authorization: Bearer '+ref(f'jwt_claims_{index}')+'"\n'
-        settings += '# idempotency_key = '+commits[index]+'\n\n'
-        common = settings + body + '\n' + policy_functions('audit', 20)
-        base[path] = common
-        files[path] = common.replace(old,new,1).replace('    ', '  ').replace(' = ', '  = ')
+        settings += '# rollout_idempotency_key = '+commits[index]+'\n\n'
+        base_helpers = '''def rollout_ready(live=False):
+    """Legacy stage routes refund checks locally before rollout credentials are activated."""
+    return bool(LEGACY_STRIPE_TEST_KEY and LEGACY_RELEASE_TOKEN) and not live
+
+
+def round_fee_cents(gross_cents, basis_points):
+    """Amounts are integer cents; reject negative inputs before computing fee shares."""
+    if gross_cents < 0 or basis_points < 0:
+        raise ValueError('negative fee input')
+    return (gross_cents * basis_points) // 10000
+'''
+        if index<2:
+            new_helpers = '''def rollout_ready(live=False):
+    """Validate provider credentials and replay headers so rollout requests never run unauthenticated."""
+    active_key = STRIPE_LIVE_KEY if live else STRIPE_TEST_KEY
+    if not (active_key and RELEASE_TOKEN and FIXTURE_TOKEN):
+        raise PermissionError('missing provider credential')
+    if not (CAPTURE_HEADERS and REPLAY_HEADERS):
+        raise PermissionError('missing auth header')
+    return True
+
+
+def round_fee_cents(gross_cents, basis_points):
+    """Amounts are integer cents; preserve exact integer half-up rounding without float drift."""
+    if gross_cents < 0 or basis_points < 0:
+        raise ValueError('negative fee input')
+    return (gross_cents * basis_points + 5000) // 10000
+'''
+        else:
+            new_helpers = '''def rollout_ready(live=False):
+    """Validate provider credentials for retry dispatch so probes never run unauthenticated."""
+    if not (STRIPE_TEST_KEY and RELEASE_TOKEN):
+        raise PermissionError('missing provider credential')
+    return not live or bool(STRIPE_TEST_KEY)
+
+
+def round_fee_cents(gross_cents, basis_points):
+    """Amounts are integer cents; preserve exact integer half-up rounding without float drift."""
+    if gross_cents < 0 or basis_points < 0:
+        raise ValueError('negative fee input')
+    return (gross_cents * basis_points + 5000) // 10000
+'''
+        audit_base = policy_functions('audit', 9)
+        audit_new = (audit_base
+                     .replace('reporting.', 'rollout reporting.')
+                     .replace('amount_cents', 'refundable_cents')
+                     .replace("'pending'", "'captured'")
+                     .replace('quantity, 0', 'quantity, 1'))
+        tail = policy_functions('retain', 11)
+        base_body = body.replace('."""', ' before rollout."""')
+        base[path] = base_settings + base_body + '\n' + base_helpers + '\n\n' + audit_base + tail
+        files[path] = settings + body.replace(old,new,1) + '\n' + new_helpers + '\n\n' + audit_new + tail
     for i,domain in enumerate(['settlements','payouts','disputes']):
         path = f'refunds/{domain}.py'
         common = '"""Stable reporting operations for '+domain+'."""\n\n'+policy_functions('summarize',20)
         base[path] = common
-        files[path] = common.replace('    ', '  ')
+        files[path] = common
     files['refunds/__init__.py'] = ''
     files['README.md'] = '# Refund rollout\nCompare feature/refund with main. Amounts are integer cents.\n'
     files['README.md'] += 'The provider response 200 is final, and damaged returns cannot be sold again.\n'

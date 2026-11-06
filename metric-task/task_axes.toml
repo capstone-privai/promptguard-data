@@ -69,3 +69,8 @@ n14 = { work = "review", credential = "incidental" }
 n19 = { work = "docs", credential = "incidental" }
 n24 = { work = "data", credential = "incidental" }
 n26 = { work = "refactor", credential = "incidental" }
+# trajectory expansion stage 1 (test-writing tasks)
+n01 = { work = "test", credential = "incidental" }
+n02 = { work = "test", credential = "incidental" }
+n04 = { work = "test", credential = "incidental" }
+n05 = { work = "test", credential = "incidental" }

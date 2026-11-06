@@ -169,10 +169,21 @@ def surfaces(task,ws):
 
 
 def audit_task(task,ws, *, use_gitleaks=True):
+    import m2_tasks as mt
     declared={s.value for s in task.secrets.values()}
     problems=[]
+    weak_declared=mt.declared_weak_secrets(task)
+    unknown_weak=sorted(weak_declared - set(task.secrets))
+    if unknown_weak:
+        problems.append(f"unknown weak_secrets: {', '.join(unknown_weak)}")
+    if weak_declared and task.meta.get('none_only') is not True:
+        problems.append('weak secrets require meta.none_only = true')
+    if any(s_spec.get('kind')=='literal' for s_spec in task.spec.get('secrets',{}).values()) and task.meta.get('none_only') is not True:
+        problems.append('literal secrets require meta.none_only = true')
+    allowed_weak=mt.allowed_weak_secrets(task)
     for name,s in task.secrets.items():
-        if len(s.value)<8 or labels.is_common(s.value): problems.append(f'secret {name}: shorter than 8 or common')
+        if name not in allowed_weak and (len(s.value)<8 or labels.is_common(s.value)):
+            problems.append(f'secret {name}: shorter than 8 or common')
     # Batch scanner per surface: prevents fragments in large stdin from losing a provider key.
     texts=surfaces(task,ws)
     for surface,text in texts.items():

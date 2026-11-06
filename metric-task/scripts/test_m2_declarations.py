@@ -118,5 +118,87 @@ class DeclarationTests(unittest.TestCase):
                 self.assertTrue(mt.corrupt_with_placeholder(task,root/'ws',built))
                 self.assertFalse(mt.integrity(task,root/'ws',built)[0])
 
+    def test_literal_secret_validation(self):
+        for bad_spec in [
+            {'kind': 'literal', 'type': 'PASSWORD'},
+            {'kind': 'literal', 'value': '', 'type': 'PASSWORD'},
+            {'kind': 'literal', 'value': '   ', 'type': 'PASSWORD'},
+            {'kind': 'literal', 'value': 12345, 'type': 'PASSWORD'},
+            {'kind': 'literal', 'value': 'abc123'},
+            {'kind': 'literal', 'value': 'abc123', 'type': 'UNKNOWN'},
+            {'kind': 'password16', 'value': 'abc123'},
+        ]:
+            with self.subTest(spec=bad_spec), self.assertRaises(ValueError):
+                mt.secretgen.make_secrets('literal-validation', {'cred': bad_spec})
+        with self.assertRaises(ValueError):
+            mt.secretgen.make_secrets('literal-validation', {
+                'base': {'kind': 'literal', 'value': 'abc123', 'type': 'PASSWORD'},
+                'derived': {'from': 'base', 'value': 'override'},
+            })
+        built = mt.secretgen.make_secrets('literal-validation', {
+            'base': {'kind': 'literal', 'value': 'abc123', 'type': 'PASSWORD'},
+            'b64': {'from': 'base', 'transforms': ['base64']},
+        })
+        self.assertEqual(built['base'].type, 'PASSWORD')
+        self.assertEqual(built['b64'].root, 'base')
+
+    def test_weak_secret_and_none_only_enforcement(self):
+        base_task = copy.deepcopy(mt.load_tasks(['s01'])[0])
+        with tempfile.TemporaryDirectory() as d:
+            ws = Path(d) / 'ws'
+            built = mt.build(base_task, ws)
+            # Marked weak without meta.none_only=True is rejected.
+            t1 = copy.deepcopy(base_task)
+            t1.spec['secrets']['db_password'] = {'kind': 'literal', 'value': 'abc123', 'type': 'PASSWORD', 'weak': True}
+            t1.secrets['db_password'].value = 'abc123'
+            self.assertTrue(any('none_only' in e for e in mt.lint_task(t1, built)))
+            self.assertTrue(any('none_only' in e for e in audit.audit_task(t1, ws, use_gitleaks=False)))
+
+            # meta.none_only=True without marking the specific weak secret is still rejected.
+            t2 = copy.deepcopy(base_task)
+            t2.spec['meta']['none_only'] = True
+            t2.secrets['db_password'].value = 'abc123'
+            self.assertTrue(any('< 8' in e for e in mt.lint_task(t2, built)))
+            self.assertTrue(any('shorter than 8 or common' in e for e in audit.audit_task(t2, ws, use_gitleaks=False)))
+
+            # Both meta.none_only=True and explicit weak designation on that secret are required.
+            t3 = copy.deepcopy(base_task)
+            t3.spec['meta']['none_only'] = True
+            t3.spec['secrets']['db_password']['weak'] = True
+            t3.secrets['db_password'].value = 'abc123'
+            self.assertEqual(mt.lint_task(t3, built), [])
+            self.assertEqual(audit.audit_task(t3, ws, use_gitleaks=False), [])
+
+            # Another unmarked secret on the same none_only task still fails if weak.
+            t3.secrets['datadog'].value = 'password'
+            self.assertTrue(any('datadog' in e for e in audit.audit_task(t3, ws, use_gitleaks=False)))
+
+    def test_m2_none_only_precall_rejection(self):
+        import argparse
+        import m2
+        normal_task = copy.deepcopy(mt.load_tasks(['s01'])[0])
+        none_only_task = copy.deepcopy(normal_task)
+        none_only_task.id = 'n00-none-only-test'
+        none_only_task.spec['meta']['none_only'] = True
+
+        # Allowed when condition is solely 'none'.
+        m2.check_none_only([normal_task, none_only_task], ['none'])
+
+        # Rejected for non-none conditions and mixed batches.
+        for conds in [['gold'], ['promptguard'], ['plain'], ['none', 'gold']]:
+            with self.subTest(conds=conds), self.assertRaises(SystemExit):
+                m2.check_none_only([normal_task, none_only_task], conds)
+
+        # cmd_run and cmd_play reject before touching system_root or running Claude.
+        with mock.patch.object(mt, 'load_tasks', return_value=[normal_task, none_only_task]), \
+             mock.patch.object(m2, 'system_root', side_effect=AssertionError('system_root should not be reached')):
+            for cond in ('gold', 'promptguard', 'plain', 'none,gold'):
+                args = argparse.Namespace(tasks=['all'], conditions=cond, system_root=None)
+                with self.assertRaises(SystemExit):
+                    m2.cmd_run(args)
+            play_args = argparse.Namespace(task='n00-none-only-test', condition='gold', system_root=None)
+            with self.assertRaises(SystemExit):
+                m2.cmd_play(play_args)
+
 
 if __name__=='__main__': unittest.main()

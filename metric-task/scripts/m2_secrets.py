@@ -251,7 +251,11 @@ KINDS.update({
     "anthropic_key": Kind("SECRET", r"sk-ant-api03-[A-Za-z0-9_-]{93}AA",
                           "Anthropic API key (gitleaks v8.30.1 anthropic.go)", "anthropic-api-key"),
     "session_cookie": Kind("TOKEN", r"[A-Za-z0-9_-]{43}", "opaque authenticated session cookie"),
+    "literal": Kind(None, source="explicit task literal (requires value and type)",
+                    build=lambda _g, _s, spec: spec["value"]),
 })
+
+VALID_SECRET_TYPES = ("PASSWORD", "SECRET", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY")
 
 DECOY_KINDS: dict[str, Kind] = {
     "request_id": Kind(None, r"req_[a-f0-9]{24}", "request correlation identifier"),
@@ -323,16 +327,34 @@ def make_secrets(task_id: str, specs: dict) -> dict[str, Secret]:
     out: dict[str, Secret] = {}
     for name, spec in specs.items():  # a derived secret names a base declared before it
         if "from" in spec:
+            if "value" in spec:
+                raise ValueError(f"{task_id}: secret {name!r} cannot combine 'from' and 'value'")
             base = out[spec["from"]]
             value, kind_type = apply_transforms(base.value, base.type, spec.get("transforms", []))
             root = base.root
         else:
             if spec["kind"] not in KINDS:
                 raise ValueError(f"{task_id}: unknown secret kind {spec['kind']!r} for {name!r} (see {__file__})")
+            if spec["kind"] == "literal":
+                raw_val = spec.get("value")
+                if not isinstance(raw_val, str) or not raw_val or not raw_val.strip():
+                    raise ValueError(f"{task_id}: literal secret {name!r} requires a non-empty string 'value'")
+                raw_type = spec.get("type")
+                if not isinstance(raw_type, str) or raw_type not in VALID_SECRET_TYPES:
+                    raise ValueError(
+                        f"{task_id}: literal secret {name!r} requires explicit 'type' in {VALID_SECRET_TYPES}"
+                    )
+            elif "value" in spec:
+                raise ValueError(
+                    f"{task_id}: secret {name!r} of kind {spec['kind']!r} cannot set 'value' (use kind='literal')"
+                )
             kind = KINDS[spec["kind"]]
             value, kind_type = generate(kind, f"{SEED_PREFIX}:{task_id}:{name}", spec), kind.type
             root = name
-        out[name] = Secret(name, spec.get("type") or kind_type, value, root)
+        secret_type = spec.get("type") or kind_type
+        if not isinstance(secret_type, str) or secret_type not in VALID_SECRET_TYPES:
+            raise ValueError(f"{task_id}: secret {name!r} has invalid type {secret_type!r}")
+        out[name] = Secret(name, secret_type, value, root)
     return out
 
 
