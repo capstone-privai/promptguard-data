@@ -266,7 +266,8 @@ def regenerate(sessions: list[dict], source: str | None, origin: str | None, cre
         return (new_sessions, new_gold), None
     converters = {"openhands-feedback": ("openhands", "convert_openhands_feedback"),
                   "swe-gym": ("swe_gym", "convert_swe_gym"),
-                  "noseyparker": ("noseyparker", "convert_noseyparker")}
+                  "noseyparker": ("noseyparker", "convert_noseyparker"),
+                  "agent-trajectory": ("trajectory", "convert_trajectory")}
     if source in converters:
         flag, module = converters[source]
         if upstream.get(flag) is None:
@@ -305,6 +306,7 @@ def main():
     parser.add_argument("--openhands", type=Path, help="openhands-feedback copy, to regenerate sessions_from_openhands-feedback.jsonl")
     parser.add_argument("--swe-gym", type=Path, help="SWE-Gym trajectories copy, to regenerate sessions_from_SWE-Gym.jsonl")
     parser.add_argument("--noseyparker", type=Path, help="noseyparker checkout, to regenerate sessions_from_noseyparker.jsonl")
+    parser.add_argument("--trajectory", type=Path, help="metric-task batch folder, to regenerate sessions_from_trajectory-<batch>.jsonl")
     parser.add_argument("--skip-rebuild", action="store_true", help="skip the byte-reproduction check")
     args = parser.parse_args()
     gold_path = args.gold or gold_path_for(args.sessions)
@@ -321,7 +323,8 @@ def main():
     if not args.skip_rebuild and sessions:
         rows, reproduction = regenerate(sessions, source, origin, args.creddata, args.privesc,
                                         {"nemotron": args.nemotron, "openhands": args.openhands,
-                                         "swe_gym": args.swe_gym, "noseyparker": args.noseyparker})
+                                         "swe_gym": args.swe_gym, "noseyparker": args.noseyparker,
+                                         "trajectory": args.trajectory})
         if rows is not None:
             check_reproduction((args.sessions, gold_path), rows, errors)
             reproduction = "passed"

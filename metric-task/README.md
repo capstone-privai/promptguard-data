@@ -387,6 +387,7 @@ metric-task/
   scripts/m2_declarations.py  미등록 자격증명 리터럴 보조 감사
   scripts/m2_inventory.py  과제 축별 분포 집계
   scripts/api_capture.py 기록 프록시와 요청 본문의 비밀 찾기
+  scripts/m2_planted.py  실행 폴더마다 심은 값의 목록 planted.json을 씀 (궤적 평가셋의 입력, ../metric-detection/docs/README_trajectory-eval.md)
   scripts/detector_capture.py  Mod의 탐지기 호출 기록 프록시 (--detector-capture, metric-latency 재생용)
   scripts/fixture_mcp.py 정해진 응답을 돌려주는 stdio MCP 서버 (mcp 경로)
   scripts/detector_worker.py   none/gold 조건의 탐지기 (원래 worker와 같은 HTTP 규약)

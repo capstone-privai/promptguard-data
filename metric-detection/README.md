@@ -38,6 +38,7 @@
 | Nosey Parker | `sessions_from_noseyparker.jsonl` | `gold_from_noseyparker.jsonl` | 573 | 573 | 402 | external | [Nosey Parker](https://github.com/praetorian-inc/noseyparker) 내장 규칙 189개의 예시와 음성 예시. 수백 종 서비스의 토큰 형식을 시험한다([README_noseyparker.md](README_noseyparker.md)). |
 | ML 평가 (test) | `sessions_mleval_<입력>_test.jsonl` | `gold_mleval_<입력>_test.jsonl` | 생성 전 | | | authored | ML 학습 데이터([계획](docs/README_ml-train-plan.md))의 test split. 학습과 같은 분포의 다른 맥락 원형(group)이다. `<입력>`은 LLM 템플릿(`v1`), 손 템플릿(`hand_v1`)처럼 빌드한 입력 파일 이름이다([ML 평가 데이터](#ml-평가-데이터)) |
 | ML 평가 (분포 이동) | `sessions_mleval_<입력>_test_ood.jsonl` | `gold_mleval_<입력>_test_ood.jsonl` | 생성 전 | | | authored, recorded | test_ood split. 학습에 없는 문맥(Jupyter 출력, Terraform state), 서비스 형식(Twilio, Datadog, Hugging Face, Azure 저장소 키), 도구 형식(MCP 결과)과 다른 생성 모델로 쓴 합성 세션, 그리고 privesc-llm-data의 `password_reuse`, `ssh_key_reuse` 시나리오(`sessions_mleval_privesc_test_ood`, 440세션) |
+| 에이전트 궤적 | `sessions_from_trajectory-<배치>.jsonl` | `gold_from_trajectory-<배치>.jsonl` | 생성 전 | | | recorded | 비밀을 심은 작업 공간에서 Claude Code를 실제로 돌린 metric-task none 실행의 세션 기록. 평가 전용이며 학습에 쓰지 않는다([계획과 사용법](docs/README_trajectory-eval.md)) |
 
 합성 데이터의 비밀값은 모두 결정적으로 만든 가짜 값이다. 정답은 탐지기 결과와 상관없이, 값을 끼워 넣는 순간에 위치를 기록해 만든다.
 
