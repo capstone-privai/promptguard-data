@@ -211,7 +211,7 @@ def established_decoys(entries: list[dict], texts: list[str]) -> set[str]:
     """Names of the decoys that are gold somewhere: in a credential position, or a credential by their format."""
     found = set()
     for entry in entries:
-        if entry["role"] != "decoy":
+        if entry["role"] != "decoy" or not entry["value"]:
             continue
         value = entry["value"]
         for text in texts:
@@ -230,10 +230,17 @@ def find_candidates(text: str, entries: list[dict], common: set[str], golden: se
     """(gold spans, occurrences of a gold value that are not gold) of the planted values in a text."""
     spans, others = [], []
     for entry in entries:
+        if not entry["value"]:
+            continue  # a decoy can be the empty value (DB_PASSWORD=), which no search can place
         if entry["role"] == "decoy" and entry["name"] not in golden:
+            for m in occurrences(text, entry["value"]):  # a hard negative the session really showed: counted, never gold
+                others.append({"entry": entry["name"], "role": "decoy", "service": entry["kind"], "start": m.start(),
+                               "end": m.end(), "kind": exclusion_kind(text, m.start(), m.end()) or "decoy",
+                               "how": "exact", "value_class": "decoy", "value_sha256": digest(entry["value"])})
             continue
         info = {"entry": entry["name"], "role": entry["role"], "service": entry["kind"],
-                "value_class": "common" if entry["value"] in common else "distinct"}
+                "value_class": "common" if entry["value"] in common else "distinct",
+                "value_sha256": digest(entry["value"])}
         for form in entry["forms"]:
             if form["how"] == "pem_part" or "-----BEGIN" in form["text"]:
                 continue  # a whole block is find_keys' job, a part of one is review's

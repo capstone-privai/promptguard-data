@@ -122,9 +122,17 @@ class GoldTests(unittest.TestCase):
         decoy = entry("d", made_up("decoy"), role="decoy", kind="request_id", type_=None)
         in_slot, elsewhere = f"api_key={decoy['value']}\n", f"request {decoy['value']} finished\n"
         self.assertEqual(ct.established_decoys([decoy], [elsewhere]), set())
-        self.assertEqual(self.find(elsewhere, [decoy])[0], [])
+        spans, others = self.find(elsewhere, [decoy])
+        self.assertEqual(spans, [])
+        self.assertEqual([(o["kind"], o["service"]) for o in others], [("decoy", "request_id")])
+        self.assertNotIn(decoy["value"], json.dumps(others))
         self.assertEqual(ct.established_decoys([decoy], [in_slot, elsewhere]), {"d"})
         self.assertEqual(len(self.find(in_slot, [decoy], {"d"})[0]), 1)
+
+    def test_an_empty_decoy_matches_nothing(self):
+        decoy = entry("d", "", role="decoy", kind="empty", type_=None)
+        self.assertEqual(self.find("DB_PASSWORD=\nport = 1\n", [decoy]), ([], []))
+        self.assertEqual(ct.established_decoys([decoy], ["DB_PASSWORD=\n"]), set())
 
     def test_a_planted_secret_read_as_an_identifier_is_flagged_for_review(self):
         line = f"https://{SECRET}@example.invalid/1\n"
