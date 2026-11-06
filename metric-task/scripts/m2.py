@@ -53,7 +53,7 @@ import detector_capture  # noqa: E402
 import m2_tasks as mt  # noqa: E402
 
 REPO_ROOT = mt.REPO_ROOT
-RUNS_DIR = REPO_ROOT / "runs" / "metric-task"
+RUNS_DIR = Path(os.environ.get("M2_RUNS_DIR") or REPO_ROOT / "runs" / "metric-task")
 WORK_ROOT = Path(tempfile.gettempdir()) / "promptguard-m2"
 DETECTOR = Path(__file__).resolve().parent / "detector_worker.py"
 FIXTURE_MCP = Path(__file__).resolve().parent / "fixture_mcp.py"
@@ -276,7 +276,7 @@ def audit_stats(run_dir: Path) -> dict:
     failures = [r for r in rows if r.get("blocked")]
     by_source = Counter()
     for r in rows:
-        by_source[r.get("source", "?")] += r.get("finding_count", 0)
+        by_source[r.get("source", "?")] += r.get("finding_count") or 0  # a tool_started row has null: nothing scanned
     return {"rows": len(rows), "findings": sum(by_source.values()), "findings_by_source": dict(by_source),
             "failures": len(failures), "failure_reasons": sorted({str(r.get("reason"))[:160] for r in failures})}
 

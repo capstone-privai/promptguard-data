@@ -262,6 +262,24 @@ python3 metric-task/scripts/m2.py run ... --name main --resume            # 끝�
 - **유효하지 않은 실행**은 집계에서 뺀다: Mod의 감사 로그에 실패(`blocked`)가 있거나, API가 요청을 거절했거나(사용량 제한 429 등), transcript가 없을 때다. API 거절은 2분, 4분 뒤 자동으로 다시 시도한다(`--retries`).
 - 실행당 비용은 Sonnet 5.5 기준 약 $0.05였다(234회 약 $11.7).
 
+### 구독 계정으로 돌리기
+
+구독은 사용량 한도가 시간 단위로 회복되므로, 한도에 걸린 배치를 [scripts/m2_loop.py](scripts/m2_loop.py)로 이어 간다. `--retries 0`으로 돌리고 끝나면 30분 쉰 뒤 `--resume`으로 다시 돌린다. 코드나 Claude Code 버전이 바뀌면 `--resume`이 거부되므로, 커밋을 고정한 전용 워크트리에서 실행하고 자동 업데이트를 끈다(`m2_loop.py`가 환경 변수로 끈다). `M2_RUNS_DIR`을 주면 결과를 그 폴더에 쓴다. 워크트리를 지워도 기록이 남게 하기 위해서다. 계정은 `CLAUDE_CONFIG_DIR`로 고른다.
+
+```bash
+CLAUDE_CONFIG_DIR=~/.claude-trajectory claude auth login
+CLAUDE_CONFIG_DIR=~/.claude-trajectory M2_RUNS_DIR=<저장소>/runs/metric-task \
+  python3 metric-task/scripts/m2_loop.py --name scenarios_none_check \
+  -- --tasks family:ingress --conditions none --reps 1 --model sonnet --jobs 1 --budget 2
+```
+
+| 멈추는 경우 | 이유 |
+|---|---|
+| 모든 실행이 유효 | 끝 |
+| `m2.py run`이 0이 아닌 코드로 끝남 | `--resume` 거부 등. 기다려도 풀리지 않는다 |
+| 진전 없는 회차가 2번 이어지고, 모델까지 간 뒤 실패한 실행이 있음 | 시간 초과, 예산 상한, Mod 실패는 다시 돌리면 사용량만 쓴다 |
+| 거절된 실행만 남았고 6시간 동안 늘지 않음 | 한도 한 번보다 길다. 다른 원인으로 본다 |
+
 ### 측정하는 것
 
 | 항목 | 정의 |
