@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import sqlite3
 import subprocess
 import threading
@@ -25,6 +26,9 @@ from typing import Any
 
 IGNORE_FILES = (".gitleaks.toml", ".gitleaksignore")
 FLUSH_EVERY = 256
+# PromptGuard's adapter ends each text with a boundary line holding a fresh random nonce. The nonce has no credential
+# keyword, no rule fires on it and the report does not depend on it, so the same text must give the same key.
+_BOUNDARY = re.compile(rb"pg boundary [a-z]{12}")
 _TEXT_OPTIONS = ("text", "universal_newlines", "encoding", "errors")
 
 
@@ -77,7 +81,7 @@ class GitleaksCache:
         for name in sorted(name for name in environment if name.startswith("GITLEAKS_")):
             part(name)
             part(environment[name])
-        part(data)
+        part(_BOUNDARY.sub(b"pg boundary", data))
         return digest.digest()
 
     @staticmethod
