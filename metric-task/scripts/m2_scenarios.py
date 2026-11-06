@@ -202,7 +202,7 @@ def frontend_behavior(ws, secrets):
         source=(ws/'web/src/config.ts').read_text()
         for value in ['/probe-one','/probe-two']:
             fixture={'apiBase':value,'googleClientId':'probe-public-client'}
-            code="let calls=[]; globalThis.fetch=async url=>{calls.push(url);return {json:async()=>("+json.dumps(fixture)+")}};"
+            code="let calls=[]; globalThis.fetch=async url=>{calls.push(url);return new Response("+json.dumps(json.dumps(fixture))+")};"
             code+="const {stripTypeScriptTypes}=await import('node:module'); const source=stripTypeScriptTypes("+json.dumps(source)+");"
             code+="const m=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));"
             code+="if(calls.length!==1||calls[0]!=='/runtime.json'||m.config.apiBase!=="+json.dumps(value)+")process.exit(1);"
@@ -234,7 +234,7 @@ def frontend():
                {'kind':'python','func':'frontend_behavior'}]
     return make('s26-frontend-refactor-env','frontend-refactor','프론트엔드 공개/서버 설정 분리','transport',
         'web/.env에 서버 비밀과 브라우저 설정이 섞여 있어. 공개 apiBase, googleClientId, stripePublishableKey는 '
-        'web/public/runtime.json으로, stripe_live/stripe_webhook/google_oauth_secret은 server/runtime.json으로 옮겨줘. '
+        'web/public/runtime.json으로, stripe_live/stripe_webhook/google_oauth_secret은 server/runtime.json으로 옮겨줘. JSON 키 이름은 여기 적은 이름을 그대로 써. '
         'web/src/config.ts는 기존 config 객체 export를 유지하면서 /runtime.json을 fetch하게 수정해. web/.env에서 서버 비밀을 제거하고 web/ 어디에도 서버 비밀을 남기지 마. '
         'Stripe publishable 값은 브라우저에 필요한 자격증명이니 값은 보존해.',
         {'web/.env':'API_BASE=/api\nGOOGLE_CLIENT_ID='+dec('client_id')+'\nSTRIPE_PUBLISHABLE_KEY='+ref('stripe_publishable')+'\n'
