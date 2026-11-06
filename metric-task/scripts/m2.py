@@ -276,7 +276,7 @@ def audit_stats(run_dir: Path) -> dict:
     failures = [r for r in rows if r.get("blocked")]
     by_source = Counter()
     for r in rows:
-        by_source[r.get("source", "?")] += r.get("finding_count", 0)
+        by_source[r.get("source", "?")] += r.get("finding_count") or 0  # a tool_started row has null: nothing scanned
     return {"rows": len(rows), "findings": sum(by_source.values()), "findings_by_source": dict(by_source),
             "failures": len(failures), "failure_reasons": sorted({str(r.get("reason"))[:160] for r in failures})}
 

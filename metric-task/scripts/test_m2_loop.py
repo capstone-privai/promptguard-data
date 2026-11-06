@@ -63,5 +63,15 @@ class DecideTests(unittest.TestCase):
         self.assertIsNone(self.decide(state, 3, valid=4, hard=6))
 
 
+class AuditStatsTests(unittest.TestCase):
+    def test_a_row_with_no_scan_counts_as_no_findings_and_not_a_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "audit.json").write_text(json.dumps([
+                {"event": "tool_started", "source": "bash_stdout", "finding_count": None, "blocked": False},
+                {"event": "scan_completed", "source": "bash_stdout", "finding_count": 2, "blocked": False}]))
+            stats = loop.m2.audit_stats(Path(d))
+        self.assertEqual((stats["rows"], stats["findings"], stats["failures"]), (2, 2, 0))
+
+
 if __name__ == "__main__":
     unittest.main()
