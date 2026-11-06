@@ -386,6 +386,8 @@ metric-task/
   scripts/m2_scenario_extra.py  추가 family의 프로젝트·채점·모범 풀이
   scripts/m2_declarations.py  미등록 자격증명 리터럴 보조 감사
   scripts/m2_inventory.py  과제 축별 분포 집계
+  scripts/m2_axes.py     과제가 무슨 일을 하는지 장면 단위로 집계 (task_axes.toml의 손 라벨: 작업 종류, 비밀과의 관계)
+  task_axes.toml         장면별 라벨. 생성기가 task.json을 덮어쓰므로 여기에 둔다
   scripts/api_capture.py 기록 프록시와 요청 본문의 비밀 찾기
   scripts/detector_capture.py  Mod의 탐지기 호출 기록 프록시 (--detector-capture, metric-latency 재생용)
   scripts/fixture_mcp.py 정해진 응답을 돌려주는 stdio MCP 서버 (mcp 경로)
