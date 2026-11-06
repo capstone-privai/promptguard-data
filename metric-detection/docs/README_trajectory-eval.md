@@ -52,8 +52,12 @@ python3 metric-detection/scripts/dataset_verify.py metric-detection/data_test/se
 |---|---|---|
 | 실제 트래픽에 맞춘다 | tool_output 길이, 도구 형식, 양성 비율 | 중앙값 600~760자, 3,000자 초과 17~21%, 6,000자 초과 약 10% |
 | 칸별 최소 개수를 채운다 | 유형, 문맥, 어려운 음성, 경계 규칙 | 축별로 고유값 30개 이상, 장면 10개 이상. 조합별이 아니다 |
-| 칸별 최소 개수를 채운다 | 서비스 형식 | 형식별 고유값 10개 이상, 장면 3개 이상(잠정). 형식이 33개라 위 기준은 현실적이지 않다 |
+| 칸별 최소 개수를 채운다 | 서비스 형식 | 우선 형식 15종만 고유값 10개 이상, 장면 3개 이상(잠정). 아래 목록을 본다 |
 | 칸별 최소 개수를 채운다 | 작업 종류 ([m2_axes.py](../../metric-task/scripts/m2_axes.py)) | 장면 5개 이상 |
+
+길이 목표는 새 과제의 분포로만 판정한다. 기존 tool_output 436개 중 369개가 700자 이하라서, 합치면 새 과제가 실제 트래픽처럼 긴지 알 수 없다. 기존 과제는 칸별 개수에는 계속 센다.
+
+우선 서비스 형식은 `password16`(비밀번호 변형 포함), `api_key`, `token`, `secret`, `aws_access_key`, `aws_secret_key`, `github_pat`, `github_token`, `openai_key`, `anthropic_key`, `slack_token`, `stripe_live`, `private_key`, `jwt_claims`, `session_cookie`다. 코딩 세션에 흔하다고 판단한 형식을 탐지 방식이 겹치지 않게 고른 것이고, 실제 빈도로 잰 목록은 아니다. 나머지 형식은 측정값만 보고한다.
 
 [README_ml-train-plan.md](README_ml-train-plan.md)의 수치는 학습 데이터 목표이므로 그대로 쓰지 않고, 축의 이름만 빌린다. 신뢰구간은 장면 단위로 묶는다. 한 family의 과제는 같은 장면에서 축 하나만 바꾼 것이라 독립이 아니다.
 
