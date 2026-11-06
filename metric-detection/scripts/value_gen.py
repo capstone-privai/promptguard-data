@@ -639,6 +639,76 @@ NEGATIVE_KINDS.update({
 PREFIX_NEGATIVES = {"prefix_redaction", "prefix_example", "prefix_template"}  # {{neg:KIND|of=SECRET_KIND}}
 
 
+# ---- negatives for ordinary value positions (card_config.toml [[addon]] b and p) -------------------------------
+# Only the cards of those bundles ask for these kinds ([negatives.kinds] does not list them), each in a position whose
+# key names no credential. They come from the 2026-11-06 detection run: v10 and Qwen v3 masked ids, opaque values,
+# resource names, numbers and fingerprints in CredData config files, and personal data in Nemotron-PII.
+
+def neg_opaque_value(d: Draw) -> str:
+    # a cursor, ETag, nonce or trace id: as random as a secret, and as long
+    n = d.between(16, 48)
+    return d.weighted([(d.chars(n, ALNUM), 3), (d.chars(n, B64URL), 2), (d.chars(n, HEX), 2),
+                       (f'W/"{d.chars(d.between(16, 32), HEX)}"', 1),
+                       (f"{d.chars(32, HEX)}-{d.chars(16, HEX)}-01", 1)])
+
+
+def neg_resource_name(d: Draw) -> str:
+    app = d.choice(("payments", "orders", "search", "billing", "ingest", "auth-proxy", "reports", "notifier"))
+    env = d.choice(("prod", "staging", "dev", "qa"))
+    region = d.choice(("ap-northeast-2", "us-east-1", "eu-west-1"))
+    return d.weighted([(f"{app}-{env}-{d.chars(d.between(4, 10), LOWER + DIGITS)}", 3),
+                       (f"{app}-{env}-{region}-{d.chars(4, DIGITS)}", 1),
+                       (f"{app}-{d.chars(10, LOWER + DIGITS)}-{d.chars(5, LOWER + DIGITS)}", 2),  # a pod name
+                       (f"{app}.{env}.internal", 1), (f"{app}-db-{d.between(1, 9):02d}.{env}.svc.cluster.local", 1),
+                       (d.chars(d.between(6, 12), LOWER + DIGITS), 2), (d.chars(d.between(5, 10), UPPER + DIGITS), 1),
+                       (f"{app}_{d.chars(6, LOWER + DIGITS)}", 1)])
+
+
+def neg_config_scalar(d: Draw) -> str:
+    return d.weighted([(d.chars(1, "123456789") + d.chars(d.between(8, 18), DIGITS), 3),  # account, order, row ids
+                       (str(1_600_000_000 + d.int(200_000_000)), 2),  # epoch seconds
+                       (str(1_600_000_000_000 + d.int(200_000_000_000)), 1),  # epoch milliseconds
+                       (f"{d.between(0, 12)}.{d.between(0, 40)}.{d.between(0, 99)}", 2),
+                       (f"{2020 + d.int(7)}-{d.between(1, 12):02d}-{d.between(1, 28):02d}T{d.between(0, 23):02d}:"
+                        f"{d.between(0, 59):02d}:{d.between(0, 59):02d}Z", 2),
+                       (f"{d.between(0, 999)}.{d.chars(d.between(2, 6), DIGITS)}", 1),
+                       (f"{d.between(1024, 65535)}:{d.choice((80, 443, 5432, 6379, 8080, 3306))}", 1)])
+
+
+def neg_fingerprint(d: Draw) -> str:
+    return d.weighted([("SHA256:" + base64.b64encode(d.raw(32)).decode().rstrip("="), 3),
+                       (":".join(d.chars(2, "0123456789ABCDEF") for _ in range(20)), 2),  # SHA-1, colon hex
+                       (":".join(d.chars(2, HEX) for _ in range(16)), 1),  # MD5
+                       (d.chars(64, HEX), 2), (d.chars(40, "0123456789ABCDEF"), 1)])
+
+
+def neg_pii(d: Draw) -> str:
+    # personal data that is not a credential (Nemotron-PII pii_other, pin). Synthetic: no real person or account.
+    first = d.choice(("minji", "jisoo", "daniel", "sofia", "haruto", "lucas", "yuna", "omar", "priya", "noah"))
+    last = d.choice(("kim", "park", "lee", "garcia", "tanaka", "silva", "nguyen", "khan", "muller", "choi"))
+    return d.weighted([(f"{first}.{last}{d.chars(d.between(0, 3), DIGITS)}@example.{d.choice(('com', 'org', 'net'))}", 3),
+                       (f"+82-10-{d.chars(4, DIGITS)}-{d.chars(4, DIGITS)}", 1),
+                       (f"+1-{d.chars(3, DIGITS)}-555-{d.chars(4, DIGITS)}", 1),
+                       (" ".join(_luhn("4" + d.chars(14, DIGITS))[i:i + 4] for i in range(0, 16, 4)), 2),
+                       (f"{d.choice(('CUST', 'ACC', 'EMP', 'MRN', 'POL'))}-{d.chars(d.between(5, 9), DIGITS)}", 3),
+                       (d.chars(d.between(10, 14), DIGITS), 2),  # account or member number
+                       (f"{first[0]}{last}{d.chars(d.between(1, 4), DIGITS)}", 2),  # user name
+                       (":".join(d.chars(2, "0123456789ABCDEF") for _ in range(6)), 1),  # MAC address
+                       (f"{d.between(19, 89)}{d.between(1, 12):02d}{d.between(1, 28):02d}-{d.chars(7, DIGITS)}", 1),
+                       (f"{d.choice(('1975', '1983', '1991', '2002'))}-{d.between(1, 12):02d}-{d.between(1, 28):02d}", 1),
+                       (d.chars(d.choice((4, 6)), DIGITS), 2),  # PIN
+                       (f"{d.choice(('BIO', 'FP', 'IRIS'))}-{d.chars(d.between(12, 24), UPPER + DIGITS)}", 1)])
+
+
+NEGATIVE_KINDS.update({
+    "opaque_value": (neg_opaque_value, None),
+    "resource_name": (neg_resource_name, None),
+    "config_scalar": (neg_config_scalar, None),
+    "fingerprint": (neg_fingerprint, None),
+    "pii": (neg_pii, None),
+})
+
+
 # ---- masks ({{mask:NAME}}) ---------------------------------------------------------
 
 # The placeholder kind PromptGuard's Native Mod writes for a value, [KIND_n] (promptguard-claude-demoV0

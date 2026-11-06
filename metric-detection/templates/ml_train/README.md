@@ -27,7 +27,7 @@
 (cd metric-detection/secret-sources && python3 build_v3.py frame.csv)
 python metric-detection/scripts/ml_train_catalog.py          # --check: 커밋된 두 파일이 최신인지만 본다
 
-# 1. 카드: 전체 2,562장(추가 카드 72장 포함)과, 추가 카드를 뺀 2,490장에서 split·문맥 비율을 지켜 고른 파일럿 100장
+# 1. 카드: 전체 2,666장(추가 카드 a 72, b 80, p 24장 포함)과, 추가 카드를 뺀 2,490장에서 split·문맥 비율을 지켜 고른 파일럿 100장
 python metric-detection/scripts/ml_train_cards.py
 python metric-detection/scripts/ml_train_cards.py --limit 100 --out metric-detection/templates/ml_train/cards_pilot.jsonl
 
@@ -50,7 +50,7 @@ python metric-detection/scripts/ml_train_write.py process v1
 # 다시 3번으로 빌드와 검증. 그다음 v1.jsonl과 batches/v1.json을 gitleaks로 확인하고 커밋한다
 ```
 
-**이미 템플릿을 받은 뒤에는 `[contexts]`의 weights와 formats, 그 밖에 카드 추첨에 쓰는 값을 바꾸지 않는다.** 카드 ID는 추첨 순서로 매겨지고 `submit`은 ID로 건너뛰므로, 가중치를 바꾸면 받아 둔 템플릿과 같은 ID의 카드가 다른 내용이 된다(자연어·문서 세 칸을 올려 보면 c 카드 2,240장 중 1,095장의 문맥·유형·split이 바뀌고, 파일럿 템플릿 85개 중 62개의 카드 내용이 달라진다). 칸을 늘릴 때는 `[[addon]]` 묶음을 새로 더한다. 묶음마다 시드(`version`)와 ID 접두어(`prefix`, 첫 묶음은 `a`)가 따로라 c·o 카드, 파일럿, 다른 묶음이 그대로다. 템플릿을 받은 묶음은 고치지 않는다. `version`이나 `cells`를 바꾸면 그 묶음의 카드가 다시 뽑힌다. `--limit`에는 들어가지 않고 전체 뽑기에 들어간다. 추가 카드만 따로 보내려면 다음과 같이 한다.
+**이미 템플릿을 받은 뒤에는 `[contexts]`의 weights와 formats, 그 밖에 카드 추첨에 쓰는 값을 바꾸지 않는다.** 카드 ID는 추첨 순서로 매겨지고 `submit`은 ID로 건너뛰므로, 가중치를 바꾸면 받아 둔 템플릿과 같은 ID의 카드가 다른 내용이 된다(자연어·문서 세 칸을 올려 보면 c 카드 2,240장 중 1,095장의 문맥·유형·split이 바뀌고, 파일럿 템플릿 85개 중 62개의 카드 내용이 달라진다). 칸을 늘릴 때는 `[[addon]]` 묶음을 새로 더한다. 묶음마다 시드(`version`)와 ID 접두어(`prefix`, 첫 묶음은 `a`)가 따로라 c·o 카드, 파일럿, 다른 묶음이 그대로다. 템플릿을 받은 묶음은 고치지 않는다. `version`이나 `cells`를 바꾸면 그 묶음의 카드가 다시 뽑힌다. 칸에는 `name`(같은 문맥·유형의 칸을 여럿 둘 때), `formats`, `negatives`(카드마다 일반 값 자리에 고정으로 넣는 음성), `note`, `min_output_chars`를 줄 수 있고, 묶음 전체에 줄 수도 있다. 이 값들은 카드를 뽑은 뒤에 붙이므로 없는 칸은 전과 같은 카드를 뽑는다. `--limit`에는 들어가지 않고 전체 뽑기에 들어간다. 추가 카드만 따로 보내려면 다음과 같이 한다.
 
 ```bash
 python metric-detection/scripts/ml_train_cards.py                                                                  # process가 읽을 전체 카드

@@ -91,6 +91,8 @@ authored는 내장 코퍼스, 템플릿 예시, 에이전트 세션 v2를 합친
 |---|---|---|---|---|
 | LLM 템플릿 | 2,240 | 3 | 6,720 | train / val / test |
 | 추가 LLM 템플릿 (자연어 TOKEN·SECRET, 문서 PASSWORD 각 24) | 72 | 3 | 216 | train / val / test (3.2절 아래) |
+| 추가 LLM 템플릿 b (설정의 일반 값 자리 음성) | 80 | 3 | 240 | train / val / test (3.2절 아래) |
+| 추가 LLM 템플릿 p (자연어·문서의 개인정보 음성) | 24 | 3 | 72 | train / val / test (3.2절 아래) |
 | 손 템플릿 (경계 규칙) | 160 | 5 | 800 | train / val / test |
 | 분포 이동 test용 LLM 템플릿 | 250 | 2 | 500 | test만 (5.1절) |
 | 기존 authored 57세션 (새 기준으로 다시 빌드) | 57 | 1 | 57 | 사람이 쓴 점검용 test |
@@ -118,6 +120,11 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 이 표는 LLM 템플릿과 손 템플릿을 합친 train / val / test-ID 몫이다. 분포 이동 test와 기존 authored는 들어 있지 않다.
 
 **추가 카드(2026-11-07).** 위 표 밖에 자연어 TOKEN, 자연어 SECRET, 문서 PASSWORD 칸에 템플릿을 24개씩 더했다(`card_config.toml` `[[addon]]`). 문서 칸은 고객 기록, 지원 티켓, 계정 안내문 서식으로만 쓴다. 근거는 2026-11-06 탐지 평가의 Nemotron-PII 결과로, Qwen v3이 읽고도 놓친 정답이 PASSWORD 최소 704개, SECRET 111개, TOKEN 95개였다. Qwen의 cue 게이트가 막은 정답(TOKEN 299개, SECRET 285개)은 카드로 고칠 수 없다.
+
+**추가 카드 b, p(2026-11-07).** 같은 평가의 오탐을 두 모델의 item별 결과로 나눠 봤다(v10 표본 448 span, Qwen v3는 base와 직접 대조한 16 span. Colab에서 받은 원자료).
+- b(80장, 설정 문맥): CredData 설정 파일의 오탐은 대부분 자격증명 키 뒤가 아닌 일반 값(id, 불투명 값, 자원 이름, 숫자, 지문)이었는데, 카드 음성은 66%가 자격증명 자리에 있었고 서식의 JSON 비중도 17%로 실제(65%)보다 낮았다. 그래서 일반 값 자리(`position general`)에 새 음성 kind `opaque_value`, `resource_name`, `config_scalar`, `fingerprint`와 기존 `identifier`를 고정으로 넣고 서식 절반을 데이터 파일(API 응답, fixture, 클라우드 자원 JSON, HTTP 기록, JSON Lines)로 둔다. id·자원 이름은 두 모델 공통 근거, 숫자·지문은 v10 근거뿐이라 칸(`cell`)을 나눠 학습 뒤 따로 비교한다. 같은 tool_output에 값 없는 자격증명 낱말을 두어 Qwen의 cue 게이트가 그 item을 읽게 한다.
+- p(24장, 자연어·문서): Nemotron-PII 오탐은 v10 표본 729개 중 685개, Qwen 직접 대조 97개 중 86개가 개인정보·PIN이었다. 새 음성 kind `pii`를 카드마다 3개 넣고, 비밀이 있는 카드는 같은 item에 둔다.
+- 새 kind는 `[negatives.kinds]`에 넣지 않아 c·o·a 카드의 추첨은 그대로다. prompt_v1의 표에 없는 kind라 카드 메시지가 kind와 `general` 자리를 설명한다(`ml_train_write.NEGATIVE_NOTES`). `process`는 일반 자리 음성이 자격증명 자리에 놓인 템플릿을 거절한다.
 
 ### 3.3 그 밖의 축 목표
 

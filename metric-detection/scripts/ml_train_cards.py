@@ -425,9 +425,22 @@ def draw(cfg: dict, catalog: list[dict] | None = None) -> list[dict]:
     return cards
 
 
+BUNDLE_DEFAULTS = ("formats", "negatives", "note", "min_output_chars")  # an [[addon]] may set these for all its cells
+
+
 def draw_addon(cfg: dict, catalog: list[dict] | None = None) -> list[dict]:
     """The cards of every [[addon]]. Each bundle has its own seed and id prefix, so draw() and the other bundles do
-    not change with it."""
+    not change with it.
+
+    A cell names a (context, type) and a count. Optional, per cell:
+      name      lets one bundle hold several cells of the same (context, type)
+      formats   replaces the context's formats
+      negatives [{kind, count}] hard negatives every card of the cell gets, in an ordinary value position
+                (position "general"), on top of what the card draws
+      note      an instruction added to every card of the cell
+      min_output_chars  a floor for longest_output_chars
+    The bundle itself may set any of these for all its cells. They are applied after the card is drawn, so a cell
+    without them draws exactly what it drew before."""
     bundles = cfg.get("addon", [])
     prefixes = [b["prefix"] for b in bundles]
     versions = [b["version"] for b in bundles]
@@ -438,17 +451,31 @@ def draw_addon(cfg: dict, catalog: list[dict] | None = None) -> list[dict]:
     cards = []
     for addon in bundles:
         base = f"{cfg['seed']}:{cfg['version']}:addon:{addon['version']}"
-        cells = {(c["context"], c["type"]): c for c in addon["cells"]}
+        cells = {(c["context"], c["type"], c["name"]) if "name" in c else (c["context"], c["type"]): c
+                 for c in addon["cells"]}
         if len(cells) != len(addon["cells"]):
-            raise ValueError(f"addon {addon['version']}: a (context, type) cell appears twice")
+            raise ValueError(f"addon {addon['version']}: a cell appears twice (give same-type cells a name)")
         slots = shuffle([cell for cell, c in cells.items() for _ in range(c["count"])], value_gen.Draw(base + ":order"))
         splits = stratified_splits(slots, pairs(cfg["split"]))
-        rows = assign_rows(slots, [r for r in catalog if r["status"] == "train"], base)
-        for i, ((ctx, t), split, row) in enumerate(zip(slots, splits, rows), 1):
-            formats = cells[(ctx, t)].get("formats", cfg["contexts"][ctx]["formats"])
+        rows = assign_rows([slot[:2] for slot in slots], [r for r in catalog if r["status"] == "train"], base)
+        for i, (slot, split, row) in enumerate(zip(slots, splits, rows), 1):
+            cell, (ctx, t) = {**{k: addon[k] for k in BUNDLE_DEFAULTS if k in addon}, **cells[slot]}, slot[:2]
+            formats = cell.get("formats", cfg["contexts"][ctx]["formats"])
             cell_cfg = {**cfg, "contexts": {**cfg["contexts"], ctx: {**cfg["contexts"][ctx], "formats": formats}}}
             card_id = f"{addon['prefix']}{i:04d}"
-            cards.append(card(value_gen.Draw(f"{base}:a{i:04d}"), cell_cfg, card_id, split, ctx, t, None, row))
+            c = card(value_gen.Draw(f"{base}:a{i:04d}"), cell_cfg, card_id, split, ctx, t, None, row)
+            for neg in cell.get("negatives", []):
+                if neg["kind"] not in value_gen.NEGATIVE_KINDS:
+                    raise ValueError(f"addon {addon['version']}: unknown negative kind {neg['kind']}")
+                c["negatives"] += [{"placeholder": f"{{{{neg:{neg['kind']}}}}}", "kind": neg["kind"],
+                                    "position": "general"} for _ in range(neg["count"])]
+            if "name" in cell:
+                c["cell"] = cell["name"]
+            if "note" in cell:
+                c["note"] = cell["note"]
+            if "min_output_chars" in cell:
+                c["longest_output_chars"] = max(c["longest_output_chars"], cell["min_output_chars"])
+            cards.append(c)
     return cards
 
 

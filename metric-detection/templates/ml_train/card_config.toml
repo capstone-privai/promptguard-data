@@ -254,3 +254,57 @@ cells = [
     { context = "document", type = "PASSWORD", count = 24, formats = ["customer record or CRM note", "support ticket",
                                                                        "account or access notice"] },
 ]
+
+# b: v10 and Qwen v3 masked ordinary values in CredData config files (runs/e2e-20261106; Orca reviews of 2026-11-07:
+# v10 448 sampled spans, 94% outside a credential position; Qwen 16 spans compared with base, ids and opaque values
+# common to both). The card negatives sat 66% in credential positions, and two thirds of the CredData config items are
+# JSON data while 17% of the card formats were. Ids and names are common to both models; numbers and fingerprints are
+# v10 evidence only (Qwen 0 of 26), so they get fewer cards and their own cells to compare after training.
+[[addon]]
+version = "config-ordinary-values-1"
+prefix = "b"
+formats = ["API response JSON", "test fixture JSON", "cloud resource JSON (describe or get output)",
+           "HTTP request and response record", "JSON Lines records", "config.json", "appsettings.json (.NET)",
+           "application.yml (Spring)", "Helm values.yaml", "config.toml"]
+min_output_chars = 1200
+note = """Most of this file or output is ordinary data: ids, names, hosts, numbers, versions, timestamps and checksums, \
+as real configs and API records hold them. Put the general negatives among those ordinary fields, in a tool_output. \
+That same tool_output also mentions a credential word with no credential value (a key such as token_url, auth_mode, \
+password_policy or secret_name), so the item looks like one where a credential could be. A card secret that first \
+appears in tool_output goes in that same tool_output, after its own credential key, among the ordinary values."""
+cells = [
+    { name = "ids-none", context = "config", type = "none", count = 16, negatives = [{ kind = "identifier", count = 2 }, { kind = "opaque_value", count = 1 }] },
+    { name = "ids-secret", context = "config", type = "SECRET", count = 6, negatives = [{ kind = "identifier", count = 2 }, { kind = "opaque_value", count = 1 }] },
+    { name = "ids-password", context = "config", type = "PASSWORD", count = 5, negatives = [{ kind = "identifier", count = 2 }, { kind = "opaque_value", count = 1 }] },
+    { name = "ids-token", context = "config", type = "TOKEN", count = 5, negatives = [{ kind = "identifier", count = 2 }, { kind = "opaque_value", count = 1 }] },
+    { name = "names-none", context = "config", type = "none", count = 12, negatives = [{ kind = "resource_name", count = 3 }] },
+    { name = "names-secret", context = "config", type = "SECRET", count = 5, negatives = [{ kind = "resource_name", count = 3 }] },
+    { name = "names-password", context = "config", type = "PASSWORD", count = 4, negatives = [{ kind = "resource_name", count = 3 }] },
+    { name = "names-token", context = "config", type = "TOKEN", count = 3, negatives = [{ kind = "resource_name", count = 3 }] },
+    { name = "numbers-none", context = "config", type = "none", count = 8, negatives = [{ kind = "config_scalar", count = 3 }] },
+    { name = "numbers-secret", context = "config", type = "SECRET", count = 3, negatives = [{ kind = "config_scalar", count = 3 }] },
+    { name = "numbers-password", context = "config", type = "PASSWORD", count = 2, negatives = [{ kind = "config_scalar", count = 3 }] },
+    { name = "numbers-token", context = "config", type = "TOKEN", count = 3, negatives = [{ kind = "config_scalar", count = 3 }] },
+    { name = "fingerprints-none", context = "config", type = "none", count = 4, negatives = [{ kind = "fingerprint", count = 2 }] },
+    { name = "fingerprints-secret", context = "config", type = "SECRET", count = 2, negatives = [{ kind = "fingerprint", count = 2 }] },
+    { name = "fingerprints-password", context = "config", type = "PASSWORD", count = 1, negatives = [{ kind = "fingerprint", count = 2 }] },
+    { name = "fingerprints-token", context = "config", type = "TOKEN", count = 1, negatives = [{ kind = "fingerprint", count = 2 }] },
+]
+
+# p: personal data in natural language and records. On Nemotron-PII 685 of 729 sampled v10 false positives and 86 of
+# 97 Qwen v3 false positives (compared with base) were personal data or PINs (labels pii_other, pin). Cards a add
+# natural-language secrets without such negatives, so this pairs them.
+[[addon]]
+version = "personal-data-1"
+prefix = "p"
+note = """Write the personal data the way a support ticket, chat or record shows it, about the people or accounts the \
+developer talks about. When the card has secrets, put the personal data in the item where the first secret first \
+appears, so a reader has to tell the credential from the personal data next to it."""
+cells = [
+    { context = "natural_language", type = "PASSWORD", count = 6, negatives = [{ kind = "pii", count = 3 }] },
+    { context = "natural_language", type = "TOKEN", count = 4, negatives = [{ kind = "pii", count = 3 }] },
+    { context = "natural_language", type = "SECRET", count = 4, negatives = [{ kind = "pii", count = 3 }] },
+    { context = "natural_language", type = "none", count = 4, negatives = [{ kind = "pii", count = 3 }] },
+    { context = "document", type = "PASSWORD", count = 4, negatives = [{ kind = "pii", count = 3 }], formats = ["customer record or CRM note", "support ticket", "account or access notice"] },
+    { context = "document", type = "none", count = 2, negatives = [{ kind = "pii", count = 3 }], formats = ["customer record or CRM note", "support ticket", "account or access notice"] },
+]

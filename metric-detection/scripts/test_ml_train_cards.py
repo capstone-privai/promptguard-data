@@ -1,5 +1,6 @@
 """Regression tests for the coverage parts of the ML training cards (stdlib unittest)."""
 import argparse
+from collections import Counter
 import contextlib
 import io
 import json
@@ -63,12 +64,41 @@ class Cards(unittest.TestCase):
     def test_a_new_addon_keeps_the_earlier_ones(self):
         catalog = C.load_catalog(self.cfg)
         before = C.draw_addon(self.cfg, catalog)
-        more = {"version": "another", "prefix": "b", "cells": [{"context": "config", "type": "none", "count": 3}]}
+        more = {"version": "another", "prefix": "z", "cells": [{"context": "config", "type": "none", "count": 3}]}
         after = C.draw_addon({**self.cfg, "addon": [*self.cfg["addon"], more]}, catalog)
         self.assertEqual(after[:len(before)], before)
-        self.assertEqual([c["card_id"] for c in after[len(before):]], ["b0001", "b0002", "b0003"])
+        self.assertEqual([c["card_id"] for c in after[len(before):]], ["z0001", "z0002", "z0003"])
         with self.assertRaises(ValueError):
             C.draw_addon({**self.cfg, "addon": [*self.cfg["addon"], {**more, "prefix": self.cfg["addon"][0]["prefix"]}]}, catalog)
+
+    def test_addon_cells_add_general_negatives(self):
+        addon = C.draw_addon(self.cfg, C.load_catalog(self.cfg))
+        for bundle in self.cfg["addon"]:
+            cards = [c for c in addon if c["card_id"].startswith(bundle["prefix"])]
+            self.assertEqual(len(cards), sum(cell["count"] for cell in bundle["cells"]))
+            for cell in bundle["cells"]:
+                want = cell.get("negatives", bundle.get("negatives", []))
+                of_cell = [c for c in cards if c.get("cell") == cell.get("name")
+                           and (c["context"], c["primary_type"]) == (cell["context"], cell["type"])]
+                self.assertEqual(len(of_cell), cell["count"])
+                for c in of_cell:
+                    general = Counter(n["kind"] for n in c["negatives"] if n["position"] == "general")
+                    self.assertEqual(general, Counter({n["kind"]: n["count"] for n in want}))
+                    self.assertGreaterEqual(c["longest_output_chars"], bundle.get("min_output_chars", 0))
+
+    def test_general_negatives_stay_out_of_the_random_draw(self):
+        drawn = {n["kind"] for c in self.cards for n in c["negatives"]}
+        self.assertFalse(drawn & {"opaque_value", "resource_name", "config_scalar", "fingerprint", "pii"})
+
+    def test_a_general_negative_after_a_credential_key_is_refused(self):
+        card = {"items": 3, "turns": 1, "secrets": [], "boundary": None, "language": "en",
+                "negatives": [{"placeholder": "{{neg:pii}}", "kind": "pii", "position": "general"}]}
+        def items(text):
+            return [{"turn_id": "t1", "channel": "prompt", "text": "check this"},
+                    {"turn_id": "t1", "channel": "tool_input", "text": "cat a.json"},
+                    {"turn_id": "t1", "channel": "tool_output", "text": text}]
+        self.assertEqual(W.follows_card(card, items('{"email": "{{neg:pii}}", "auth_mode": "sso"}')), [])
+        self.assertTrue(W.follows_card(card, items('{"password": "{{neg:pii}}"}')))
 
     def test_addon_formats_stay_out_of_the_other_cards(self):
         extra = {f for bundle in self.cfg["addon"] for cell in bundle["cells"] for f in cell.get("formats", [])}

@@ -28,7 +28,7 @@ import sys
 import tempfile
 import time
 
-from label_rules import exclusion_kind, expected_type
+from label_rules import classify, exclusion_kind, expected_type
 import ml_train_build as B
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -98,7 +98,14 @@ def card_message(card: dict) -> str:
         lines.append("- Hard negatives:")
         lines += [f"  - {n['placeholder']}: position {n['position']}"
                   + ("; the scene's contrast, next to where its credential would sit" if n.get("contrast") else "")
+                  + (f"; {NEGATIVE_NOTES[n['kind']]}" if n["position"] == "general" else "")
                   for n in card["negatives"]]
+        if any(n["position"] == "general" for n in card["negatives"]):
+            lines.append("- Position general: an ordinary field, column, argument or phrase whose key or label names no "
+                         "credential (id, name, host, region, version, count, created_at, owner, email...). Never put "
+                         "it right after a key or word such as password, token, secret, key, auth or credential.")
+    if card.get("note"):
+        lines.append(f"- Note: {card['note']}")
     if card["boundary"]:
         lines.append(f"- Boundary rule ({card['boundary']['rule']}): {card['boundary']['instruction']}")
     if card.get("lookalike"):
@@ -106,6 +113,22 @@ def card_message(card: dict) -> str:
                      f"`{card['lookalike']}`.")
     return "\n".join(lines) + "\n\nCard JSON:\n" + json.dumps(card, ensure_ascii=False)
 
+
+# What a negative of position "general" is (value_gen: kinds only the [[addon]] cells ask for). Old kinds keep the
+# prompt's table; these are new to it, so the card says what they are.
+NEGATIVE_NOTES = {
+    "identifier": "a UUID, request id, commit hash, digest, ARN or client id, in a field such as id, request_id, "
+                  "client_id, uid or etag",
+    "base64_blob": "encoded data that holds no credential",
+    "opaque_value": "a random-looking cursor, ETag, nonce or trace id that is not a credential, in a field such as "
+                    "next_cursor, etag, trace_id or value of a data record",
+    "resource_name": "a resource, service, pod, host, bucket or queue name",
+    "config_scalar": "a plain number or version: an account or order number, an epoch timestamp, a date, a version, "
+                     "a decimal, a port mapping",
+    "fingerprint": "a public key or certificate fingerprint or a file checksum, not the key itself",
+    "pii": "personal data that is not a credential: an email, phone, card number, customer or account number, user "
+           "name, MAC address, birth date, PIN or biometric id",
+}
 
 SCENE_HINTS = (("paths", "Files or streams"), ("format", "Format"), ("asset", "Paired asset or host"),
                ("identifiers", "Names nearby"), ("basic_auth_user", "Basic auth user name"),
@@ -256,6 +279,14 @@ def follows_card(card: dict, items: list[dict]) -> list[str]:
             what = "contrast" if any(neg.get("contrast") and neg["placeholder"] == placeholder
                                      for neg in card["negatives"]) else "negative"
             problems.append(f"{what} {placeholder} missing")
+    for placeholder in {neg["placeholder"] for neg in card["negatives"] if neg["position"] == "general"}:
+        for i in items:
+            at = i["text"].find(placeholder)
+            while at >= 0:
+                if classify(i["text"], at, at + len(placeholder))[0] == "slot":
+                    problems.append(f"general negative {placeholder} in a credential position")
+                    break
+                at = i["text"].find(placeholder, at + 1)
     in_input = {m for i in items if i["channel"] == "tool_input"
                 for m in re.findall(r"(?<!\\)\{\{(?!neg:|mask:)[^{}]*\}\}", i["text"]) if not m.startswith("{{ ")}
     if in_input:
