@@ -15,6 +15,23 @@ import ml_train_write as W
 import value_gen
 
 
+class SplitLeak(unittest.TestCase):
+    @staticmethod
+    def problems(value):
+        sessions = [{"session_id": sid, "meta": {"split": sid, "group_id": sid}} for sid in ("train", "val")]
+        spans = [(sid, 0, 0, len(value), "PASSWORD") for sid in ("train", "val")]
+        errors = []
+        B.check_splits(sessions, spans, {(sid, 0): value for sid in ("train", "val")}, errors)
+        return errors
+
+    def test_a_weak_value_may_repeat_across_splits(self):
+        weak = next(w for w in value_gen.WEAK if not B.is_common(w))
+        self.assertEqual(self.problems(weak), [])
+
+    def test_a_distinct_value_may_not(self):
+        self.assertEqual(len(self.problems("tq7-Vx2m-Lp9z-Rk4h")), 1)
+
+
 class Cards(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -23,6 +40,39 @@ class Cards(unittest.TestCase):
 
     def test_drawing_twice_gives_the_same_cards(self):
         self.assertEqual(self.cards, C.draw(self.cfg, C.load_catalog(self.cfg)))
+
+    def test_addon_leaves_the_other_cards_alone(self):
+        without = {k: v for k, v in self.cfg.items() if k != "addon"}
+        self.assertEqual(self.cards, C.draw(without, C.load_catalog(self.cfg)))
+        self.assertEqual(C.draw_addon(without), [])
+
+    def test_addon_cards_match_their_cells(self):
+        addon = C.draw_addon(self.cfg, C.load_catalog(self.cfg))
+        self.assertEqual(addon, C.draw_addon(self.cfg, C.load_catalog(self.cfg)))
+        self.assertEqual(len({c["card_id"] for c in addon}), len(addon))
+        self.assertFalse({c["card_id"] for c in addon} & {c["card_id"] for c in self.cards})
+        first = self.cfg["addon"][0]
+        for cell in first["cells"]:
+            cards = [c for c in addon if c["card_id"].startswith(first["prefix"])
+                     and (c["context"], c["primary_type"]) == (cell["context"], cell["type"])]
+            self.assertEqual(len(cards), cell["count"])
+            self.assertEqual({c["split"] for c in cards}, {"train", "val", "test"})
+            if "formats" in cell:
+                self.assertLessEqual({c["format"] for c in cards}, set(cell["formats"]))
+
+    def test_a_new_addon_keeps_the_earlier_ones(self):
+        catalog = C.load_catalog(self.cfg)
+        before = C.draw_addon(self.cfg, catalog)
+        more = {"version": "another", "prefix": "b", "cells": [{"context": "config", "type": "none", "count": 3}]}
+        after = C.draw_addon({**self.cfg, "addon": [*self.cfg["addon"], more]}, catalog)
+        self.assertEqual(after[:len(before)], before)
+        self.assertEqual([c["card_id"] for c in after[len(before):]], ["b0001", "b0002", "b0003"])
+        with self.assertRaises(ValueError):
+            C.draw_addon({**self.cfg, "addon": [*self.cfg["addon"], {**more, "prefix": self.cfg["addon"][0]["prefix"]}]}, catalog)
+
+    def test_addon_formats_stay_out_of_the_other_cards(self):
+        extra = {f for bundle in self.cfg["addon"] for cell in bundle["cells"] for f in cell.get("formats", [])}
+        self.assertFalse(extra & {c["format"] for c in self.cards})
 
     def test_dense_cards_hold_many_secrets_that_start_in_tool_output(self):
         dense = [c for c in self.cards if c["dense"]]

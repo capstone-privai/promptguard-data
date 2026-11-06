@@ -90,6 +90,7 @@ authored는 내장 코퍼스, 템플릿 예시, 에이전트 세션 v2를 합친
 | 출처 | 템플릿 | 값 시드 | 세션 | 용도 |
 |---|---|---|---|---|
 | LLM 템플릿 | 2,240 | 3 | 6,720 | train / val / test |
+| 추가 LLM 템플릿 (자연어 TOKEN·SECRET, 문서 PASSWORD 각 24) | 72 | 3 | 216 | train / val / test (3.2절 아래) |
 | 손 템플릿 (경계 규칙) | 160 | 5 | 800 | train / val / test |
 | 분포 이동 test용 LLM 템플릿 | 250 | 2 | 500 | test만 (5.1절) |
 | 기존 authored 57세션 (새 기준으로 다시 빌드) | 57 | 1 | 57 | 사람이 쓴 점검용 test |
@@ -115,6 +116,8 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 | 합계 | 1,840 | 1,250 | 1,250 | 410 | 430 | 2,320 | 7,500 |
 
 이 표는 LLM 템플릿과 손 템플릿을 합친 train / val / test-ID 몫이다. 분포 이동 test와 기존 authored는 들어 있지 않다.
+
+**추가 카드(2026-11-07).** 위 표 밖에 자연어 TOKEN, 자연어 SECRET, 문서 PASSWORD 칸에 템플릿을 24개씩 더했다(`card_config.toml` `[[addon]]`). 문서 칸은 고객 기록, 지원 티켓, 계정 안내문 서식으로만 쓴다. 근거는 2026-11-06 탐지 평가의 Nemotron-PII 결과로, Qwen v3이 읽고도 놓친 정답이 PASSWORD 최소 704개, SECRET 111개, TOKEN 95개였다. Qwen의 cue 게이트가 막은 정답(TOKEN 299개, SECRET 285개)은 카드로 고칠 수 없다.
 
 ### 3.3 그 밖의 축 목표
 

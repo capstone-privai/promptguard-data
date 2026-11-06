@@ -10,8 +10,9 @@ a cell the rows that fit its context and type take turns. The row gives the prim
 a contrast, the hard negative the row pairs with its secret. Rows for the shifted test appear only in test_ood cards.
 
 Run from the repository root:
-  python metric-detection/scripts/ml_train_cards.py [--config C.toml] [--out cards.jsonl] [--limit N] [--by-source]
---limit N keeps a stratified subset of N cards (a pilot), in the same proportions of split and context.
+  python metric-detection/scripts/ml_train_cards.py [--config C.toml] [--out cards.jsonl] [--limit N] [--addon-only] [--by-source]
+--limit N keeps a stratified subset of N cards (a pilot), in the same proportions of split and context. The add-on
+cards of [[addon]] are left out of it, so the pilot stays the same. --addon-only writes only the add-on cards.
 --by-source adds the number of cards per catalog row to the summary.
 """
 from __future__ import annotations
@@ -424,6 +425,33 @@ def draw(cfg: dict, catalog: list[dict] | None = None) -> list[dict]:
     return cards
 
 
+def draw_addon(cfg: dict, catalog: list[dict] | None = None) -> list[dict]:
+    """The cards of every [[addon]]. Each bundle has its own seed and id prefix, so draw() and the other bundles do
+    not change with it."""
+    bundles = cfg.get("addon", [])
+    prefixes = [b["prefix"] for b in bundles]
+    versions = [b["version"] for b in bundles]
+    reserved = {"c", "o"}
+    if len(set(prefixes)) != len(prefixes) or len(set(versions)) != len(versions) or reserved & set(prefixes):
+        raise ValueError("every [[addon]] needs its own version and a prefix other than c and o")
+    catalog = load_catalog(cfg) if catalog is None and bundles else catalog
+    cards = []
+    for addon in bundles:
+        base = f"{cfg['seed']}:{cfg['version']}:addon:{addon['version']}"
+        cells = {(c["context"], c["type"]): c for c in addon["cells"]}
+        if len(cells) != len(addon["cells"]):
+            raise ValueError(f"addon {addon['version']}: a (context, type) cell appears twice")
+        slots = shuffle([cell for cell, c in cells.items() for _ in range(c["count"])], value_gen.Draw(base + ":order"))
+        splits = stratified_splits(slots, pairs(cfg["split"]))
+        rows = assign_rows(slots, [r for r in catalog if r["status"] == "train"], base)
+        for i, ((ctx, t), split, row) in enumerate(zip(slots, splits, rows), 1):
+            formats = cells[(ctx, t)].get("formats", cfg["contexts"][ctx]["formats"])
+            cell_cfg = {**cfg, "contexts": {**cfg["contexts"], ctx: {**cfg["contexts"][ctx], "formats": formats}}}
+            card_id = f"{addon['prefix']}{i:04d}"
+            cards.append(card(value_gen.Draw(f"{base}:a{i:04d}"), cell_cfg, card_id, split, ctx, t, None, row))
+    return cards
+
+
 def stratified(cards: list[dict], n: int) -> list[dict]:
     """n cards keeping the share of each (split, context) group."""
     groups: dict[tuple, list[dict]] = {}
@@ -474,13 +502,17 @@ def main():
     parser.add_argument("--config", type=Path, default=CONFIG)
     parser.add_argument("--out", type=Path, default=CONFIG.parent / "cards.jsonl")
     parser.add_argument("--limit", type=int, help="keep a stratified subset of this many cards")
+    parser.add_argument("--addon-only", action="store_true", help="write only the cards of [[addon]]")
     parser.add_argument("--by-source", action="store_true", help="also count the cards of every catalog row")
     args = parser.parse_args()
     cfg = load(args.config)
     catalog = load_catalog(cfg, args.config)
-    cards = draw(cfg, catalog)
-    if args.limit:
-        cards = stratified(cards, args.limit)
+    if args.addon_only:
+        cards = draw_addon(cfg, catalog)
+    elif args.limit:
+        cards = stratified(draw(cfg, catalog), args.limit)
+    else:
+        cards = draw(cfg, catalog) + draw_addon(cfg, catalog)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("".join(json.dumps(c, ensure_ascii=False) + "\n" for c in cards), encoding="utf-8")
     print(json.dumps({"out": str(args.out), **summary(cards, catalog, args.by_source)}, ensure_ascii=False, indent=2))

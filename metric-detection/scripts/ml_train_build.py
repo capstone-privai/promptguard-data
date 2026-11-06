@@ -412,7 +412,8 @@ def check_negatives(labels, texts, channels, errors, gold_values=None):
 
 
 def check_splits(sessions, spans, texts, errors) -> Counter:
-    """Every group in one split, and no distinct gold value shared by two splits."""
+    """Every group in one split, and no distinct gold value shared by two splits. Common values and the weak values
+    of value_gen.WEAK may repeat: they come from a short fixed list, so any large build shares them across splits."""
     split_of, group_split = {}, {}
     for s in sessions:
         split, group = s["meta"].get("split"), s["meta"].get("group_id")
@@ -422,8 +423,8 @@ def check_splits(sessions, spans, texts, errors) -> Counter:
     seen: dict[str, str] = {}
     for sid, iid, start, end, _ in spans:
         value = texts[(sid, iid)][start:end]
-        if is_common(value):
-            continue  # common values are shared on purpose (LABELING.md: the same word in any session)
+        if is_common(value) or value in value_gen.WEAK:
+            continue  # shared on purpose (LABELING.md: the same word in any session)
         if seen.setdefault(value, split_of[sid]) != split_of[sid]:
             errors.append(f"gold {value[:20]!r}... appears in splits {seen[value]!r} and {split_of[sid]!r}")
     return Counter(split_of.values())

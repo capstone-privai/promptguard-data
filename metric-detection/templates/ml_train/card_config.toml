@@ -237,3 +237,20 @@ datadog_api_key = "SECRET"
 datadog_app_key = "SECRET"
 huggingface_token = "TOKEN"
 azure_storage_key = "SECRET"
+
+# Cards drawn after the cells above, apart from them: changing a weight moves cards to other ids (about half of the
+# c cards and 62 of the 85 pilot templates), while these keep every c and o card as it is.
+# Each [[addon]] has its own seed (version) and id prefix. Never change a bundle that has templates: changing its
+# version or cells redraws its cards. To add cards, add a new [[addon]] with a new version and prefix.
+#
+# a: on Nemotron-PII, Qwen v3 missed spans it had read (runs/e2e-20261106: PASSWORD at least 704, SECRET 111, TOKEN 95).
+# Each count brings the cell to about 200 or 180 on the weight scale of [contexts].
+[[addon]]
+version = "natural-language-1"
+prefix = "a"
+cells = [
+    { context = "natural_language", type = "TOKEN", count = 24 },
+    { context = "natural_language", type = "SECRET", count = 24 },
+    { context = "document", type = "PASSWORD", count = 24, formats = ["customer record or CRM note", "support ticket",
+                                                                       "account or access notice"] },
+]
