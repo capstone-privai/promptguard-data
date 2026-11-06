@@ -793,6 +793,6 @@ python3 metric-task/scripts/m2.py run --tasks all --conditions none,gold,promptg
 | n24 | [SQL 모델 지표 이름 변경](tasks_scenarios/n24-sql-metric/task.json) | data |
 | n26 | [거대 모듈 분리](tasks_scenarios/n26-module-split/task.json) | refactor |
 
-생성은 `python3 metric-task/scripts/m2_trajectory.py`, 재현 검사는 같은 명령에 `--check`를 붙인다. 프로젝트는 자체 생성하며, Python 표준 라이브러리·SQLite·Node 24·git·curl만 사용한다. 재생 서버는 `127.0.0.1`의 빈 포트를 쓰고 종료 시 닫는다. Claude 없이 `m2.py selftest --tasks n03 n14 n19 n24 n26`으로 모범 풀이와 훼손 검사를 할 수 있다. 실제 세션의 긴 출력 비율과 도달률은 아직 측정하지 않았다.
+생성은 `python3 metric-task/scripts/m2_trajectory.py`, 재현 검사는 같은 명령에 `--check`를 붙인다. 프로젝트는 자체 생성하며, Python 표준 라이브러리·SQLite·Node 24·git·curl만 사용한다. 재생 서버는 `127.0.0.1`의 빈 포트를 쓰고 종료 시 닫는다. Claude 없이 `m2.py selftest --tasks n03 n14 n19 n24 n26`으로 모범 풀이와 훼손 검사를 할 수 있다. 실제 세션의 긴 출력 비율과 도달률은 [파일럿 측정](../metric-detection/docs/README_trajectory-eval.md#새-과제-파일럿-측정-2026-11-06)에 있다.
 
 파일럿의 `category / meta.secret_requirement / needs_secret_value`는 n03 `edit / none / false`, n14 `diagnose / none / false`, n19 `edit / none / false`, n24·n26 `transport / transport / true`다. n24는 프롬프트의 새 비밀번호를 설정에 이관해야 하고, n26은 모듈 분리 중 실제 상수 값을 보존해야 한다. n03의 재생 테스트, n14의 버그 진단 답안, n19의 API 문서 작성은 자격증명의 실제 값에 의존하지 않는다.

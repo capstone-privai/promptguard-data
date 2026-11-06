@@ -1,6 +1,6 @@
 # 궤적 평가셋 새 과제 후보
 
-[첫 측정](README_trajectory-eval.md#첫-측정-2026-11-06)이 드러낸 빈칸을 채울 새 장면의 후보 목록이다. 기존 과제를 다시 돌려서는 채워지지 않는 칸이 대상이다. n03·n14·n19·n24·n26은 구현했으며 Claude 실행은 하지 않았다. 나머지는 후보 상태다. 표의 예측은 측정값이 아니다. 평가 전용이고, 정답은 [LABELING.md](../LABELING.md)를 그대로 따른다. 후보 30개는 모두 장면 하나에 과제 하나이고, 1회씩 none으로 돌린다. `n01` 같은 id는 후보 번호이며, 구현한 다섯 과제도 이 접두사를 유지한다. 구현한 과제와 선택 방법은 [metric-task 파일럿 안내](../../metric-task/README.md#궤적-파일럿-5개)에 있다.
+[첫 측정](README_trajectory-eval.md#첫-측정-2026-11-06)이 드러낸 빈칸을 채울 새 장면의 후보 목록이다. 기존 과제를 다시 돌려서는 채워지지 않는 칸이 대상이다. n03·n14·n19·n24·n26은 구현하고 none 1회씩 실행·검증했다([파일럿 측정](README_trajectory-eval.md#새-과제-파일럿-측정-2026-11-06)). 나머지는 후보 상태다. 표의 예측은 측정값이 아니다. 평가 전용이고, 정답은 [LABELING.md](../LABELING.md)를 그대로 따른다. 후보 30개는 모두 장면 하나에 과제 하나이고, 1회씩 none으로 돌린다. `n01` 같은 id는 후보 번호이며, 구현한 다섯 과제도 이 접두사를 유지한다. 구현한 과제와 선택 방법은 [metric-task 파일럿 안내](../../metric-task/README.md#궤적-파일럿-5개)에 있다.
 
 ## 후보를 고른 기준
 
@@ -481,10 +481,10 @@
 
 | 후보 | 과제 id | 상태 |
 | --- | --- | --- |
-| n03 | n03-api-replay | 구현·오프라인 검사, Claude 미실행 |
-| n14 | n14-refund-review | 구현·오프라인 검사, Claude 미실행 |
-| n19 | n19-api-reference | 구현·오프라인 검사, Claude 미실행 |
-| n24 | n24-sql-metric | 구현·오프라인 검사, Claude 미실행 |
-| n26 | n26-module-split | 구현·오프라인 검사, Claude 미실행 |
+| n03 | n03-api-replay | none 1회 실행·검증, 작업 성공 |
+| n14 | n14-refund-review | none 1회 실행·검증, 작업 성공 |
+| n19 | n19-api-reference | none 1회 실행·검증, 작업 성공 |
+| n24 | n24-sql-metric | none 1회 실행·검증, 작업 성공 |
+| n26 | n26-module-split | none 1회 실행·검증, 작업 성공 |
 
 후보의 원래 설계는 위에 유지한다. 구현은 [m2_trajectory.py](../../metric-task/scripts/m2_trajectory.py)를, 선택 방법과 값 필요 여부는 [파일럿 안내](../../metric-task/README.md#궤적-파일럿-5개)를 따른다.
