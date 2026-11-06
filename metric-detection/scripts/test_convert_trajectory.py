@@ -1,4 +1,6 @@
 """convert_trajectory.py on hand-made request bodies. Values are generated here, in no provider's format."""
+import base64
+from collections import Counter
 import json
 import lzma
 from pathlib import Path
@@ -7,9 +9,11 @@ import string
 import sys
 import tempfile
 import unittest
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import convert_trajectory as ct
+import dataset_verify as dv
 
 
 def made_up(seed: str) -> str:
@@ -113,10 +117,68 @@ class GoldTests(unittest.TestCase):
         self.assertEqual(spans[0]["start"], line.index("admin"))
         self.assertEqual([o["kind"] for o in others], ["identifier"])
 
+    def test_slashes_in_a_value_do_not_make_its_own_occurrence_a_path_component(self):
+        for value in (f'{made_up("slash-a")}/{made_up("slash-b")}', f'{made_up("slash-end")}/'):
+            with self.subTest(value_hash=ct.digest(value)):
+                line = f'TOKEN="{value}"\nobserved {value} again'
+                spans, others = self.find(line, [entry("t", value)])
+                self.assertEqual(len(spans), 2)
+                self.assertEqual({s["value_class"] for s in spans}, {"distinct"})
+                self.assertEqual(others, [])
+                self.assertFalse(dv.used_as_identifier(value, [0], {0: line}, source=ct.SOURCE))
+        # An absolute path can still be an identifier occurrence; it must not make the value common.
+        value = f'/{made_up("slash-start")}'
+        self.assertEqual(ct.common_values([entry("t", value)], [value]), set())
+
+    def test_only_a_whole_path_component_makes_a_distinct_value_common(self):
+        value = made_up("path-user")
+        for path, common in ((f'/home/{value}/x', True), (f'/home/{value}', True),
+                             (f'{value}/x', True), (f'/home/prefix{value}/x', False),
+                             (f'/home/{value}_suffix/x', False),
+                             (f'https://example.invalid/{value}/x', False)):
+            with self.subTest(path_hash=ct.digest(path)):
+                line = f'TOKEN="{value}"\nobserved {value} again\n"{path}"'
+                self.assertEqual(value in ct.common_values([entry("t", value)], [line]), common)
+                # Test the path independently of classify's separate identifier-position rules.
+                self.assertEqual(value in ct.path_components(path), common)
+        self.assertIn("admin", ct.path_components('/home/admin/x'))
+        line = f'TOKEN="{value}"\nobserved {value} again\n/home/{value}/x'
+        spans, _ = self.find(line, [entry("t", value)])
+        self.assertEqual(len(spans), 1)
+        self.assertTrue(dv.used_as_identifier(value, [0], {0: line}, source=ct.SOURCE))
+
     def test_an_encoded_form_is_gold_and_records_how(self):
         spans, _ = self.find(f"the value was {SECRET[::-1]} in base64", [entry(
             "t", SECRET, forms=[{"how": "exact", "text": SECRET}, {"how": "base64", "text": SECRET[::-1]}])])
         self.assertEqual([s["how"] for s in spans], ["base64"])
+
+    def test_declared_derived_forms_report_encoding_without_changing_gold(self):
+        value = made_up("encoding-root") + '/+:x???'
+        raw = value.encode()
+        cases = [("base64", base64.b64encode(raw).decode()),
+                 ("base64", base64.b64encode(raw + b'\n').decode()),
+                 ("base64url", base64.urlsafe_b64encode(raw).decode()),
+                 ("urlencoded", quote(value, safe="")),
+                 ("basic", base64.b64encode(b'operator:' + raw).decode()),
+                 ("hex", raw.hex())]
+        for how, encoded in cases:
+            with self.subTest(how=how):
+                root = entry("root", value)
+                derived = {**entry("derived", encoded, kind=None), "root": "root"}
+                line = f'token="{encoded}"'
+                old, _ = self.find(line, [root, {**derived, "root": "derived"}])
+                spans, others = self.find(line, [root, derived])
+                self.assertEqual([{k: v for k, v in s.items() if k != "how"} for s in old],
+                                 [{k: v for k, v in s.items() if k != "how"} for s in spans])
+                self.assertEqual([s["how"] for s in spans], [how])
+                self.assertEqual(others, [])
+
+    def test_noop_unknown_and_missing_root_keep_the_declared_how(self):
+        root = entry("root", SECRET)
+        for value, root_name in ((SECRET, "root"), (made_up("unknown-transform"), "root"),
+                                 (SECRET, "absent")):
+            derived = {**entry("derived", value), "root": root_name}
+            self.assertEqual(ct.form_how(derived, derived["forms"][0], {"root": root}), "exact")
 
     def test_a_decoy_is_gold_only_where_the_text_says_so(self):
         decoy = entry("d", made_up("decoy"), role="decoy", kind="request_id", type_=None)
@@ -156,12 +218,39 @@ class GoldTests(unittest.TestCase):
         self.assertEqual(ct.to_review(line, [entry("t", SECRET)], spans + others), [])
 
 
+class VerificationCompatibilityTests(unittest.TestCase):
+    def test_legacy_path_exemptions_remain_valid_only_for_nontrajectory_sources(self):
+        for value in (made_up("legacy-left") + '/' + made_up("legacy-right"),
+                      made_up("legacy-path-substring")):
+            with self.subTest(value_hash=ct.digest(value)):
+                line = f'password="{value}"\nobserved {value} again'
+                if '/' not in value:
+                    line += f'\n/home/prefix{value}/x'
+                key = ("session", 0)
+                texts = {key: line}
+                first = line.index(value)
+                second = line.index(value, first + len(value))
+                spans = [(*key, first, first + len(value), "PASSWORD")]
+                exempt = {key: [(second, second + len(value), "not_propagated")]}
+                for source in (None, "privesc-llm-data", "noseyparker", "nemotron-pii", "other"):
+                    self.assertTrue(dv.used_as_identifier(value, [key], texts, source=source))
+                    errors = []
+                    dv.check_coverage(spans, texts, errors, exempt, source=source)
+                    self.assertEqual(errors, [])
+                self.assertFalse(dv.used_as_identifier(value, [key], texts, source=ct.SOURCE))
+                errors = []
+                dv.check_coverage(spans, texts, errors, exempt, source=ct.SOURCE)
+                self.assertEqual(len(errors), 1)
+                self.assertTrue(errors[0].startswith("uncovered occurrence"))
+
+
 class ConvertTests(unittest.TestCase):
-    def make_run(self, batch, task, run, valid=True, condition_output=f'TOKEN="{SECRET}"'):
+    def make_run(self, batch, task, run, valid=True, condition_output=f'TOKEN="{SECRET}"', entries=None):
         folder = batch / task / run
         folder.mkdir(parents=True)
         (folder / "result.json").write_text(json.dumps({"valid": valid, "success": True}))
-        (folder / "planted.json").write_text(json.dumps({"task": task, "scene": "scene-a", "entries": [entry("t", SECRET)]}))
+        (folder / "planted.json").write_text(json.dumps({"task": task, "scene": "scene-a",
+                                                       "entries": entries or [entry("t", SECRET)]}))
         request = {"path": "/v1/messages?beta=true", "status": 200, "body": body(
             user(text("fix it")), call("a", "Read", {"file_path": ".env"}), user(result("a", condition_output)))}
         refused = {"path": "/v1/messages", "status": 429, "body": body(user(text("not reached")))}
@@ -201,6 +290,23 @@ class ConvertTests(unittest.TestCase):
             (batch / "t01-a" / "none-r1" / "planted.json").unlink()
             with self.assertRaises(FileNotFoundError):
                 ct.convert(batch)
+
+    def test_declared_encoding_reaches_labels_and_the_how_axis(self):
+        value = SECRET + '/+'
+        encoded = quote(value, safe="")
+        derived = {**entry("encoded", encoded, kind=None), "root": "root"}
+        with tempfile.TemporaryDirectory() as d:
+            batch = Path(d) / "b1"
+            batch.mkdir()
+            (batch / "batch.json").write_text("{}")
+            self.make_run(batch, "t01-a", "none-r1", condition_output=f'TOKEN="{encoded}"',
+                          entries=[entry("root", value), derived])
+            sessions, gold, labels, stats = ct.convert(batch)
+            self.assertIsInstance(stats, Counter)
+            self.assertEqual(len(gold), 1)
+            self.assertEqual([r["how"] for r in labels if r["gold"]], ["urlencoded"])
+            self.assertEqual(ct.coverage(sessions, gold, labels, stats)["axes"]["how"],
+                             {"urlencoded": {"spans": 1, "unique_values": 1, "scenes": 1, "short": True}})
 
 
 if __name__ == "__main__":

@@ -35,6 +35,8 @@ Not gold, and listed in the labels file for a person to judge (review=true):
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 import hashlib
@@ -43,12 +45,13 @@ import lzma
 from pathlib import Path
 import re
 import statistics
+from urllib.parse import quote
 
 from convert_privesc import find_keys, merge
 from dataset_build import write_jsonl
 from dataset_policy import allowed_use
 from label_rules import (classify, exclusion_kind, expected_type, has_credential_format, is_common, judge_occurrence,
-                         normalize_span, occurrences, path_tokens, position_type, slot_literals)
+                         normalize_span, occurrences, path_components, position_type, slot_literals)
 
 SOURCE = "agent-trajectory"
 SPLIT = "test"
@@ -203,8 +206,39 @@ def digest(value: str) -> str:
 
 
 def common_values(entries: list[dict], texts: list[str]) -> set[str]:
-    paths = {t for text in texts for t in path_tokens(text)}
-    return {e["value"] for e in entries if is_common(e["value"]) or any(e["value"] in t for t in paths)}
+    paths = {part for text in texts for part in path_components(text)}
+    return {e["value"] for e in entries if is_common(e["value"]) or e["value"] in paths}
+
+
+def form_how(entry: dict, form: dict, entries: dict[str, dict]) -> str:
+    """Recover a declared derived entry's encoding from its root and surface text.
+
+    m2_planted records root != name for derived entries, but calls their own value 'exact' and does not
+    retain transforms. This is metadata only: never add forms or change matching/labeling decisions.
+    """
+    how = form["how"]
+    root = entries.get(entry.get("root"))
+    if how != "exact" or root is None or entry["name"] == entry.get("root"):
+        return how
+    value, text = root["value"], form["text"]
+    if text == value:
+        return how  # a no-op transform is still the original surface text
+    raw = value.encode()
+    for encoding, encoded in (
+            ("base64", base64.b64encode(raw).decode()),
+            ("base64", base64.b64encode(raw + b"\n").decode()),
+            ("base64url", base64.urlsafe_b64encode(raw).decode()),
+            ("urlencoded", quote(value, safe="")),
+            ("hex", raw.hex())):
+        if text == encoded:
+            return encoding
+    try:
+        decoded = base64.b64decode(text, validate=True)
+    except (ValueError, binascii.Error):
+        return how
+    if decoded.partition(b":")[1:] == (b":", raw):
+        return "basic"
+    return how
 
 
 def established_decoys(entries: list[dict], texts: list[str]) -> set[str]:
@@ -229,6 +263,7 @@ def span_type(text: str, start: int, end: int, entry: dict) -> str:
 def find_candidates(text: str, entries: list[dict], common: set[str], golden: set[str]) -> tuple[list[dict], list[dict]]:
     """(gold spans, occurrences of a gold value that are not gold) of the planted values in a text."""
     spans, others = [], []
+    by_name = {e["name"]: e for e in entries}
     for entry in entries:
         if not entry["value"]:
             continue  # a decoy can be the empty value (DB_PASSWORD=), which no search can place
@@ -246,7 +281,8 @@ def find_candidates(text: str, entries: list[dict], common: set[str], golden: se
                 continue  # a whole block is find_keys' job, a part of one is review's
             for m in occurrences(text, form["text"]):
                 gold, kind, rule = judge_occurrence(text, m.start(), m.end(), entry["value"] in common)
-                row = {**info, "start": m.start(), "end": m.end(), "rule": rule, "how": form["how"]}
+                row = {**info, "start": m.start(), "end": m.end(), "rule": rule,
+                       "how": form_how(entry, form, by_name)}
                 if not gold:
                     others.append({**row, "kind": kind})
                     continue

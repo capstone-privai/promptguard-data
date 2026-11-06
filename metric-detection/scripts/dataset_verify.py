@@ -40,7 +40,7 @@ import tempfile
 from dataset_build import CHANNELS, REPO_ROOT, TYPES, build, from_template, write_jsonl
 from dataset_policy import ALLOWED_USE, allowed_use
 from label_rules import (classify, common_outside_slot, exclusion_kind, expected_type, is_common, judge_occurrence,
-                         normalize_span, occurrences, path_tokens)
+                         normalize_span, occurrences, path_components, path_tokens)
 
 SESSION_KEYS = {"session_id", "items", "meta"}
 ITEM_KEYS = {"item_id", "turn_id", "channel", "text"}
@@ -179,14 +179,17 @@ def check_labels(spans: list[tuple], texts: dict[tuple[str, int], str], errors: 
                           f"(LABELING.md 퍼뜨림 기준)")
 
 
-def used_as_identifier(value: str, keys: list, texts: dict[tuple[str, int], str]) -> bool:
-    """Whether the session uses the value as an identifier: in an identifier position, or as part of a path."""
+def used_as_identifier(value: str, keys: list, texts: dict[tuple[str, int], str], *,
+                       source: str | None = None) -> bool:
+    """Use whole path components for trajectory; preserve legacy path matching for existing datasets."""
     return any(any(classify(texts[k], m.start(), m.end())[0] == "ident" for m in occurrences(texts[k], value))
-               or any(value in t for t in path_tokens(texts[k])) for k in keys)
+               or (value in path_components(texts[k]) if source == "agent-trajectory"
+                   else any(value in t for t in path_tokens(texts[k]))) for k in keys)
 
 
 def check_coverage(spans: list[tuple], texts: dict[tuple[str, int], str], errors: list[str],
-                   exempt: dict[tuple[str, int], list[tuple[int, int, str]]] | None = None):
+                   exempt: dict[tuple[str, int], list[tuple[int, int, str]]] | None = None, *,
+                   source: str | None = None):
     # A value is searched only in the session it is gold in: gold comes from that session's own source, and
     # the same username or common password can appear in another session where nothing was planted.
     # Part of a longer string is not an occurrence (label_rules.occurrences, LABELING.md).
@@ -209,7 +212,8 @@ def check_coverage(spans: list[tuple], texts: dict[tuple[str, int], str], errors
                         continue
                     recorded = [k for s, e, k in exempt.get(key, []) if s <= m.start() and m.end() <= e]
                     # not_propagated is for a common value; a converter's record does not make a distinct value common
-                    if "identifier" in recorded or (recorded and (common or used_as_identifier(value, keys, texts))):
+                    if "identifier" in recorded or (recorded and (common or used_as_identifier(
+                            value, keys, texts, source=source))):
                         continue
                     if recorded or judge_occurrence(texts[key], m.start(), m.end(), common)[0]:
                         errors.append(f"uncovered occurrence of {value[:20]!r}... in {key} at {m.start()}")
@@ -318,7 +322,7 @@ def main():
     source, origin = check_meta(sessions, args.sessions.name, errors)
     spans = check_gold(gold, texts, gold_path.name, errors)
     check_labels(spans, texts, errors)
-    check_coverage(spans, texts, errors, excluded_on_purpose(args.sessions))
+    check_coverage(spans, texts, errors, excluded_on_purpose(args.sessions), source=source)
     reproduction = "skipped"
     if not args.skip_rebuild and sessions:
         rows, reproduction = regenerate(sessions, source, origin, args.creddata, args.privesc,

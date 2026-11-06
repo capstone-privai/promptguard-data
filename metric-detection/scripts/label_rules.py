@@ -467,6 +467,11 @@ def path_tokens(text: str) -> set[str]:
     return {t for t in re.split(r"[\s'\"]+", text) if "/" in t and "://" not in t}
 
 
+def path_components(text: str) -> set[str]:
+    """Whole components of path tokens, not substrings or slash-containing values themselves."""
+    return {part for token in path_tokens(text) for part in token.split("/") if part}
+
+
 def is_gold(common: bool, verdict: str) -> bool:
     return verdict == "slot" or (not common and verdict != "ident")
 
