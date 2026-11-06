@@ -467,7 +467,7 @@
 
 ## 결정이 필요한 것
 
-1. **음성 값 다양화.** `redaction`, `template`, `reference`, `code`, `doc_example`, `descriptor`는 `DECOY_KINDS`의 고정 문자열이다. 값을 과제가 정하는 decoy를 추가해야 고유값 30을 넘길 수 있다. 추가를 권한다. 카드 번호, PIN, 계좌 번호, 추적 쿠키, ARN의 decoy 종류도 함께 필요하다.
+1. **음성 값 다양화.** 구현: 기존 `kind`에 문자열 `value`를 지정해 `redaction`, `template`, `reference`, `code`, `doc_example`, `descriptor`의 고정 기본값을 과제별로 바꿀 수 있다. 옵션이 없으면 기존 값은 그대로다. `password_hash`는 이미 결정적으로 다양화되며 LABELING의 `hash`에 해당한다. `card_number`, `pin`, `account_number`, `tracking_cookie`, `arn` 생성 kind도 추가했다. 카드 번호는 항상 Luhn 실패, 계좌 번호와 ARN partition은 유효하지 않은 가짜 형식이다. [사용법과 검증 범위](../../metric-task/README.md#비밀-생성기-scriptsm2_secretspy)를 따른다. **현재 label_rules는 추적 쿠키·ARN을 의도한 음성 kind로 판정하지 못하므로 이 두 칸은 아직 충족할 수 없다.** 새 과제나 장면은 만들지 않았다.
 2. **인코딩 집계.** 선언한 파생형은 지금 `how=exact`로 집계된다(s70에서 확인했다. 지금도 인코딩 파생형 정답이 5개 있다). 감사가 표면형 선언을 요구하므로 후보를 늘려도 이 칸은 0이다. LABELING이 아니라 변환기의 집계만 바꾸면 된다. 파생형을 인코딩으로 세도록 바꾸는 쪽을 권한다.
 3. **키 파일 칸.** 부족을 받아들일지, 서비스 계정 JSON도 키 파일로 세도록 변환기를 바꿀지 정한다. 어느 쪽도 정답은 바뀌지 않는다. 바꾸지 않아도 PEM 자체는 다른 문맥에서 정답이 된다.
 4. **서비스 형식 목표.** 형식마다 (10, 3)은 후보 30개로 닿지 않는다. 형식을 우선 10~15종으로 줄일지, 그대로 두고 부족으로 보고할지 정한다. 비밀번호 변형 6종은 탐지 관점에서 한 묶음으로 볼 수 있다.

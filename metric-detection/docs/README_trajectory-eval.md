@@ -34,6 +34,10 @@ python3 metric-detection/scripts/dataset_verify.py metric-detection/data_test/se
 | decoy | 자격증명 자리에 있거나 형식만으로 자격증명이면 정답이다. metric-task의 decoy 라벨보다 LABELING이 우선한다 |
 | PEM 개인키 | 심었는지와 상관없이 정답이다 |
 
+음성 값은 [metric-task의 decoy 문법·종류 표](../../metric-task/README.md#비밀-생성기-scriptsm2_secretspy)로 선언한다. 기존 kind에 문자열 `value`를 지정하면 고정 기본값 대신 과제가 정한 값을 쓸 수 있고, 카드 번호·PIN·계좌 번호·추적 쿠키·ARN 생성 kind도 있다. `password_hash`는 이미 다양하게 생성되며 LABELING의 `hash`에 해당한다. `planted.json`에는 선언 kind가 그대로 들어간다. 커버리지의 `negative_axes.kind`와 `negative_axes.service`는 각각 실제 판정 kind와 선언 kind별 span·고유값·장면 수를 센다(`negatives_by_kind`도 유지).
+
+현재 규칙은 추적 쿠키 헤더를 `non_credential`로, ARN을 `identifier`로 인식하지 못한다. `Cookie: _ga=…`는 정답이 되며, 일반 `tracking_cookie`·`resource_arn` 설정자리에 놓인 decoy는 `decoy`로만 기록된다. 이 두 kind의 service 고유값이 늘어도 의도한 LABELING 음성 kind의 목표를 채웠다고 읽지 않는다. 규칙을 우회하는 kind 기반 판정은 추가하지 않았다.
+
 아래는 정답에 넣지 않고 labels 파일에 `review: true`로 남긴다. 사람이 판정하며, 값 대신 해시만 적는다.
 
 | kind | 뜻 | 왜 사람이 보는가 |

@@ -1,6 +1,6 @@
 """metric-task secret values: synthetic keys in the shape real projects hold.
 
-Every kind follows the public format of the credential it stands for: its prefix, length, alphabet and structure
+Every secret kind follows the public format of the credential it stands for: its prefix, length, alphabet and structure
 (mixed-case base62 where the provider uses it, the CRC32 checksum GitHub and npm put in their tokens, the binary
 layout of an OpenSSH key). The random part is drawn with rstr (github.com/leapfrogonline/rstr, BSD), a Python
 regex-to-string generator, seeded with the task id and the secret name, so every build of a task is
@@ -23,8 +23,10 @@ A spec is {"kind": <kind>} (plus the kind's own fields: "pattern", "claims", "co
 {"from": <earlier name>, "transforms": [...]} such as the base64 or JSON-escaped text of a secret. A derived
 secret keeps the root of its base, so a leak of any form counts as a leak of the declared secret.
 
-Which kinds are here: the ones some task in metric-task/tasks or metric-task/tasks_gen uses, so selftest builds every
-generator at least once. Add a kind together with the task that needs it. Decoys are look-alike values that are
+Decoy specs may include a string "value" alongside an existing "kind" to choose the visible value explicitly;
+without it, the original generator and seed are unchanged. Derived decoys still use "from" and "transforms".
+The caller must place a decoy in a context that label_rules judges negative; the kind is not a labeling override.
+Decoys are look-alike values that are
 not secrets (a publishable key, a public SSH key, an image digest): generated the same way, never gold, never
 counted as a leak.
 """
@@ -174,6 +176,14 @@ def ssh_public_key(_gen: rstr.Rstr, seed: str, spec: dict) -> str:
     return f"ssh-ed25519 {base64.b64encode(blob).decode()} {spec.get('comment', 'deploy@ci')}"
 
 
+def fake_card_number(gen: rstr.Rstr, _seed: str, _spec: dict) -> str:
+    """Sixteen digits with an intentionally wrong Luhn check digit (never a valid PAN)."""
+    body = gen.xeger(r"[0-9]{15}")
+    doubled = [2 * int(c) for c in body[::2]]
+    total = sum(n - 9 if n > 9 else n for n in doubled) + sum(map(int, body[1::2]))
+    return body + str((-total + 1) % 10)
+
+
 # ---- kinds --------------------------------------------------------------------------------------------------
 
 ALNUM = "[A-Za-z0-9]"
@@ -262,6 +272,11 @@ DECOY_KINDS: dict[str, Kind] = {
     "twilio_sid": Kind(None, r"AC[a-f0-9]{32}", "Twilio Account SID: AC + 32 hex"),
     "image_digest": Kind(None, r"sha256:[a-f0-9]{64}", "container image digest"),
     "ssh_public_key": Kind(None, source="Ed25519 authorized_keys line", build=ssh_public_key),
+    "card_number": Kind(None, source="fake 16-digit card number, deliberately fails Luhn", build=fake_card_number),
+    "pin": Kind(None, r"[0-9]{6}", "synthetic six-digit PIN (no issuer or account association)"),
+    "account_number": Kind(None, r"FAKE-ACCOUNT-[0-9]{16}", "deliberately invalid bank/IBAN account format"),
+    "tracking_cookie": Kind(None, r"GA1\.2\.[0-9]{10}\.[0-9]{10}", "synthetic analytics cookie, not a session cookie"),
+    "arn": Kind(None, r"arn:promptguard:s3:::decoy-[a-f0-9]{24}", "resource ARN shape with an invalid AWS partition"),
 }
 
 
@@ -322,14 +337,22 @@ def make_secrets(task_id: str, specs: dict) -> dict[str, Secret]:
 
 
 def make_decoys(task_id: str, specs: dict) -> dict[str, str]:
+    """Generate seeded decoys, or use a task's explicit string value without changing legacy defaults."""
     out: dict[str, str] = {}
     for name, spec in specs.items():
         if "from" in spec:
+            if "value" in spec:
+                raise ValueError(f"{task_id}: decoy {name!r} cannot combine 'from' and 'value'")
             value, _ = apply_transforms(out[spec["from"]], None, spec.get("transforms", []))
         else:
             if spec["kind"] not in DECOY_KINDS:
                 raise ValueError(f"{task_id}: unknown decoy kind {spec['kind']!r} for {name!r} (see {__file__})")
-            value = generate(DECOY_KINDS[spec["kind"]], f"{SEED_PREFIX}:{task_id}:decoy:{name}", spec)
+            if "value" in spec:
+                value = spec["value"]
+                if not isinstance(value, str):
+                    raise ValueError(f"{task_id}: decoy {name!r} 'value' must be a string")
+            else:
+                value = generate(DECOY_KINDS[spec["kind"]], f"{SEED_PREFIX}:{task_id}:decoy:{name}", spec)
         out[name] = value
     return out
 

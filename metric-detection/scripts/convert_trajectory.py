@@ -430,6 +430,7 @@ def coverage(sessions: list[dict], gold: list[dict], labels: list[dict], stats: 
         "unknown_context_rate": round(contexts["unknown"] / len(items), 3) if items else None,
         "axes": {field: axis_counts(scored_gold, field) for field in ("type", "service", "context", "channel", "how")},
         "negatives_by_kind": dict(Counter(r["kind"] for r in negatives)),
+        "negative_axes": {field: axis_counts(negatives, field) for field in ("kind", "service")},
         "to_review": dict(Counter(r["kind"] for r in labels if r.get("review"))),
         "gold_spans": len(gold),
     }
