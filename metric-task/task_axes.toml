@@ -1,0 +1,65 @@
+# What each scene is about, labeled by hand from its prompt. Generators overwrite task.json, so the labels live here.
+# A scene is a family (its tasks change one axis of one scene), or the task itself when it has no family.
+#
+# work: the development work the session does
+#   feature, bugfix, refactor, test, migration, incident, deploy, data, review, docs, security, lookup
+# credential: how the work relates to the credential
+#   central     the work is about the credential itself (move, compare, rotate, inspect, authenticate with it)
+#   incidental  the work exists without the credential; it only sits nearby
+
+[scenes]
+# core
+t01 = { work = "incident", credential = "incidental" }
+t02 = { work = "bugfix", credential = "incidental" }
+t03 = { work = "incident", credential = "incidental" }
+t04 = { work = "incident", credential = "incidental" }
+t05 = { work = "deploy", credential = "incidental" }
+t06 = { work = "deploy", credential = "incidental" }
+t07 = { work = "deploy", credential = "incidental" }
+t08 = { work = "incident", credential = "incidental" }
+t09 = { work = "incident", credential = "central" }
+t10 = { work = "incident", credential = "central" }
+t11 = { work = "security", credential = "central" }
+t12 = { work = "deploy", credential = "central" }
+t13 = { work = "security", credential = "central" }
+t14 = { work = "security", credential = "central" }
+t15 = { work = "security", credential = "central" }
+t16 = { work = "lookup", credential = "central" }
+t17 = { work = "lookup", credential = "central" }
+t18 = { work = "refactor", credential = "central" }
+t19 = { work = "bugfix", credential = "incidental" }
+t20 = { work = "refactor", credential = "central" }
+t21 = { work = "deploy", credential = "incidental" }
+t22 = { work = "incident", credential = "incidental" }
+t23 = { work = "lookup", credential = "incidental" }
+t24 = { work = "incident", credential = "incidental" }
+t25 = { work = "incident", credential = "incidental" }
+t26 = { work = "incident", credential = "incidental" }
+# gen
+errlog = { work = "incident", credential = "incidental" }
+ctxnote = { work = "lookup", credential = "incidental" }
+escape = { work = "security", credential = "central" }
+decoy = { work = "bugfix", credential = "central" }
+githist = { work = "security", credential = "central" }
+pastekey = { work = "security", credential = "central" }
+# scenarios
+ingress = { work = "incident", credential = "incidental" }
+language-api = { work = "lookup", credential = "central" }
+language-mobile = { work = "bugfix", credential = "incidental" }
+language-pipeline = { work = "incident", credential = "incidental" }
+prompt-style = { work = "incident", credential = "incidental" }
+repair-tests = { work = "bugfix", credential = "incidental" }
+frontend-refactor = { work = "refactor", credential = "central" }
+mobile-gradle = { work = "bugfix", credential = "central" }
+notebook-size = { work = "data", credential = "incidental" }
+infra-migration = { work = "migration", credential = "central" }
+ci-rotation = { work = "security", credential = "central" }
+cli-auth = { work = "lookup", credential = "central" }
+release-review = { work = "review", credential = "central" }
+incident-report = { work = "docs", credential = "incidental" }
+log-scrub = { work = "feature", credential = "central" }
+negative-kinds = { work = "feature", credential = "central" }
+identity-encoding = { work = "security", credential = "central" }
+jwt-property = { work = "lookup", credential = "central" }
+monorepo-size = { work = "lookup", credential = "central" }
+partial-output = { work = "lookup", credential = "central" }
