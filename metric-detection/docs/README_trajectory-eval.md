@@ -57,7 +57,7 @@ python3 metric-detection/scripts/dataset_verify.py metric-detection/data_test/se
 
 ## 첫 측정 (2026-11-06)
 
-기존 과제 135개, 장면 52개, Sonnet, none 1회씩. 135회 모두 유효했고 작업 성공은 131회다. `convert_trajectory.py`의 축 집계와 [m2_axes.py](../../metric-task/scripts/m2_axes.py)의 라벨로 낸 값이며, 문맥은 표본 확인 전이라 잠정값이다. 괄호는 (고유값, 장면 수)다.
+기존 과제 135개, 장면 52개, Sonnet, none 1회씩. 배치는 `none_r1_cca44c4`(122회)와 `ingress_none_r1_cca44c4`(13회)이고 둘 다 PromptGuard `cca44c4`, Claude Code 2.1.319로 돌렸다. 135회 모두 유효했고 작업 성공은 131회다. `convert_trajectory.py`의 축 집계와 [m2_axes.py](../../metric-task/scripts/m2_axes.py)의 라벨로 낸 값이며, 문맥은 표본 확인 전이라 잠정값이다. 괄호는 (고유값, 장면 수)다.
 
 | 항목 | 측정 | 목표 |
 |---|---|---|
@@ -74,7 +74,7 @@ python3 metric-detection/scripts/dataset_verify.py metric-detection/data_test/se
 | 채널 | tool_output (178, 39) | instructions (24, 4), prompt (14, 4) |
 | 작업 종류 (정답이 나온 장면) | 장애 진단 10, 보안 9, 버그 수정 5 | 배포 4, 값 조회 3, 리팩터링 3, 기능 구현 2, 마이그레이션·리뷰·문서·데이터 각 1, 테스트 0 |
 
-정답의 15%(271개 중 40개)는 문맥이 `unknown`이다. 사람 검토 대상은 19건(값 일부 13, 미선언 4, 식별자 2)이고 아직 판정하지 않았다. 같은 과제를 더 돌려서는 이 빈칸이 채워지지 않으므로 새 장면이 필요하다.
+정답은 293개이고, `tool_input`을 뺀 채점 대상 271개 중 15%(40개)는 문맥이 `unknown`이다. 사람 검토 대상은 19건(값 일부 13, 미선언 4, 식별자 2)이고 아직 판정하지 않았다. 같은 과제를 더 돌려서는 이 빈칸이 채워지지 않으므로 새 장면이 필요하다.
 
 ## 정한 것
 

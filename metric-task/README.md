@@ -73,7 +73,7 @@ core 과제 26개는 모두 비밀이 작업 폴더 파일에 있고, 에이전�
 | `subagent` | `allowed_tools: ["Agent"]` | 서브에이전트가 읽은 내용 |
 
 - `history`는 오래된 커밋부터 `{"message", "date", "files": {경로: 내용 또는 null}}`을 적는다. 모든 커밋의 날짜와 작성자를 고정해서 커밋 해시가 빌드마다 같다.
-- 실제 실행으로 확인한 것은 `file` 경로와 기록 프록시뿐이다. 나머지 경로가 headless 실행에서 의도한 자리로 들어가는지는 아직 모른다(특히 `at_mention`, `session_hook`, `subagent`, `stdin`, `append_system_prompt`, `commit_message`). [새 경로 확인](#새-경로-확인-none-1회)의 순서로 먼저 본다.
+- 모든 경로가 headless 실행에서 서버까지 간다. 자리는 [경로 확인](#경로-확인-none-1회)의 표에 있다.
 - `decoys`와 `{{decoy:이름}}`은 비밀이 아닌데 비밀처럼 보일 수 있는 값(체크섬, 요청 ID 등)이다. 비밀과 같은 방식으로 결정적으로 만들지만 gold가 아니고 누출 검사에도 넣지 않는다. 과잉 마스킹을 재는 과제에 쓴다.
 - 채점 종류에 `config_value`(dotenv, YAML, JSON, TOML, INI, properties, XML을 파싱해 키 경로의 값을 비교, base64·URL 디코드 가능), `parses`(파일이 그 형식으로 파싱되는가), `secret_absent`(비밀이 파일에 없는가), `redacted_copy`(비밀만 표시로 바꾼 사본인가), `contains`(비밀·decoy를 채운 문자열이 파일에 그대로 있는가. `+`, `.`가 든 값을 정규식 없이 비교)를 더했다. 모범 풀이에는 `write` 단계를 더했다.
 
@@ -90,9 +90,9 @@ core 과제 26개는 모두 비밀이 작업 폴더 파일에 있고, 에이전�
 | `githist` | g26–g28 | 지운 커밋에 남은 AWS 키, 커밋하지 않은 변경의 토큰, 최근 커밋 제목의 npm 토큰 | diagnose | 아니요 | answer.json |
 | `pastekey` | g29 | 사용자가 프롬프트로 준 새 API 키를 `.env`에 넣기 | transport | 예 | `.env`의 값, `check_env.py` 통과 |
 
-- **errlog, ctxnote**는 질문에 비밀이 필요 없다. 경로가 프롬프트, @첨부, stdin, CLAUDE.md, `--append-system-prompt`, SessionStart 훅인 과제는 에이전트가 무엇을 하든 비밀이 요청에 실린다(그 경로가 headless에서 동작한다면). `file`, `command_output`, `mcp`, `env`, `subagent` 과제는 프롬프트가 시킨 대로 읽거나 실행해야 실린다. g13(`env`)은 `PAYMENTS_`로 시작하는 변수에 비밀도 들어 있어서 그 변수들을 출력하면 함께 나온다.
+- **errlog, ctxnote**는 질문에 비밀이 필요 없다. 경로가 프롬프트, @첨부, stdin, CLAUDE.md, `--append-system-prompt`, SessionStart 훅인 과제는 에이전트가 무엇을 하든 비밀이 요청에 실린다. `file`, `command_output`, `mcp`, `env`, `subagent` 과제는 프롬프트가 시킨 대로 읽거나 실행해야 실린다. g13(`env`)은 `PAYMENTS_`로 시작하는 변수에 비밀도 들어 있어서 그 변수들을 출력하면 함께 나온다.
 - **g07(subagent)**: 실행기는 본 세션의 transcript만 읽으므로 서브에이전트가 읽은 내용은 "비밀이 모델에 보임"에 잡히지 않을 수 있다. 서버 누출로 본다.
-- **g28(commit_message)**: 비밀은 커밋 제목에만 있고 질문은 `config/http.yaml`만 보면 된다. Claude Code가 시스템 프롬프트의 git 상태에 최근 커밋 제목을 넣는다면 비밀은 `system` 자리로 서버에 간다.
+- **g28(commit_message)**: 비밀은 커밋 제목에만 있고 질문은 `config/http.yaml`만 보면 된다. 그래도 Claude Code가 git 상태와 함께 최근 커밋 제목을 넣어서 비밀이 `reminder` 자리로 서버에 간다.
 - **escape**: 이스케이프한 형태는 파생 비밀로 선언해서 gold가 그 형태도 가리고 누출 검사도 찾는다. 채점은 실제 파서로 읽어 비교하므로 모범 풀이와 다른 올바른 표기(YAML 큰따옴표, XML CDATA, 다른 퍼센트 인코딩)도 통과하고, 이스케이프하지 않고 넣은 값은 실패한다.
 - **decoy**: decoy는 gold가 아니다. promptguard가 공개 값을 가리면 모델이 옮길 값을 볼 수 없다. g24는 고칠 파일 안에 레지스트리 인증 Secret이 함께 있어서, 가려진 내용으로 파일을 통째로 다시 쓰면 비밀 훼손으로 잡힌다.
 - **g29(pastekey)**: gold는 프롬프트의 키를 가리므로 실패할 것으로 예상한다. 사용자가 일부러 넘긴 비밀을 가렸을 때의 비용을 잰다.
@@ -109,25 +109,28 @@ python3 metric-task/scripts/m2.py selftest --tasks gen      # 모두 ok여야 �
 - 손으로 쓴 과제도 `tasks_gen/<id>/`에 둘 수 있다(`meta.generator` 없이). 지킬 것: 폴더 이름과 `id`가 같다. `category`, `needs_secret_value`, `checks`, `solution`이 있다. `meta.family`, `meta.channels`, `meta.formats`를 채운다(리포트가 이 값으로 묶는다). 비밀은 8자 이상이다(gold 탐지기와 누출 검사가 더 짧은 값을 건너뛴다). `selftest --tasks gen`이 통과한다.
 - `category`는 위 유형 표의 값 중 하나여야 리포트의 유형별 표에 나온다.
 
-### 새 경로 확인 (none, 1회)
+### 경로 확인 (none, 1회)
 
-경로를 처음 쓰는 과제는 조건 하나(`none`)로 한 번씩 먼저 돌려, 비밀이 의도한 자리로 서버에 갔는지 본다. 아직 돌리지 않았다.
+경로를 처음 쓰는 과제는 조건 하나(`none`)로 한 번씩 먼저 돌려, 비밀이 의도한 자리로 서버에 갔는지 본다.
 
 ```bash
 python3 metric-task/scripts/m2.py run --tasks gen --conditions none --reps 1 --name gen_none_check
 python3 metric-task/scripts/m2.py run --tasks channel:at_mention --conditions none --reps 1    # 경로 하나만
 ```
 
-실행마다 `result.json`의 `server.by_secret`에서 비밀마다 `channels`(요청의 자리)와 `tools`를 본다. 기대하는 자리는 아래와 같다. 확인한 결과가 다르면 이 표를 고친다.
+실행마다 `result.json`의 `server.by_secret`에서 비밀마다 `channels`(요청의 자리)와 `tools`를 본다. 아래 표는 경로가 하나인 과제를 Sonnet으로 1회씩 돌려 확인한 자리다(2026-11-06, Claude Code 2.1.319, 배치 `none_r1_cca44c4`와 `ingress_none_r1_cca44c4`). 버전이 바뀌어 결과가 달라지면 이 표를 고친다.
 
-| 과제의 경로 | 기대하는 자리 |
-|---|---|
-| `prompt`, `stdin` | `user_text` |
-| `at_mention`, `claude_md`, `session_hook` | `reminder` 또는 `system` |
-| `append_system_prompt`, `commit_message` | `system` |
-| `file`, `command_output`, `env`, `mcp`, `git_history`, `subagent` | `tool_result` (`Read`, `Bash`, `Grep`, `mcp__…`) |
+| 과제의 경로 | 실제 자리 | 서버에 간 과제 |
+|---|---|---|
+| `prompt` | `user_text` | 4/4 |
+| `stdin` | `user_text`. s08은 `tool_result:Bash`에도 있다 | 2/2 |
+| `session_hook` | `user_text` | 2/2 |
+| `at_mention`, `claude_md` | `reminder` | 각 2/2 |
+| `append_system_prompt` | `system` | 2/2 |
+| `commit_message` | 읽으라고 시키지 않으면 `reminder`(g28), 시키면 `tool_result:Bash`(s12) | 2/2 |
+| `file`, `command_output`, `env`, `mcp`, `git_history`, `subagent` | `tool_result` (`Read`, `Bash`, `mcp__…`). 읽거나 실행한 경우에만 간다 | 33/45, 2/2, 2/2, 3/3, 2/3, 2/2 |
 
-- none에서 비밀이 기대한 자리로 가지 않았으면 그 경로가 headless에서 동작하지 않거나 과제 설계가 틀린 것이다. 예를 들어 `at_mention` 과제의 비밀이 `tool_result:Read`에만 있으면 @첨부가 아니라 모델이 파일을 읽은 것이다.
+- none에서 비밀이 표의 자리로 가지 않았으면 그 경로의 동작이 바뀌었거나 과제 설계가 틀린 것이다. 예를 들어 `at_mention` 과제의 비밀이 `tool_result:Read`에만 있으면 @첨부가 아니라 모델이 파일을 읽은 것이다.
 - none에서도 비밀이 서버에 가지 않는 과제는 보호 성능(gold, promptguard의 누출)을 재는 데 쓸 수 없다. 작업 성공률만 본다.
 
 ### 비밀 생성기 (`scripts/m2_secrets.py`)
