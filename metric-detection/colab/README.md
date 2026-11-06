@@ -1,31 +1,33 @@
-# Colab에서 ML 탐지 평가
+# Colab에서 Qwen v3 탐지 평가
 
-[`evaluate_ml.ipynb`](evaluate_ml.ipynb)는 PromptGuard를 체크아웃에 설정된 그대로 두고, 플러그인 스위치 `PG_DETECTOR_ENABLE`로 ML 모듈(`ml-v9`, `ml-qwen`)만 켜서 metric-detection 채점을 돌린다. 같은 데이터로 ML 없이도 한 번 돌려 비교표를 만든다.
+[`evaluate_ml.ipynb`](evaluate_ml.ipynb)는 PromptGuard(promptguard-claude-demoV0)에 `ml-qwen`만 켠 구성 하나를 전체 데이터 8종으로 평가한다. 서버(ARM CPU, GPU 없음)에서는 약 20시간 걸리고 타임아웃 위험이 있어 이 구성만 Colab GPU로 옮겼다. 평가 경로는 서버 `runs/e2e-20261106/run_config.py`와 같은 `dashboard/pipeline/runner.evaluate`이고, 결과 `summary.json`은 `runs/e2e-20261106/report.py`로 같은 표를 만들 수 있다.
+
+시스템·모델·채점기 커밋, 임계값, 데이터 해시, 패키지 버전은 노트북 ① 셀에 고정돼 있고 실행 중에 검증한다. 다르면 멈춘다.
 
 ## 데이터 올리기
 
-`data_test/`와 `data_answer/`는 git에 없다(비밀값 형식의 가짜·수집 데이터). 데이터를 만든 서버에서 압축해 Google Drive의 `MyDrive/promptguard/`에 올린다.
+`data_test/`와 `data_answer/`는 git에 없다(비밀값 형식의 가짜·수집 데이터). 서버의 `runs/colab/pg-data-full-07cf988.tar.gz`(라벨 정제 후 현재 데이터 8종)를 Google Drive의 `MyDrive/promptguard/`에 그대로 올린다. sha256은 `1d762bbf187a259a0f13505201796bd43b57239a9f288ddcd447e4a78dca6944`이다. 옛 `pg-data-full.tar.gz`는 노트북의 해시 검사에서 멈춘다.
 
-```bash
-# 1만 개 표본 (runs/ml-evaluations/sample_evaluation.py로 뽑은 것, 약 3MB)
-tar -czf runs/colab/pg-data-10k.tar.gz -C runs/ml-evaluations/sample-10k-v1 data_test data_answer manifest.json
-# 전체 (item 약 11만 개, 약 31MB)
-tar -czf runs/colab/pg-data-full.tar.gz -C metric-detection data_test data_answer
-```
-
-압축 파일에는 비밀값 형식의 문자열이 들어 있다. 공유 폴더나 공개 위치에 두지 않는다. 결과 폴더(`per_edit.jsonl` 등)도 마찬가지다.
+압축 파일에는 비밀값 형식의 문자열이 들어 있다. 공유 폴더나 공개 위치에 두지 않는다. Drive의 `qwen-v3-cca44c4/resume/`과 `results/*/examples/`도 마찬가지다. 서버의 `gitleaks-cache.sqlite`는 비밀값이 들어 있고 ARM 바이너리 해시로 키가 묶여 Colab에서 적중하지 않으므로 올리지 않는다.
 
 ## 실행
 
-1. Colab에서 `evaluate_ml.ipynb`를 연다(GitHub에서 열기: `capstone-privai/promptguard-data`, 경로 `metric-detection/colab/evaluate_ml.ipynb`).
-2. 런타임 유형을 GPU로 바꾼다. Qwen은 `device: auto`라 GPU를 쓴다. v9는 detector.json에서 `cpu`로 고정돼 있고, 노트북의 `V9_DEVICE = "cuda"`로 이 Colab 사본에서만 바꿀 수 있다.
-3. ① 설정 셀에서 `DATA_ARCHIVE`, `ENABLE`을 고르고 위에서부터 차례로 실행한다.
+1. 채점기 커밋 `9bd0d37`이 GitHub에 있어야 한다. 이 노트북이 들어 있는 브랜치를 push하면 함께 올라간다.
+2. Colab에서 `evaluate_ml.ipynb`를 열고 런타임 유형을 GPU로 바꾼다. GPU가 없으면 ③에서 멈춘다.
+3. "모두 실행"으로 ⑦까지 본다. 작은 데이터 3종의 차단 건수, 호출당 시간, 예상 전체 시간이 나온다. 전체 실행은 `RUN_FULL = False`라 시작되지 않는다.
+4. 숫자가 괜찮으면 ①에서 `RUN_FULL = True`로 바꾸고 ①, ⑧, ⑨를 실행한다. 끝나면 ⑩을 실행한다.
+
+평가는 별도 프로세스로 돌아 셀을 중단하거나 브라우저를 닫아도 계속된다. 브라우저만 끊겼으면 ①과 ⑨를 실행한다. 런타임이 초기화됐으면 ①부터 다시 실행하고 ⑧로 이어 간다. 끝난 샤드는 Drive 체크포인트에서 복원하고, 돌던 샤드 하나만 다시 계산한다.
+
+묶음별 표는 서버에서 만든다. Drive의 `qwen-v3-cca44c4/results/qwen/`에서 `summary.json`, `meta.json`, `RUN_NOTES.md`를 받아 `runs/e2e-20261106/results/qwen/`에 두고 `report.py base v10 qwen`을 실행한다.
 
 ## 결과를 읽을 때
 
-- 노트북은 `--require-adapters`로 실행한다. ML 모듈이 패키지나 가중치 문제로 빠지면 점수를 내지 않고 이유를 출력하며 멈춘다. 플러그인에서 ML 모듈은 선택 모듈이라, 이 옵션이 없으면 빠져도 점수가 정상처럼 나온다.
-- `blocked`는 탐지기 오류(ML timeout `ADAPTER_FAILURE` 등)로 Final Guard가 요청을 막았다고 본 item 수다. 그 item의 정답은 노출이 아니라 과잉 마스킹(`over`)으로 채점된다. ML을 켠 쪽에서만 이 수가 크면 ML 모듈의 timeout(v9 4초, Qwen 25초)에 걸린 것이다. 자세한 규칙은 [evaluation/README.md](../evaluation/README.md)의 "탐지기 실패"에 있다.
-- 채점은 `--use ml_eval`로 한다. `meta.split`이 `train`·`val`인 세션은 거부되지만, privesc-llm-data 원본(`sessions_from_privesc-llm-data`, split 이름이 `training`·`validation`)은 통과한다. 이 원본에는 ML 학습 시나리오가 들어 있으니 압축 파일에 넣지 않거나 그 행은 읽지 않는다(README의 데이터셋 표).
+- **서버 결과와 비교:** GPU에서 돌렸으므로 지연과 타임아웃 차단은 서버 결과와 직접 비교할 수 없다. 타임아웃(25초)은 그대로지만 서버에서라면 막혔을 입력이 통과할 수 있다. 조건은 결과 폴더의 `RUN_NOTES.md`에 함께 남는다.
+- **설정 변경:** 시스템 사본의 `detector.json`에서 `ml-qwen.enabled`와 `ml-qwen.options.repository`만 바꾼다. 이 파일을 커밋 내용에서 같은 바이트로 다시 만들어 `system_fingerprint`가 재시작해도 같다.
+- **Qwen이 빠진 샤드:** `ml-qwen`은 필수 어댑터가 아니어서, 샤드 프로세스에서 모델 로드가 실패하면 Qwen 없이 점수가 나온다. 노트북은 샤드가 끝날 때마다 이를 검사해 그런 샤드를 합치지 않고 멈춘다. 다시 시작하면 그 샤드만 다시 계산한다.
+- **`blocked`:** 탐지기 오류나 타임아웃으로 Final Guard가 요청을 막았다고 본 item 수다. 그 item의 정답은 노출이 아니라 과잉 마스킹(`over`)으로 채점된다. 자세한 규칙은 [evaluation/README.md](../evaluation/README.md)의 "탐지기 실패"에 있다.
+- **어댑터 실패 수:** 샤드 로그의 `어댑터:예외 형식`별 횟수다. 타임아웃은 `ml-qwen:RuntimeError`로 나오며 다른 Qwen 실패와 구분되지 않는다.
 
 ## 중간발표 탐지 성능 보고서
 
