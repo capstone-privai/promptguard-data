@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+refunds-0,KRW,disputed,353,1,353
+refunds-1,USD,reversed,372,2,-744
+refunds-2,EUR,pending,391,3,0
+refunds-3,KRW,captured,410,4,1640
+refunds-4,USD,returned,429,5,-2145

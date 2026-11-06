@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+credits-0,KRW,captured,416,1,416
+credits-1,USD,returned,435,2,-870
+credits-2,EUR,cancelled,454,3,0
+credits-3,KRW,disputed,473,4,1892
+credits-4,USD,reversed,492,5,-2460

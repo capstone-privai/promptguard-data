@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+payouts-0,KRW,disputed,425,1,425
+payouts-1,USD,reversed,444,2,-888
+payouts-2,EUR,pending,463,3,0
+payouts-3,KRW,captured,482,4,1928
+payouts-4,USD,returned,501,5,-2505

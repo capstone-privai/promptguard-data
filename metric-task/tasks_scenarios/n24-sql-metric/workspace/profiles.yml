@@ -1,0 +1,21 @@
+{
+  "warehouses": {
+    "east": {
+      "adapter": "sqlite",
+      "password": "{{secret:old_east}}",
+      "schema": "ledger"
+    },
+    "west": {
+      "adapter": "sqlite",
+      "password": "{{secret:old_west}}",
+      "schema": "ledger"
+    }
+  },
+  "signing_secret": "{{secret:signing_key}}",
+  "runtime": {
+    "token_0": "{{decoy:reference_0}}",
+    "token_1": "{{decoy:reference_1}}",
+    "token_2": "{{decoy:reference_2}}",
+    "token_3": "{{decoy:reference_3}}"
+  }
+}

@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+invoices-0,KRW,returned,221,1,-221
+invoices-1,USD,cancelled,240,2,0
+invoices-2,EUR,disputed,259,3,777
+invoices-3,KRW,reversed,278,4,-1112
+invoices-4,USD,pending,297,5,0

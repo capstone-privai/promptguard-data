@@ -63,3 +63,9 @@ identity-encoding = { work = "security", credential = "central" }
 jwt-property = { work = "lookup", credential = "central" }
 monorepo-size = { work = "lookup", credential = "central" }
 partial-output = { work = "lookup", credential = "central" }
+# trajectory pilot (each task is an independent scene)
+n03 = { work = "test", credential = "incidental" }
+n14 = { work = "review", credential = "incidental" }
+n19 = { work = "docs", credential = "incidental" }
+n24 = { work = "data", credential = "incidental" }
+n26 = { work = "refactor", credential = "incidental" }

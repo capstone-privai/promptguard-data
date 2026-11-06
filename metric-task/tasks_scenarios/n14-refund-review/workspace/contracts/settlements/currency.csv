@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+settlements-0,KRW,pending,377,1,0
+settlements-1,USD,captured,396,2,792
+settlements-2,EUR,returned,415,3,-1245
+settlements-3,KRW,cancelled,434,4,0
+settlements-4,USD,disputed,453,5,2265

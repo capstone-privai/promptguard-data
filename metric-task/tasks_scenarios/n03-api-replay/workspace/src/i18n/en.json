@@ -1,0 +1,6 @@
+{
+  "password_hint_0": "{{decoy:descriptor_0}}",
+  "password_hint_1": "{{decoy:descriptor_1}}",
+  "password_hint_2": "{{decoy:descriptor_2}}",
+  "password_hint_3": "{{decoy:descriptor_3}}"
+}

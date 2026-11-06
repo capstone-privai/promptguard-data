@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+orders-0,KRW,pending,215,1,0
+orders-1,USD,captured,234,2,468
+orders-2,EUR,returned,253,3,-759
+orders-3,KRW,cancelled,272,4,0
+orders-4,USD,disputed,291,5,1455

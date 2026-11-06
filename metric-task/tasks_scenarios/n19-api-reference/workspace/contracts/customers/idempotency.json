@@ -1,0 +1,25 @@
+{
+  "resource": "customers",
+  "deduplicate_on": [
+    "id",
+    "sequence"
+  ],
+  "window_seconds": 86400,
+  "conflict_status": 409,
+  "completed_status": 200,
+  "cases": [
+    {
+      "state": "pending",
+      "action": "keep_original"
+    },
+    {
+      "state": "captured",
+      "action": "return_existing"
+    },
+    {
+      "state": "reversed",
+      "action": "reject_conflict"
+    }
+  ],
+  "constraint": "Archived customers remain addressable by historical ledger movements."
+}
