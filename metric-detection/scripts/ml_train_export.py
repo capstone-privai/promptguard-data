@@ -66,7 +66,7 @@ THRESHOLD, MIN_CHARS, NGRAM, NUM_PERM = 0.8, 100, 3, 128
 DATASKETCH = "2.0.0"
 MASKED = "█"  # what a value becomes before two contexts are compared
 WORD = re.compile(rf"\w+|{MASKED}")
-HANDOFF_FILE = re.compile(r"(?:sessions|gold|labels)_(?:train|val)\.jsonl|manifest\.json|README\.md")
+HANDOFF_FILE = re.compile(r"(?:sessions|gold|labels)_(?:train|val)\.jsonl|manifest\.json|README\.md|model_[AB]")  # model_X: ml_train_handoff.py
 PREFIX_OF = re.compile(r"\{\{neg:prefix_\w+\|of=(\w+)")
 
 

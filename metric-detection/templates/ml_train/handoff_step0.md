@@ -12,7 +12,9 @@ API를 새로 부르지 않고 **지금 저장소에 있는 템플릿과 privesc
 
 | 위치 | split | 쓰는 곳 |
 |---|---|---|
-| `ml_handoff/sessions_*.jsonl`, `gold_*.jsonl`, `labels_*.jsonl` | train, val | 학습과 모델 선택(조기 종료) |
+| `ml_handoff/model_A/` | train, val | **모델 A** 학습과 모델 선택(조기 종료): 손 템플릿 + privesc |
+| `ml_handoff/model_B/` | train, val | **모델 B** 학습과 모델 선택: 손 템플릿 + LLM 템플릿 + privesc |
+| `ml_handoff/sessions_*.jsonl`, `gold_*.jsonl`, `labels_*.jsonl` | train, val | export 원본. `model_B/`와 바이트까지 같다. 학습에는 `model_A/`·`model_B/`를 쓴다 |
 | `data_test/sessions_mleval_<입력>_<split>.jsonl`, `data_answer/gold_mleval_…`, `labels_mleval_…` | test, test_ood | 평가 전용. 학습에 쓰지 않는다 |
 
 형식(필드 설명)은 아래 "파일 형식" 절에 있다. 출처는 세 가지다.
@@ -21,6 +23,29 @@ API를 새로 부르지 않고 **지금 저장소에 있는 템플릿과 privesc
 - **LLM 템플릿**(`c`, `o`, `a`, `b`, `p`로 시작): Claude가 카드대로 쓴 템플릿 × 값 변형 3(분포 이동 `o`는 2). `c`는 파일럿, `o`는 분포 이동 test,
   `a`는 자연어·문서 칸 보강, `b`는 설정 파일의 일반 값 음성, `p`는 개인정보 음성 묶음이다.
 - **privesc**(`privesc-<시나리오>`): 비밀을 심어 둔 리눅스 VM에서 실제 에이전트가 권한 상승을 푼 기록. train 정답의 30% 이하로 표본 추출했다.
+
+## 모델 A와 B
+
+두 모델을 같은 설정으로 학습해 **LLM 템플릿을 더한 효과**를 본다. 두 폴더 모두 `sessions_`, `gold_`, `labels_` × `train`, `val` 6개 파일이고,
+줄은 export 파일에서 그대로 골라 옮긴 것이다. **privesc 세션은 A와 B가 완전히 같다**(30% 상한을 B의 합성 train 정답 기준으로 한 번만 뽑았다).
+그래서 A에서는 privesc 비중이 더 크다. privesc에는 val이 없어 **A의 val은 손 템플릿뿐**이다.
+**평가 파일(test, test_ood)은 A·B 공통**이다(LLM 템플릿 test·test_ood도 A로 똑같이 채점한다).
+
+| 모델 | 폴더 | 출처 | train 세션 | train 정답 | val 세션 | val 정답 | train 정답 중 privesc |
+|---|---|---|---|---|---|---|---|
+| A | `ml_handoff/model_A/` | 손 템플릿 + privesc | 1,108 | 5,563 | 80 | 435 | 36.9% |
+| B | `ml_handoff/model_B/` | 손 템플릿 + LLM 템플릿 + privesc | 1,693 | 6,847 | 155 | 615 | 30.0% |
+
+모델별 파일 sha256:
+
+| 파일 | 모델 A | 모델 B |
+|---|---|---|
+| `sessions_train.jsonl` | `3f4759d5c0082b09a147c777ccbd1c5deb2fdc32eb65331103216248123d8164` | `447d1aacfafb7efa88c7c6872d189e10d8337c4ad709f6c2d114ab97d9cfafb1` |
+| `gold_train.jsonl` | `6dc7dbe58e1582b5111b76062d68fe2a8aab76a99cae56fa3d139a8936a401f9` | `40d944a6139d6557cb74d34a809cf09891dc33ad5a0ee303b37b343012bb22a0` |
+| `labels_train.jsonl` | `a8a6ea36b46176e150d26e2f09420de4f14aa19a169792230ae5a1706cf28803` | `173f5c72eac29ab6922c781fbffa951dafc9f3ae39b0bf60a9e68e60050834f7` |
+| `sessions_val.jsonl` | `5c74be06d97b99f0054d220ad882cddbcf5accb92648ec36af03f0c7a54a58b1` | `dff827ce9b258d3a6e9ce7cccf1fa1e985f9380e27d078c0c7880423173447ef` |
+| `gold_val.jsonl` | `a434f8990c987affefbd6d57a34c6d4e17e6d4de4df64f86048db35493973486` | `ad43c23414cf65b26d7458aa861ac0f1a6382975609a70ff4b4d23e9272b1e9c` |
+| `labels_val.jsonl` | `bdbeca38ed785d3c1032d7ffdca842f7709d8170306e1db19b456573793ba221` | `a14200cca6a222b50aa7eb97dd09494651c6babad572b5f0adfda240958ac584` |
 
 ## 수
 
@@ -129,7 +154,7 @@ train과 평가 쪽에 함께 나오는 정답 값(값 없이 manifest에 기록
 | `data_answer/gold_mleval_v1_test_ood.jsonl` | `8417de0ad6a888cd66670879346c2f82b95dfd5be54f1b9b39d659b16ce85e4f` |
 | `labels_mleval_v1_test_ood.jsonl` | `fecdb84713215d1ee42fe467f01ba65620aa26f3832759a8d552e39bee974395` |
 
-manifest 두 개는 쓴 코드의 sha256을 담고 있어 코드만 바뀌어도 값이 바뀐다(데이터 대조에는 쓰지 않는다): `ml_handoff/manifest.json` `7d16b5702de38c6e…`, `manifest_mleval.json` `bb8ed4af0e48f23d…`
+manifest 두 개는 쓴 코드의 sha256을 담고 있어 코드만 바뀌어도 값이 바뀐다(데이터 대조에는 쓰지 않는다): `ml_handoff/manifest.json` `705874db35034345…`, `manifest_mleval.json` `1af6f1fbac7e8abd…`
 
 ---
 

@@ -14,7 +14,7 @@
 | `batches/NAME.json` | batch id, 카드 파일 sha256, 프롬프트 버전, 요청 custom_id. 본문은 없다 | 올림 |
 | `raw/` | 응답 원문과 거절 사유. 거절된 응답에는 모델이 쓴 리터럴 비밀이 있을 수 있다 | 안 올림 |
 | `NAME.jsonl` | 통과한 템플릿. placeholder만 있고 값은 없다. 다시 만들 수 없는 원본이라 이 저장소에 커밋한다(본 생성분 약 10MB). 커밋 전에 gitleaks로 한 번 더 본다 | 올림 |
-| `handoff_step0.json`, `handoff_step0.md` | 0단계 묶음(API 없이 지금 템플릿과 privesc로 만든 학습 데이터)의 기대 수와 데이터 파일 sha256. `ml_train_handoff.py write`가 쓰고 `check`가 대조한다. `.md`는 모델 담당에게 주는 `ml_handoff/README.md`의 사본. 재현은 `scripts/build_ml_handoff.sh` 또는 `colab/build_ml_handoff.ipynb` | 올림 |
+| `handoff_step0.json`, `handoff_step0.md` | 0단계 묶음(API 없이 지금 템플릿과 privesc로 만든 학습 데이터)의 기대 수와 데이터 파일 sha256(모델 A = 손 + privesc, 모델 B = 손 + LLM + privesc의 학습 세트 포함). `ml_train_handoff.py write`가 쓰고 `check`가 대조한다. `.md`는 모델 담당에게 주는 `ml_handoff/README.md`의 사본. 재현은 `scripts/build_ml_handoff.sh` 또는 `colab/build_ml_handoff.ipynb` | 올림 |
 | `raw/NAME_local.jsonl` | 통과했지만 리터럴 Twilio SID가 들어 있어 GitHub 푸시 보호에 걸리는 템플릿. 따로 빌드해 합친다. 저장소만으로는 다시 만들 수 없다 | 안 올림 |
 
 ## 순서

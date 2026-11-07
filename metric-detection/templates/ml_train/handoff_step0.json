@@ -246,6 +246,51 @@
   "missing_inputs": [
     "templates/ml_train/raw/v1_local.jsonl (Twilio SID가 든 LLM 템플릿, git 제외라 이 저장소에 없음)"
   ],
+  "models": {
+    "A": {
+      "gold_train": 5563,
+      "gold_val": 435,
+      "negatives_train": 16754,
+      "negatives_val": 145,
+      "privesc_share_of_train_gold": 0.369,
+      "sessions_train": 1108,
+      "sessions_val": 80,
+      "sha256": {
+        "model_A/gold_train.jsonl": "6dc7dbe58e1582b5111b76062d68fe2a8aab76a99cae56fa3d139a8936a401f9",
+        "model_A/gold_val.jsonl": "a434f8990c987affefbd6d57a34c6d4e17e6d4de4df64f86048db35493973486",
+        "model_A/labels_train.jsonl": "a8a6ea36b46176e150d26e2f09420de4f14aa19a169792230ae5a1706cf28803",
+        "model_A/labels_val.jsonl": "bdbeca38ed785d3c1032d7ffdca842f7709d8170306e1db19b456573793ba221",
+        "model_A/sessions_train.jsonl": "3f4759d5c0082b09a147c777ccbd1c5deb2fdc32eb65331103216248123d8164",
+        "model_A/sessions_val.jsonl": "5c74be06d97b99f0054d220ad882cddbcf5accb92648ec36af03f0c7a54a58b1"
+      },
+      "sources": [
+        "hand",
+        "privesc"
+      ]
+    },
+    "B": {
+      "gold_train": 6847,
+      "gold_val": 615,
+      "negatives_train": 18509,
+      "negatives_val": 355,
+      "privesc_share_of_train_gold": 0.2998,
+      "sessions_train": 1693,
+      "sessions_val": 155,
+      "sha256": {
+        "model_B/gold_train.jsonl": "40d944a6139d6557cb74d34a809cf09891dc33ad5a0ee303b37b343012bb22a0",
+        "model_B/gold_val.jsonl": "ad43c23414cf65b26d7458aa861ac0f1a6382975609a70ff4b4d23e9272b1e9c",
+        "model_B/labels_train.jsonl": "173f5c72eac29ab6922c781fbffa951dafc9f3ae39b0bf60a9e68e60050834f7",
+        "model_B/labels_val.jsonl": "a14200cca6a222b50aa7eb97dd09494651c6babad572b5f0adfda240958ac584",
+        "model_B/sessions_train.jsonl": "447d1aacfafb7efa88c7c6872d189e10d8337c4ad709f6c2d114ab97d9cfafb1",
+        "model_B/sessions_val.jsonl": "dff827ce9b258d3a6e9ce7cccf1fa1e985f9380e27d078c0c7880423173447ef"
+      },
+      "sources": [
+        "hand",
+        "llm",
+        "privesc"
+      ]
+    }
+  },
   "moved_by_near_duplicates": {},
   "near_duplicate_pairs": {
     "reported": 16
@@ -349,7 +394,7 @@
     "ml_handoff/sessions_val.jsonl": "dff827ce9b258d3a6e9ce7cccf1fa1e985f9380e27d078c0c7880423173447ef"
   },
   "sha256_manifests": {
-    "manifest_mleval.json": "bb8ed4af0e48f23d8239846ad616ed2ad2d35df5204629fdea72c74ae99f9e9c",
-    "ml_handoff/manifest.json": "7d16b5702de38c6ed348e18a8a4f23f87e6db221cae495057fef79de1ba62fef"
+    "manifest_mleval.json": "1af6f1fbac7e8abd98b7463c16de87cbd23993a17037326824144e48ea338aae",
+    "ml_handoff/manifest.json": "705874db35034345e97c744210846dc654a5edc3203845b9ba508532a224ef32"
   }
 }

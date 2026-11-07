@@ -44,7 +44,8 @@ tar -czf runs/colab/pg-data-full.tar.gz -C metric-detection data_test data_answe
 
 ## ML 학습 데이터 0단계 묶음 만들기
 
-[`build_ml_handoff.ipynb`](build_ml_handoff.ipynb)는 저장소를 받고 privesc-llm-data를 내려받아, 지금 커밋된 템플릿만으로 ML 학습 데이터를 빌드·검증·내보내기 한 뒤 데이터 파일 18개의 sha256을 [`handoff_step0.json`](../templates/ml_train/handoff_step0.json)과 대조한다. API는 부르지 않고 GPU도 필요 없다(CPU로 약 2분). 같은 단계를 셸에서는 `bash metric-detection/scripts/build_ml_handoff.sh`로 돌린다.
+[`build_ml_handoff.ipynb`](build_ml_handoff.ipynb)는 저장소를 받고 privesc-llm-data를 내려받아, 지금 커밋된 템플릿만으로 ML 학습 데이터를 빌드·검증·내보내기 한 뒤 데이터 파일 30개의 sha256을 [`handoff_step0.json`](../templates/ml_train/handoff_step0.json)과 대조한다. API는 부르지 않고 GPU도 필요 없다(CPU로 약 2분). 같은 단계를 셸에서는 `bash metric-detection/scripts/build_ml_handoff.sh`로 돌린다.
 
+- 학습 세트는 두 벌이다: `ml_handoff/model_A/`(손 템플릿 + privesc), `ml_handoff/model_B/`(손 + LLM 템플릿 + privesc). privesc 세션은 둘이 같고, 평가 파일은 공통이다.
 - train·val은 `metric-detection/ml_handoff/`, test·test_ood는 `data_test/`·`data_answer/`의 `sessions_mleval_*`에 생긴다. 수·비율·한계는 `ml_handoff/README.md`에 있다.
 - 결과에는 실제 형식의 가짜 비밀값과 privesc의 SSH 키가 들어 있다. git에 올리지 않고, ⑨에서 Drive에 복사할 때도 공유 폴더를 피한다.

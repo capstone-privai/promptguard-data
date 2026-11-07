@@ -9,7 +9,12 @@ fresh run against it.
 Run from the repository root, after ml_train_export.py:
   python metric-detection/scripts/ml_train_handoff.py write   # record: templates/ml_train/handoff_step0.json, .md
   python metric-detection/scripts/ml_train_handoff.py check   # compare with the recorded file; exit 1 if different
-Both write ml_handoff/README.md (Korean): this run's counts and known limits, then the export's file guide.
+Both first write the two training sets the model side compares, from the export's train and val files:
+  ml_handoff/model_A/  hand templates + privesc (no LLM templates)
+  ml_handoff/model_B/  hand templates + LLM templates + privesc (the export's files, the same bytes)
+Each holds sessions_, gold_ and labels_ train and val; rows are copied as they are, in order, so A and B use the very
+same privesc sample (drawn once, its 30% cap taken against B's synthetic train gold). test and test_ood are shared.
+Then both write ml_handoff/README.md (Korean): this run's counts and known limits, then the export's file guide.
 The export manifests (manifest.json, manifest_mleval.json) hold the sha256 of the code that wrote them, so a later
 code change moves their hash without changing the data; check compares the data files only and reports the rest.
 """
@@ -35,6 +40,9 @@ SOURCE_KO = {"hand": "손 템플릿", "llm": "LLM 템플릿", "privesc": "prives
 TYPES = ("PASSWORD", "SECRET", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY")
 CONTEXTS = ("config", "command_output", "log", "stacktrace", "diff", "http", "source_code", "natural_language",
             "document", "key_file", "jupyter_output", "terraform_output")
+MODELS = {"A": ("hand", "privesc"), "B": ("hand", "llm", "privesc")}
+MODEL_KO = {"A": "손 템플릿 + privesc", "B": "손 템플릿 + LLM 템플릿 + privesc"}
+KINDS = ("sessions", "gold", "labels")
 MISSING = ["templates/ml_train/raw/v1_local.jsonl (Twilio SID가 든 LLM 템플릿, git 제외라 이 저장소에 없음)"]
 
 
@@ -49,6 +57,25 @@ def read_jsonl(path: Path) -> list[dict]:
 def source_of(meta: dict) -> str:
     group = meta["group_id"]
     return "hand" if group.startswith("hand-") else "privesc" if group.startswith("privesc-") else "llm"
+
+
+def write_models():
+    """ml_handoff/model_X/{sessions,gold,labels}_{train,val}.jsonl: the export's rows of the model's sources."""
+    for split in E.TRAIN_SIDE:
+        lines = {kind: (HANDOFF / f"{kind}_{split}.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
+                 for kind in KINDS}
+        src_of = {json.loads(l)["session_id"]: source_of(json.loads(l)["meta"]) for l in lines["sessions"]}
+        for model, sources in MODELS.items():
+            folder = HANDOFF / f"model_{model}"
+            folder.mkdir(exist_ok=True)
+            for kind in KINDS:
+                keep = [l for l in lines[kind] if src_of[json.loads(l)["session_id"]] in sources]
+                (folder / f"{kind}_{split}.jsonl").write_text("".join(keep), encoding="utf-8")
+
+
+def model_files() -> dict[str, list[Path]]:
+    return {m: [HANDOFF / f"model_{m}" / f"{kind}_{split}.jsonl" for split in E.TRAIN_SIDE for kind in KINDS]
+            for m in MODELS}
 
 
 def data_files() -> dict[str, tuple[Path, Path, Path]]:
@@ -119,6 +146,14 @@ def summarize() -> dict:
         "moved_by_near_duplicates": dict(moved),
         "recorded_values_on_both_sides": len(export["recorded_values_on_both_sides"]),
         "near_duplicate_pairs": dict(Counter(p["rule"] for p in export["near_duplicates"]["pairs"])),
+        "models": {m: {"sources": list(MODELS[m]),
+                       **{f"{what}_{split}": sum(t[split][x] for x in MODELS[m])
+                          for what, t in (("sessions", table(sessions_n)), ("gold", table(gold_n)),
+                                          ("negatives", table(neg_n))) for split in E.TRAIN_SIDE},
+                       "privesc_share_of_train_gold": round(gold_n["train", "privesc"] /
+                                                            sum(gold_n["train", x] for x in MODELS[m]), 4),
+                       "sha256": {p.relative_to(HANDOFF).as_posix(): sha256(p) for p in paths}}
+                   for m, paths in model_files().items()},
         "sha256": {(p.relative_to(ROOT).as_posix()): sha256(p) for key in files for p in files[key]},
         "sha256_manifests": {name: sha256(p) for name, p in manifests.items()},
     }
@@ -146,14 +181,32 @@ def readme(s: dict) -> str:
            "`metric-detection/scripts/build_ml_handoff.sh`.", "",
            "## 무엇이 어디에 있나", "",
            "| 위치 | split | 쓰는 곳 |", "|---|---|---|",
-           "| `ml_handoff/sessions_*.jsonl`, `gold_*.jsonl`, `labels_*.jsonl` | train, val | 학습과 모델 선택(조기 종료) |",
+           "| `ml_handoff/model_A/` | train, val | **모델 A** 학습과 모델 선택(조기 종료): 손 템플릿 + privesc |",
+           "| `ml_handoff/model_B/` | train, val | **모델 B** 학습과 모델 선택: 손 템플릿 + LLM 템플릿 + privesc |",
+           "| `ml_handoff/sessions_*.jsonl`, `gold_*.jsonl`, `labels_*.jsonl` | train, val | export 원본. `model_B/`와 바이트까지 같다. 학습에는 `model_A/`·`model_B/`를 쓴다 |",
            "| `data_test/sessions_mleval_<입력>_<split>.jsonl`, `data_answer/gold_mleval_…`, `labels_mleval_…` | test, test_ood | 평가 전용. 학습에 쓰지 않는다 |",
            "", "형식(필드 설명)은 아래 \"파일 형식\" 절에 있다. 출처는 세 가지다.", "",
            "- **손 템플릿**(`group_id`가 `hand-`): 사람이 직접 쓴 경계 규칙 세션 160개 × 값 변형 5.",
            "- **LLM 템플릿**(`c`, `o`, `a`, `b`, `p`로 시작): Claude가 카드대로 쓴 템플릿 × 값 변형 3(분포 이동 `o`는 2). `c`는 파일럿, `o`는 분포 이동 test,",
            "  `a`는 자연어·문서 칸 보강, `b`는 설정 파일의 일반 값 음성, `p`는 개인정보 음성 묶음이다.",
            "- **privesc**(`privesc-<시나리오>`): 비밀을 심어 둔 리눅스 VM에서 실제 에이전트가 권한 상승을 푼 기록. train 정답의 30% 이하로 표본 추출했다.",
-           "", "## 수", "", "### split × 출처별 세션 / 정답 span", "",
+           "", "## 모델 A와 B", "",
+           "두 모델을 같은 설정으로 학습해 **LLM 템플릿을 더한 효과**를 본다. 두 폴더 모두 `sessions_`, `gold_`, `labels_` × `train`, `val` 6개 파일이고,",
+           "줄은 export 파일에서 그대로 골라 옮긴 것이다. **privesc 세션은 A와 B가 완전히 같다**(30% 상한을 B의 합성 train 정답 기준으로 한 번만 뽑았다).",
+           "그래서 A에서는 privesc 비중이 더 크다. privesc에는 val이 없어 **A의 val은 손 템플릿뿐**이다.",
+           "**평가 파일(test, test_ood)은 A·B 공통**이다(LLM 템플릿 test·test_ood도 A로 똑같이 채점한다).", "",
+           "| 모델 | 폴더 | 출처 | train 세션 | train 정답 | val 세션 | val 정답 | train 정답 중 privesc |",
+           "|---|---|---|---|---|---|---|---|"]
+    for m, d in s["models"].items():
+        out.append(f"| {m} | `ml_handoff/model_{m}/` | {MODEL_KO[m]} | {d['sessions_train']:,} | {d['gold_train']:,} | "
+                   f"{d['sessions_val']:,} | {d['gold_val']:,} | {100 * d['privesc_share_of_train_gold']:.1f}% |")
+    out += ["", "모델별 파일 sha256:", "", "| 파일 | " + " | ".join(f"모델 {m}" for m in s["models"]) + " |",
+            "|---|" + "---|" * len(s["models"])]
+    names = list(next(iter(s["models"].values()))["sha256"])
+    for f in names:
+        out.append(f"| `{f.split('/', 1)[1]}` | " + " | ".join(f"`{d['sha256'][f'model_{m}/' + f.split('/', 1)[1]]}`"
+                                                        for m, d in s["models"].items()) + " |")
+    out += ["", "## 수", "", "### split × 출처별 세션 / 정답 span", "",
            "| split | " + " | ".join(f"{SOURCE_KO[x]} 세션" for x in SOURCES) + " | " +
            " | ".join(f"{SOURCE_KO[x]} 정답" for x in SOURCES) + " | 합계 세션 | 합계 정답 |",
            "|---|" + "---|" * (2 * len(SOURCES) + 2)]
@@ -244,6 +297,15 @@ def compare(new: dict, old: dict) -> list[str]:
             for f in sorted(set(new[key]) | set(old.get(key, {}))):
                 if new[key].get(f) != old.get(key, {}).get(f):
                     diffs.append(f"sha256 {f}: expected {old.get(key, {}).get(f)}, got {new[key].get(f)}")
+        elif key == "models":
+            for m in sorted(set(new[key]) | set(old.get(key, {}))):
+                a, b = new[key].get(m, {}), old.get(key, {}).get(m, {})
+                for f in sorted(set(a.get("sha256", {})) | set(b.get("sha256", {}))):
+                    if a.get("sha256", {}).get(f) != b.get("sha256", {}).get(f):
+                        diffs.append(f"sha256 ml_handoff/{f}: expected {b.get('sha256', {}).get(f)}, "
+                                     f"got {a.get('sha256', {}).get(f)}")
+                if {k: v for k, v in a.items() if k != "sha256"} != {k: v for k, v in b.items() if k != "sha256"}:
+                    diffs.append(f"model {m} counts differ")
         elif new.get(key) != old.get(key):
             diffs.append(f"{key} differs")
     return diffs
@@ -253,6 +315,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("mode", choices=("write", "check"))
     args = parser.parse_args()
+    write_models()
     summary = summarize()
     (HANDOFF / "README.md").write_text(readme(summary), encoding="utf-8")
     if args.mode == "write":
@@ -266,7 +329,8 @@ def main():
     if diffs:
         print("MISMATCH:\n  " + "\n  ".join(diffs))
         sys.exit(1)
-    print(f"OK: {len(summary['sha256'])} data files match {RECORD.relative_to(REPO)}")
+    n = len(summary["sha256"]) + sum(len(m["sha256"]) for m in summary["models"].values())
+    print(f"OK: {n} data files match {RECORD.relative_to(REPO)}")
 
 
 if __name__ == "__main__":
