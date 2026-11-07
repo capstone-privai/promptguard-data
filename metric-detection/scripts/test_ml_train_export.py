@@ -17,6 +17,8 @@ from dataset_build import write_jsonl
 import dataset_verify as V
 import ml_train_build as B
 import ml_train_export as E
+from label_rules import is_common
+import value_gen
 
 SCRIPTS = Path(__file__).resolve().parent
 # A long tool_output shared by two templates: the same context, other values (a near duplicate)
@@ -207,6 +209,15 @@ class ExportTest(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             self.export(guesses, authored)
         self.assertIn("'Qv4!toor'... is on both sides", str(caught.exception))
+
+    def test_weak_list_value_on_both_sides_is_reported(self):
+        weak = next(w for w in value_gen.WEAK if not is_common(w))
+        shared = self.build("weak", [tpl("w0001", "train", f"DB_PASSWORD={{{{PASSWORD={weak}}}}}\n"),
+                                     tpl("w0002", "test", f"DB_PASSWORD={{{{PASSWORD={weak}}}}}\n")])
+        report = self.export(shared)
+        self.assertEqual(report["recorded_values_on_both_sides"], 1)
+        row = json.loads((self.handoff / "manifest.json").read_text())["recorded_values_on_both_sides"][0]
+        self.assertEqual((row["example"], row["weak_list"]), (["w0001", "w0002"], True))
 
     def test_gold_in_tool_input(self):
         clean = self.build("clean", [*CLEAN, {"session_id": "c0005", "meta": {"split": "train"}, "items": [

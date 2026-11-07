@@ -11,7 +11,8 @@ Every check runs on all inputs before anything is written, and if one fails noth
               rule must be built again)
   groups      a group_id (and a session_id) in one input file only, and a group in one split
   values      no gold value that is not common (label_rules.is_common) on both sides; one that only recorded
-              sessions share is reported instead (the agent's guesses, the same in every privesc scenario)
+              sessions share is reported instead (the agent's guesses, the same in every privesc scenario), and so
+              is one of value_gen.WEAK (a short fixed list of weak passwords, as ml_train_build verify allows)
   tool_input  no gold in a tool_input
   ood         nothing of the shifted test on the training side: card_config.toml [ood] contexts, tool output format
               and kinds (also as the |of= of a prefix negative), catalog.jsonl rows of status ood
@@ -52,6 +53,7 @@ import dataset_verify as V
 from label_rules import is_common
 import ml_train_build as B
 import ml_train_write as W
+import value_gen
 
 ROOT = Path(__file__).resolve().parents[1]
 ML_DIR = ROOT / "templates" / "ml_train"
@@ -175,7 +177,8 @@ def check_values(c: Corpus, split_of_session: dict[str, str], origin_of_session:
                  errors: list[str]) -> list[dict]:
     """No value that is not common on both sides (LABELING.md: common values are shared on purpose). A value only
     recorded sessions share is reported, without the value: one agent tries the same guesses (toor, changeme) in
-    every privesc scenario."""
+    every privesc scenario. So is a value of value_gen.WEAK (weak_list: true), as ml_train_build.check_splits allows
+    it: the value generator draws it from a short fixed list for every split, and the same agent guesses it."""
     where: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     for sid, iid, start, end, _ in c.spans:
         if sid not in split_of_session:  # dropped
@@ -187,10 +190,12 @@ def check_values(c: Corpus, split_of_session: dict[str, str], origin_of_session:
     for value, sides in where.items():
         if len(sides) < 2:
             continue
-        if all(origin_of_session[sid] == "recorded" for sids in sides.values() for sid in sids):
+        recorded = all(origin_of_session[sid] == "recorded" for sids in sides.values() for sid in sids)
+        if recorded or value in value_gen.WEAK:
             reported.append({"value_sha256": hashlib.sha256(value.encode()).hexdigest()[:16],
                              "train_sessions": len(sides["train"]), "eval_sessions": len(sides["eval"]),
-                             "example": [sides["train"][0], sides["eval"][0]]})
+                             "example": [sides["train"][0], sides["eval"][0]],
+                             **({} if recorded else {"weak_list": True})})
         else:
             errors.append(f"gold {value[:20]!r}... is on both sides: {sides['train'][0]} and {sides['eval'][0]}")
     return sorted(reported, key=lambda r: (-r["eval_sessions"], r["value_sha256"]))

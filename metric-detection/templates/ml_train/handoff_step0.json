@@ -1,0 +1,355 @@
+{
+  "gold": {
+    "test": {
+      "hand": 435,
+      "llm": 150,
+      "privesc": 0
+    },
+    "test_ood": {
+      "hand": 0,
+      "llm": 14,
+      "privesc": 2031
+    },
+    "train": {
+      "hand": 3510,
+      "llm": 1284,
+      "privesc": 2053
+    },
+    "val": {
+      "hand": 435,
+      "llm": 180,
+      "privesc": 0
+    }
+  },
+  "gold_by_type": {
+    "test": {
+      "hand": {
+        "ACCESS_KEY": 10,
+        "PASSWORD": 205,
+        "PRIVATE_KEY": 45,
+        "SECRET": 52,
+        "TOKEN": 123
+      },
+      "llm": {
+        "ACCESS_KEY": 9,
+        "PASSWORD": 48,
+        "PRIVATE_KEY": 3,
+        "SECRET": 33,
+        "TOKEN": 57
+      },
+      "privesc": {}
+    },
+    "test_ood": {
+      "hand": {},
+      "llm": {
+        "ACCESS_KEY": 4,
+        "TOKEN": 10
+      },
+      "privesc": {
+        "PASSWORD": 1872,
+        "PRIVATE_KEY": 159
+      }
+    },
+    "train": {
+      "hand": {
+        "ACCESS_KEY": 40,
+        "PASSWORD": 1635,
+        "PRIVATE_KEY": 360,
+        "SECRET": 502,
+        "TOKEN": 973
+      },
+      "llm": {
+        "ACCESS_KEY": 66,
+        "PASSWORD": 516,
+        "PRIVATE_KEY": 72,
+        "SECRET": 279,
+        "TOKEN": 351
+      },
+      "privesc": {
+        "PASSWORD": 2053
+      }
+    },
+    "val": {
+      "hand": {
+        "PASSWORD": 205,
+        "PRIVATE_KEY": 45,
+        "SECRET": 64,
+        "TOKEN": 121
+      },
+      "llm": {
+        "ACCESS_KEY": 9,
+        "PASSWORD": 57,
+        "PRIVATE_KEY": 12,
+        "SECRET": 51,
+        "TOKEN": 51
+      },
+      "privesc": {}
+    }
+  },
+  "inputs": {
+    "hand_v1": {
+      "gold": "e427b0dedd4bf9710557523a97e560d722c6944e7078ce5c41cb6be6307c3704",
+      "labels": "979a1c4d37ad36c477e7d36e39a03f713a86c9999fe91dfe647e9ff9bba125a8",
+      "sessions": "ee3a80c4cd203c6036a9613ed944f93000eca401b64b667fc804339f0bf9d31b"
+    },
+    "privesc": {
+      "gold": "1e98558dfd6fea1d94b97d77bfc717caf32e279874486ab1d19b1ff90fc977f5",
+      "labels": "caa99429f7e883e0e9e047fd148e71724daab450ebbd98abb9ab31ce6902fbdc",
+      "sessions": "8b134202acdde938044258940879cb36d0aa45c59940892914e010edf50e3f8c"
+    },
+    "v1": {
+      "gold": "889dc48859db1cf36dc29f8dd1c4a30773e0303d5e4191fcd219f5d06f1f782d",
+      "labels": "1065072ced102db892c5bf28733fba4abd71b3e0d8cb001f0b636e0560d1537b",
+      "sessions": "90722a1000954909c0cfb5ccd06a2785c18c67fe76714efa2ed8c75f0882cf37"
+    }
+  },
+  "items": {
+    "test": {
+      "hand": 310,
+      "llm": 618,
+      "privesc": 0
+    },
+    "test_ood": {
+      "hand": 0,
+      "llm": 56,
+      "privesc": 27356
+    },
+    "train": {
+      "hand": 2470,
+      "llm": 5718,
+      "privesc": 25790
+    },
+    "val": {
+      "hand": 305,
+      "llm": 816,
+      "privesc": 0
+    }
+  },
+  "llm_bundles": {
+    "test": {
+      "a": 18,
+      "b": 18,
+      "c": 18,
+      "p": 6
+    },
+    "test_ood": {
+      "o": 10
+    },
+    "train": {
+      "a": 150,
+      "b": 180,
+      "c": 198,
+      "p": 57
+    },
+    "val": {
+      "a": 18,
+      "b": 24,
+      "c": 24,
+      "p": 9
+    }
+  },
+  "llm_context_by_primary_type": {
+    "test": {
+      "command_output|SECRET": 3,
+      "config|SECRET": 6,
+      "config|TOKEN": 3,
+      "config|none": 12,
+      "diff|PASSWORD": 3,
+      "document|ACCESS_KEY": 3,
+      "document|PASSWORD": 9,
+      "natural_language|PASSWORD": 3,
+      "natural_language|SECRET": 6,
+      "natural_language|TOKEN": 6,
+      "natural_language|none": 3,
+      "stacktrace|TOKEN": 3
+    },
+    "test_ood": {
+      "document|ACCESS_KEY": 2,
+      "jupyter_output|none": 2,
+      "key_file|TOKEN": 2,
+      "terraform_state|TOKEN": 2,
+      "terraform_state|none": 2
+    },
+    "train": {
+      "code|PASSWORD": 6,
+      "code|SECRET": 6,
+      "code|none": 15,
+      "command_output|ACCESS_KEY": 3,
+      "command_output|PASSWORD": 6,
+      "command_output|SECRET": 3,
+      "command_output|none": 12,
+      "config|PASSWORD": 36,
+      "config|SECRET": 30,
+      "config|TOKEN": 27,
+      "config|none": 117,
+      "diff|PASSWORD": 9,
+      "diff|SECRET": 3,
+      "diff|TOKEN": 3,
+      "document|PASSWORD": 63,
+      "document|PRIVATE_KEY": 3,
+      "document|SECRET": 3,
+      "document|none": 9,
+      "http|PASSWORD": 3,
+      "http|SECRET": 3,
+      "http|TOKEN": 9,
+      "http|none": 3,
+      "key_file|PRIVATE_KEY": 9,
+      "log|PASSWORD": 9,
+      "log|TOKEN": 12,
+      "log|none": 3,
+      "natural_language|PASSWORD": 27,
+      "natural_language|SECRET": 54,
+      "natural_language|TOKEN": 63,
+      "natural_language|none": 21,
+      "stacktrace|PASSWORD": 12,
+      "stacktrace|none": 3
+    },
+    "val": {
+      "code|ACCESS_KEY": 3,
+      "command_output|ACCESS_KEY": 3,
+      "config|PASSWORD": 3,
+      "config|SECRET": 3,
+      "config|TOKEN": 6,
+      "config|none": 15,
+      "diff|PASSWORD": 3,
+      "document|PASSWORD": 6,
+      "http|none": 3,
+      "log|TOKEN": 3,
+      "natural_language|SECRET": 9,
+      "natural_language|TOKEN": 9,
+      "natural_language|none": 6,
+      "stacktrace|SECRET": 3
+    }
+  },
+  "masks": {
+    "test": {
+      "hand": 0,
+      "llm": 51,
+      "privesc": 0
+    },
+    "test_ood": {
+      "hand": 0,
+      "llm": 4,
+      "privesc": 1361
+    },
+    "train": {
+      "hand": 15,
+      "llm": 327,
+      "privesc": 1406
+    },
+    "val": {
+      "hand": 0,
+      "llm": 63,
+      "privesc": 0
+    }
+  },
+  "missing_inputs": [
+    "templates/ml_train/raw/v1_local.jsonl (Twilio SID가 든 LLM 템플릿, git 제외라 이 저장소에 없음)"
+  ],
+  "moved_by_near_duplicates": {},
+  "near_duplicate_pairs": {
+    "reported": 16
+  },
+  "negatives": {
+    "test": {
+      "hand": 145,
+      "llm": 162,
+      "privesc": 0
+    },
+    "test_ood": {
+      "hand": 0,
+      "llm": 6,
+      "privesc": 14069
+    },
+    "train": {
+      "hand": 1160,
+      "llm": 1755,
+      "privesc": 15594
+    },
+    "val": {
+      "hand": 145,
+      "llm": 210,
+      "privesc": 0
+    }
+  },
+  "privesc_gold_by_scenario": {
+    "test_ood": {
+      "password_reuse": 1160,
+      "ssh_key_reuse": 871
+    },
+    "train": {
+      "capabilities_gtfobins": 105,
+      "cron_wildcard": 172,
+      "cron_writable_script": 175,
+      "password_file": 264,
+      "password_history": 245,
+      "sudo_gtfobins": 181,
+      "suid_gtfobins": 184,
+      "weak_password": 727
+    }
+  },
+  "privesc_sample_target_gold": 2054,
+  "privesc_scenarios": {
+    "test_ood": {
+      "password_reuse": 220,
+      "ssh_key_reuse": 220
+    },
+    "train": {
+      "capabilities_gtfobins": 59,
+      "cron_wildcard": 59,
+      "cron_writable_script": 59,
+      "password_file": 59,
+      "password_history": 58,
+      "sudo_gtfobins": 58,
+      "suid_gtfobins": 58,
+      "weak_password": 58
+    }
+  },
+  "recorded_values_on_both_sides": 12,
+  "sessions": {
+    "test": {
+      "hand": 80,
+      "llm": 60,
+      "privesc": 0
+    },
+    "test_ood": {
+      "hand": 0,
+      "llm": 10,
+      "privesc": 440
+    },
+    "train": {
+      "hand": 640,
+      "llm": 585,
+      "privesc": 468
+    },
+    "val": {
+      "hand": 80,
+      "llm": 75,
+      "privesc": 0
+    }
+  },
+  "sha256": {
+    "data_answer/gold_mleval_hand_v1_test.jsonl": "a4dd6b047602981dca46e527ef2e0e45c44e3484d008f0d73038f97b9de79c81",
+    "data_answer/gold_mleval_privesc_test_ood.jsonl": "50fa2adcd134e7c6b21f8edd2ce0fa454b2ac83e0349d3c4a25956ae375ec2d1",
+    "data_answer/gold_mleval_v1_test.jsonl": "3cccf94b9da11a8fbef3089132bf5ef36da5ca9d21cacafd7ba59c52878d045d",
+    "data_answer/gold_mleval_v1_test_ood.jsonl": "8417de0ad6a888cd66670879346c2f82b95dfd5be54f1b9b39d659b16ce85e4f",
+    "data_test/sessions_mleval_hand_v1_test.jsonl": "7162ff3617b0447be06040ad38f2f51c8fcc000d34fa3bb7a7323b3b9be7a520",
+    "data_test/sessions_mleval_privesc_test_ood.jsonl": "b7a8795617be4acc2dca5f4869a642b3c5456ff44f18b54f00d7f531f45c00d4",
+    "data_test/sessions_mleval_v1_test.jsonl": "83cdcff210033f36eea2fb203a9d3007916f5c9286256dd1b5ee2fde9088ee52",
+    "data_test/sessions_mleval_v1_test_ood.jsonl": "508ae5e9a95bd3db3e8720c164aac68bf431215af8dadd4070d18ec5e1d4c4da",
+    "labels_mleval_hand_v1_test.jsonl": "483a029f5979ebc90234ea581441d22143b3ed6eaaf2d0edde0ced5b0bdbf891",
+    "labels_mleval_privesc_test_ood.jsonl": "6958e1daeed828179178e27e07f7d8c4be8391ce65e7e7f778fdf4ec85cb3f97",
+    "labels_mleval_v1_test.jsonl": "c3c56f792e77748bf8ba8682fe76c38f78992a37c3cc67ba2e7c8a21bc165d1d",
+    "labels_mleval_v1_test_ood.jsonl": "fecdb84713215d1ee42fe467f01ba65620aa26f3832759a8d552e39bee974395",
+    "ml_handoff/gold_train.jsonl": "40d944a6139d6557cb74d34a809cf09891dc33ad5a0ee303b37b343012bb22a0",
+    "ml_handoff/gold_val.jsonl": "ad43c23414cf65b26d7458aa861ac0f1a6382975609a70ff4b4d23e9272b1e9c",
+    "ml_handoff/labels_train.jsonl": "173f5c72eac29ab6922c781fbffa951dafc9f3ae39b0bf60a9e68e60050834f7",
+    "ml_handoff/labels_val.jsonl": "a14200cca6a222b50aa7eb97dd09494651c6babad572b5f0adfda240958ac584",
+    "ml_handoff/sessions_train.jsonl": "447d1aacfafb7efa88c7c6872d189e10d8337c4ad709f6c2d114ab97d9cfafb1",
+    "ml_handoff/sessions_val.jsonl": "dff827ce9b258d3a6e9ce7cccf1fa1e985f9380e27d078c0c7880423173447ef"
+  },
+  "sha256_manifests": {
+    "manifest_mleval.json": "bb8ed4af0e48f23d8239846ad616ed2ad2d35df5204629fdea72c74ae99f9e9c",
+    "ml_handoff/manifest.json": "7d16b5702de38c6ed348e18a8a4f23f87e6db221cae495057fef79de1ba62fef"
+  }
+}

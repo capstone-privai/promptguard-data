@@ -234,6 +234,7 @@ train / val / test-ID 몫은 약 7,500세션이고, 분포 이동 test와 기존
 - 먼저 검사하고, 하나라도 걸리면 아무것도 쓰지 않는다: origin(authored, recorded), group_id가 입력 파일 사이에서 겹치지 않고 한 split에만 있는지, 흔하지 않은 정답 값이 학습 쪽과 평가 쪽에 함께 나오지 않는지, tool_input 정답, 5.1절 특징(카탈로그 ood 행, `[ood]`의 문맥·도구 형식·kind)이 학습 쪽에 없는지.
 - 중복 검사는 값과 숫자를 가린 100자 이상 item의 단어 3-gram으로 한다(datasketch 2.0.0 MinHash LSH 후보 → 정확한 Jaccard). 학습 쪽과 0.8 이상인 test group은 train으로 옮기고(`meta.split_moved_from`), test_ood group은 뺀다. 5.1절 특징이 학습 쪽에 들어가면 안 되기 때문이다.
 - privesc끼리는 옮기지 않고 manifest에 기록만 한다. 같은 VM이라 OOD 시나리오 2개가 학습 시나리오 8개와 각각 1,900~4,000 item이 같고(유사도 1.0), 에이전트의 추측 비밀번호 11개(`toor` 등, test_ood 71세션)가 양쪽에 정답으로 나온다. 규칙을 그대로 적용하면 privesc OOD가 모두 빠진다.
+- `value_gen.WEAK`(약한 비밀번호 고정 목록: `toor`, `changeme`, `rabbitmq` 등)의 값은 `ml_train_build.py verify`처럼 양쪽에 나와도 실패로 보지 않고 manifest에 `weak_list: true`로 기록만 한다(2026-11-07). 값 생성기가 모든 split에서 같은 짧은 목록에서 뽑고, privesc 에이전트도 같은 값을 추측하기 때문이다.
 - 기존 privesc 평가 파일(2,200세션 전체)은 학습 시나리오를 포함하므로 평가에서 뺐다. privesc는 test_ood 시나리오로만 채점한다.
 
 ## 6. 품질 검증

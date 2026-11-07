@@ -41,3 +41,10 @@ tar -czf runs/colab/pg-data-full.tar.gz -C metric-detection data_test data_answe
 - ML 평가 test는 ML 학습 데이터 빌드 전체(손 템플릿 hand_v1 800세션, v1이 있으면 v1 전체), ML 평가 test_ood는 privesc 10개 시나리오 전체 2,200세션이다(split을 나누지 않음). 채점기가 train·val split을 거부하므로 평가용 사본에서 split을 `test`로 바꾸고 원래 값은 `meta.ml_split`에 남긴다.
 - LLM 템플릿(v1)은 git에 없다. 파일이 있으면 ① `V1_TEMPLATES`에 경로를 넣는다.
 - 분류 검수(무작위 30개)는 사람이 ⑨에서 판정을 넣는다. 넣기 전까지 보고서에는 "검수 미완료"로 나온다.
+
+## ML 학습 데이터 0단계 묶음 만들기
+
+[`build_ml_handoff.ipynb`](build_ml_handoff.ipynb)는 저장소를 받고 privesc-llm-data를 내려받아, 지금 커밋된 템플릿만으로 ML 학습 데이터를 빌드·검증·내보내기 한 뒤 데이터 파일 18개의 sha256을 [`handoff_step0.json`](../templates/ml_train/handoff_step0.json)과 대조한다. API는 부르지 않고 GPU도 필요 없다(CPU로 약 2분). 같은 단계를 셸에서는 `bash metric-detection/scripts/build_ml_handoff.sh`로 돌린다.
+
+- train·val은 `metric-detection/ml_handoff/`, test·test_ood는 `data_test/`·`data_answer/`의 `sessions_mleval_*`에 생긴다. 수·비율·한계는 `ml_handoff/README.md`에 있다.
+- 결과에는 실제 형식의 가짜 비밀값과 privesc의 SSH 키가 들어 있다. git에 올리지 않고, ⑨에서 Drive에 복사할 때도 공유 폴더를 피한다.
