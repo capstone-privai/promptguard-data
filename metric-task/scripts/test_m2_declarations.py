@@ -32,6 +32,36 @@ class DeclarationTests(unittest.TestCase):
         for text in cases:
             with self.subTest(text=text[:25]): self.fails(text)
 
+    def test_overlapping_shell_references_stop_before_enclosing_quote(self):
+        for reference in ('$AUDIT_REF', '${AUDIT_REF}'):
+            for quote in ('"', "'"):
+                text = 'curl -H ' + quote + 'PRIVATE-TOKEN: ' + reference + quote + ' https://audit.invalid/api\n'
+                with self.subTest(reference=reference, quote=quote):
+                    self.assertEqual(audit.audit_text(text, set(), use_gitleaks=False), [])
+                    self.assertTrue(audit.candidates(text))
+                    self.assertTrue(all(text[c.start:c.end] == reference for c in audit.candidates(text)))
+
+    def test_bare_assignments_preserve_literal_quotes(self):
+        for value in ("audit'BoundaryValue", 'audit"BoundaryValue', "auditBoundaryValue'"):
+            text = 'PASSWORD=' + value + '\n'
+            with self.subTest(length=len(value)):
+                self.assertIn(value, [text[c.start:c.end] for c in audit.candidates(text)])
+                self.assertEqual(audit.audit_text(text, {value}, use_gitleaks=False), [])
+
+    def test_overlapping_nested_assignments_preserve_real_literals(self):
+        harmless = 'auditBoundaryValue'
+        cases = [
+            ('curl -H "PRIVATE-TOKEN: ' + harmless + '" https://audit.invalid/api', harmless),
+            ("curl -H 'PRIVATE-TOKEN: " + harmless + "' https://audit.invalid/api", harmless),
+            ('- credential: `TOKEN=' + harmless + '`', harmless),
+            ('config = {"api_key": "' + harmless + '"}', harmless),
+            ('AUTH_SECRETS = ("' + harmless + '", "anotherHarmlessValue")', '("' + harmless + '"'),
+        ]
+        for index, (text, expected) in enumerate(cases):
+            with self.subTest(case=index):
+                self.assertTrue(audit.audit_text(text, set(), use_gitleaks=False))
+                self.assertIn(expected, [text[c.start:c.end] for c in audit.candidates(text)])
+
     def test_provider_without_credential_slot(self):
         for kind in ['github_pat','gitlab_pat','slack_token','stripe_publishable','private_key']:
             value=mt.secretgen.make_secrets('declaration-regressions',{'credential':{'kind':kind}})['credential'].value
@@ -162,10 +192,12 @@ class DeclarationTests(unittest.TestCase):
             self.assertTrue(any('shorter than 8 or common' in e for e in audit.audit_task(t2, ws, use_gitleaks=False)))
 
             # Both meta.none_only=True and explicit weak designation on that secret are required.
-            t3 = copy.deepcopy(base_task)
+            t3 = copy.deepcopy(t1)
             t3.spec['meta']['none_only'] = True
             t3.spec['secrets']['db_password']['weak'] = True
             t3.secrets['db_password'].value = 'abc123'
+            t3.secrets = mt.secretgen.make_secrets(t3.id, t3.spec['secrets'])
+            built = mt.build(t3, ws)
             self.assertEqual(mt.lint_task(t3, built), [])
             self.assertEqual(audit.audit_task(t3, ws, use_gitleaks=False), [])
 
@@ -197,7 +229,7 @@ class DeclarationTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     m2.cmd_run(args)
             play_args = argparse.Namespace(task='n00-none-only-test', condition='gold', system_root=None)
-            with self.assertRaises(SystemExit):
+            with mock.patch.object(mt, 'load_tasks', return_value=[none_only_task]), self.assertRaises(SystemExit):
                 m2.cmd_play(play_args)
 
 

@@ -7,6 +7,7 @@ historical blob/message, including deleted files. Diagnostics never print candid
 """
 from __future__ import annotations
 import argparse
+import ast
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -30,7 +31,8 @@ class Candidate:
 # Prefix patterns only discover candidates; label_rules determines contextual exclusions.
 PROVIDER=re.compile(r'(?<![\w])(?:github_pat_[A-Za-z0-9_]{35,}|gh[pousr]_[A-Za-z0-9]{30,}|glpat-[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|[sp]k_(?:live|test)_[A-Za-z0-9]{20,}|whsec_[A-Za-z0-9]{20,}|GOCSPX-[A-Za-z0-9_-]{20,}|dckr_pat_[A-Za-z0-9_-]{20,}|hvs\.[A-Za-z0-9_-]{20,}|AKIA[A-Z0-9]{16}|https://hooks\.slack\.com/services/[^\s\"\'<>]+)')
 PEM=re.compile(r'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----(?:(?!-----END)[\s\S])+?-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----')
-ASSIGN=re.compile(r'''(?im)(?P<key>[A-Za-z_][\w.-]*)["']?\s*[:=]\s*(?P<value>"(?:\\.|[^"\\\n])*"|'[^'\n]*'|[^\s,;\n]+)''')
+# Bare YAML values stay on the key line; quoted JSON values may wrap to the next line.
+ASSIGN=re.compile(r'''(?im)(?P<key>[A-Za-z_][\w.-]*)["']?\s*[:=](?=[ \t]*\S|\s*["'])\s*(?P<value>"(?:\\.|[^"\\\n])*"|'[^'\n]*'|[^\s,;\n]+)''')
 AUTH=re.compile(r'(?i)(?:Authorization["\']?\s*[:=]\s*["\']?|PRIVATE-TOKEN:\s*)(?:(?:Bearer|Basic|token)\s+)?([^\s"\'\r\n]+)')
 URL=re.compile(r'[a-z][\w+.-]*://[^\s/:@"\']+:([^\s@"\']+)@')
 COOKIE=re.compile(r'(?i)\b(?:session(?:_?id)?|auth(?:_token)?|access_token|refresh_token)=([^\s;"\']+)')
@@ -43,6 +45,35 @@ CREDENTIAL_KEY=re.compile(r'(?i)(?:password|passwd|passphrase|(?:^|_)pass$|(?:^|
 # has its own provider shape still goes through PROVIDER extraction independently.
 STRUCTURAL_KEY=re.compile(r'(?i)(?:_display|_min_length|_max_length|_ttl(?:_seconds)?|_path|_file|_sha256|_hash|_name|_type|_format|_count)$|^(?:max_tokens|token_ttl_seconds)$')
 IDENT_KEY=re.compile(r'(?i)(?:client_?id|request_?id|resource_?id|source_commit|commit_hash|username|user|host|project_id|client_email)$')
+
+
+def python_reference_starts(text):
+    """Only expression positions proven by Python syntax, never bare .env/YAML values."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return set()
+    lines = text.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    def start(node):
+        # AST columns count UTF-8 bytes, while declaration spans count characters.
+        prefix = lines[node.lineno - 1].encode()[:node.col_offset].decode()
+        return offsets[node.lineno - 1] + len(prefix)
+    def reference(node):
+        return isinstance(node, (ast.Name, ast.Attribute, ast.Subscript))
+    starts = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Tuple) and node.elts and all(reference(x) for x in node.elts):
+            starts.add(start(node))
+        elif isinstance(node, ast.Dict):
+            starts.update(start(value) for value in node.values if reference(value))
+        elif isinstance(node, ast.FormattedValue):
+            pos = start(node.value) - 1
+            if text[pos:pos + 1] == "{":
+                starts.add(pos)
+    return starts
 
 
 def candidates(text):
@@ -59,11 +90,27 @@ def candidates(text):
             a,b=m.span(group)
             if text[a:a+1] in ('"',"'"): a,b=a+1,b-1
             add(a,b,name)
-    for m in ASSIGN.finditer(text):
+    reference_starts = python_reference_starts(text)
+    # Overlap preserves a real assignment inside Markdown's backtick-delimited command.
+    assignments = re.compile("(?=" + ASSIGN.pattern.removeprefix("(?im)") + ")", re.I | re.M)
+    for m in assignments.finditer(text):
         key=m['key']
         if not CREDENTIAL_KEY.search(key) or STRUCTURAL_KEY.search(key) or IDENT_KEY.search(key): continue
         a,b=m.span('value')
-        if text[a:a+1] in ('"',"'"): a,b=a+1,b-1
+        if a in reference_starts:
+            continue
+        raw = text[a:b]
+        if raw.startswith("`") and raw.endswith("`"):
+            nested = ASSIGN.match(raw[1:-1])
+            if nested and CREDENTIAL_KEY.search(nested['key']):
+                continue  # its inner literal is independently extracted by the overlapping scan
+        if text[a:a+1] in ('"',"'"):
+            a,b=a+1,b-1
+        elif text[b-1:b] in ('"', "'") and (a, b-1) in found:
+            # An independent extractor proves this is an enclosing closing quote,
+            # e.g. a shell header's unquoted variable reference or literal token.
+            # Keep quotes within bare literals when no such boundary is evidenced.
+            b -= 1
         if any(x<=a and b<=y for x,y in blocks): continue
         add(a,b,'assignment')
     # Never count a PEM body/quoted escaped block twice as a partial assignment.
@@ -171,19 +218,7 @@ def surfaces(task,ws):
 def audit_task(task,ws, *, use_gitleaks=True):
     import m2_tasks as mt
     declared={s.value for s in task.secrets.values()}
-    problems=[]
-    weak_declared=mt.declared_weak_secrets(task)
-    unknown_weak=sorted(weak_declared - set(task.secrets))
-    if unknown_weak:
-        problems.append(f"unknown weak_secrets: {', '.join(unknown_weak)}")
-    if weak_declared and task.meta.get('none_only') is not True:
-        problems.append('weak secrets require meta.none_only = true')
-    if any(s_spec.get('kind')=='literal' for s_spec in task.spec.get('secrets',{}).values()) and task.meta.get('none_only') is not True:
-        problems.append('literal secrets require meta.none_only = true')
-    allowed_weak=mt.allowed_weak_secrets(task)
-    for name,s in task.secrets.items():
-        if name not in allowed_weak and (len(s.value)<8 or labels.is_common(s.value)):
-            problems.append(f'secret {name}: shorter than 8 or common')
+    problems=mt.secret_declaration_problems(task)+mt.weak_value_problems(task)
     # Batch scanner per surface: prevents fragments in large stdin from losing a provider key.
     texts=surfaces(task,ws)
     for surface,text in texts.items():

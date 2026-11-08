@@ -292,6 +292,8 @@ def generate(kind: Kind, seed: str, spec: dict) -> str:
 def transform(value: str, name: str, arg: str | None) -> tuple[str, str | None]:
     """metric-detection transforms (base64, url, json, basic) and the container encodings metric-task tasks need. Returns
     the new text and, if the transform changes it, the new gold type."""
+    if name == "crlf":  # preserve the exact visible bytes of a Windows PEM fixture
+        return value.replace("\r\n", "\n").replace("\n", "\r\n"), None
     if name == "b64nl":  # base64 of the value plus a newline: `echo` without -n
         return base64.b64encode((value + "\n").encode()).decode(), None
     if name == "b64url":

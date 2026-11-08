@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+import json
 import re
 
 WORDLISTS = Path(__file__).resolve().parent / "wordlists"
@@ -463,73 +464,274 @@ def is_common(value: str, session_identifiers: set[str] = frozenset()) -> bool:
     return v.isdigit() or v in common_words() or v in session_identifiers
 
 
-# Only a command's inline sed script supplies substitution delimiters. A bare
-# relative directory such as s/team/archive/ is still a filesystem path.
-SED_COMMAND = re.compile(r"(?:^|[\s\"'`;&|(])(?:/[\w./-]+/)?sed[ \t]+")
+# Only actual shell commands' inline scripts supply substitution delimiters.
+# Keep original character ranges through JSON and shell unquoting: tool_input
+# spans refer to the serialized text, never to a decoded copy.
+SED_ADDRESS = r"(?:\d+|\$|/(?:\\.|[^/\\])*/)"
 SED_EXPRESSION = re.compile(
-    r"(?:^|;)[ \t]*(?:\d+(?:,\d+)?|\$)?s/"
+    rf"[ \t]*(?:{SED_ADDRESS}(?:[ \t]*,[ \t]*{SED_ADDRESS})?)?[ \t]*!?[ \t]*s/"
     r"(?P<pattern>(?:\\.|[^/\\])*)/(?P<replacement>(?:\\.|[^/\\])*)/"
-    r"[A-Za-z0-9]*[ \t]*(?=;|$)")
+    r"[gIpMim0-9]*[ \t]*(?=[;\n}]|$)")
 
 
-def shell_word(text: str, cursor: int):
-    """One unexpanded shell argument and its original content offsets.
+def _sed_operands(script: str):
+    """Read command boundaries, never semicolons inside append/write text.
 
-    This deliberately handles only inline, single-line scripts. Unknown shell
-    syntax keeps the legacy path classification rather than widening an exception.
+    Commands with a text/filename argument stop inference for the script.
+    Unknown grammar stops inference instead of treating later path text as code.
     """
-    while cursor < len(text) and text[cursor] in ' \t':
-        cursor += 1
-    if cursor >= len(text) or text[cursor] in '\n;|&<>':
-        return None
-    quote = text[cursor] if text[cursor] in "'\"" else None
-    start = cursor + bool(quote)
-    cursor = start
+    cursor = 0
+    header = re.compile(
+        rf"[ \t]*(?:{SED_ADDRESS}(?:[ \t]*,[ \t]*{SED_ADDRESS})?)?[ \t]*!?[ \t]*")
+    while cursor < len(script):
+        if script[cursor] in ' \t;\n{}':
+            cursor += 1
+            continue
+        match = SED_EXPRESSION.match(script, cursor)
+        if match:
+            yield match
+            cursor = match.end()
+            continue
+        address = header.match(script, cursor)
+        command = address.end()
+        if command >= len(script):
+            break
+        char = script[command]
+        if char in 'aicrRwWe':
+            # Text commands can continue onto later lines. Do not reinterpret
+            # their literal content as another substitution command.
+            break
+        if char == '#':
+            end = script.find('\n', command)
+            if end < 0:
+                break
+            cursor = end + 1
+        elif char in 'pdDgGhHxlnNP=zqQ':
+            end = command + 1
+            while end < len(script) and script[end] in ' \t0123456789':
+                end += 1
+            if end < len(script) and script[end] not in ';\n}':
+                break
+            cursor = end
+        else:
+            break
+
+
+def _shell_sources(text: str):
+    """A plain shell fragment, or JSON command fields with decoded offset maps.
+
+    Other JSON strings (notably file_path) are filenames/data, not commands.
+    Parsing a valid JSON object before locating keys avoids matching quoted text
+    that merely contains the word command.
+    """
+    try:
+        document = json.loads(text)
+    except (ValueError, TypeError):
+        return [(text, None)]
+    if not isinstance(document, dict):
+        return []
+    sources = []
+    decoder = json.JSONDecoder()
+    cursor = 0
+    while cursor < len(text):
+        if text[cursor] != '"':
+            cursor += 1
+            continue
+        value, end = decoder.raw_decode(text, cursor)
+        after = end
+        while after < len(text) and text[after].isspace():
+            after += 1
+        if value == 'command' and text[after:after + 1] == ':':
+            start = after + 1
+            while start < len(text) and text[start].isspace():
+                start += 1
+            if text[start:start + 1] == '"':
+                command, command_end = decoder.raw_decode(text, start)
+                positions = []
+                pos = start + 1
+                while pos < command_end - 1:
+                    stop = pos + 1
+                    if text[pos] == '\\':
+                        stop = pos + (6 if text[pos + 1] == 'u' else 2)
+                        # JSON surrogate pairs decode to a single Unicode point.
+                        if (text[pos + 1:pos + 2] == 'u'
+                                and 0xD800 <= int(text[pos + 2:pos + 6], 16) <= 0xDBFF
+                                and text[stop:stop + 2] == '\\u'
+                                and 0xDC00 <= int(text[stop + 2:stop + 6], 16) <= 0xDFFF):
+                            stop += 6
+                    positions.append((pos, stop))
+                    pos = stop
+                sources.append((command, tuple(positions)))
+        cursor = end
+    return sources
+
+
+def _shell_tokens(text: str, positions):
+    """Literal shell words and control operators; quoted controls stay in words.
+
+    Expansions are deliberately opaque. Heredocs need a separate shell grammar,
+    so no exception is inferred from fragments containing a heredoc operator.
+    """
+    tokens = []
+    cursor = 0
     while cursor < len(text):
         char = text[cursor]
-        if char == '\\' and quote != "'":
-            cursor += 2
+        if char in ' \t\r':
+            cursor += 1
             continue
-        if quote and char == quote:
-            return text[start:cursor], start, cursor, cursor + 1
-        if not quote and char in ' \t\n;|&<>\"':
-            return text[start:cursor], start, cursor, cursor
+        if text[cursor:cursor + 2] == '<<':
+            return []
+        if char in '\n;|&()<>':
+            pair = text[cursor:cursor + 2]
+            operator = pair if pair in ('&&', '||', '>>', '>|', '<&', '>&') else char
+            tokens.append((operator, None))
+            cursor += len(operator)
+            continue
+        if char == '#':
+            stop = text.find('\n', cursor)
+            cursor = len(text) if stop < 0 else stop
+            continue
+        word, offsets = [], []
+        quote = None
+        while cursor < len(text):
+            char = text[cursor]
+            if quote is None and char in ' \t\r\n;|&()<>':
+                break
+            if char in "'\"" and (quote is None or quote == char):
+                quote = char if quote is None else None
+                cursor += 1
+                continue
+            escaped = False
+            if char == '\\' and quote != "'" and cursor + 1 < len(text):
+                following = text[cursor + 1]
+                if quote is None or following in '$`"\\\n':
+                    cursor += 1
+                    if following == '\n':
+                        cursor += 1
+                        continue
+                    char = following
+                    escaped = True
+            # No attempt to execute or recursively interpret shell expansions.
+            if char in '$`' and quote != "'" and not escaped:
+                return []
+            word.append(char)
+            offsets.append((cursor, cursor + 1) if positions is None else positions[cursor])
+            cursor += 1
+        if quote is not None:
+            return []
+        tokens.append((''.join(word), tuple(offsets)))
+    return tokens
+
+
+def _sed_scripts(words):
+    """Script arguments only; -f and -e both disable implicit script selection."""
+    scripts = []
+    supplied = False
+    cursor = 0
+    while cursor < len(words):
+        value, offsets = words[cursor]
         cursor += 1
-    if quote:
-        return None
-    return text[start:cursor], start, cursor, cursor
+        if value == '--':
+            if not supplied and cursor < len(words):
+                scripts.append(words[cursor])
+            break
+        if value.startswith('--expression='):
+            prefix = len('--expression=')
+            scripts.append((value[prefix:], offsets[prefix:]))
+            supplied = True
+            continue
+        if value in ('--expression', '--file'):
+            if cursor == len(words):
+                break
+            if value == '--expression':
+                scripts.append(words[cursor])
+            supplied = True
+            cursor += 1
+            continue
+        if value.startswith('--file='):
+            supplied = True
+            continue
+        if value.startswith('--'):
+            if value in ('--quiet', '--silent', '--regexp-extended', '--posix',
+                         '--sandbox', '--unbuffered', '--null-data', '--in-place') or value.startswith('--in-place='):
+                continue
+            break
+        if value.startswith('-') and value != '-':
+            option = 1
+            while option < len(value):
+                flag = value[option]
+                option += 1
+                if flag in 'ef':
+                    supplied = True
+                    if option < len(value):
+                        argument = (value[option:], offsets[option:])
+                    elif cursor < len(words):
+                        argument = words[cursor]
+                        cursor += 1
+                    else:
+                        return scripts
+                    if flag == 'e':
+                        scripts.append(argument)
+                    break
+                if flag == 'i':
+                    # GNU attaches a suffix; BSD also accepts a separate empty
+                    # or .bak suffix. Never treat that suffix as a script.
+                    if option == len(value) and cursor < len(words) and (
+                            not words[cursor][0] or words[cursor][0].startswith('.')):
+                        cursor += 1
+                    break
+                if flag not in 'nErusz':
+                    return scripts
+            continue
+        if not supplied:
+            scripts.append((value, offsets))
+        break  # this and subsequent positional arguments are input files
+    return scripts
 
 
 @lru_cache(maxsize=256)
 def sed_substitution_values(text: str) -> tuple[tuple[int, int], ...]:
-    """Value spans in proven inline sed substitutions; excludes input file args."""
+    """Whole operands of inline sed substitutions, in the original text."""
     values = []
-    for command in SED_COMMAND.finditer(text):
-        cursor = command.end()
-        explicit_script = False
-        while (word := shell_word(text, cursor)) is not None:
-            value, start, end, cursor = word
-            if value == '-f' or value.startswith('--file'):
-                break
-            if value in ('-e', '--expression'):
-                explicit_script = True
+    for source, positions in _shell_sources(text):
+        tokens = _shell_tokens(source, positions)
+        segment = []
+        segments = []
+        for token in tokens:
+            if token[1] is None and token[0] in ('\n', ';', '|', '&', '(', ')', '&&', '||'):
+                if segment:
+                    segments.append(segment)
+                segment = []
+            else:
+                segment.append(token)
+        if segment:
+            segments.append(segment)
+        for segment in segments:
+            # Redirection operands are paths, including when they precede sed.
+            words = []
+            cursor = 0
+            while cursor < len(segment):
+                value, offsets = segment[cursor]
+                if offsets is None:
+                    while cursor < len(segment) and segment[cursor][1] is None:
+                        cursor += 1
+                    cursor += 1
+                    continue
+                words.append(segment[cursor])
+                cursor += 1
+            while words and re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', words[0][0]):
+                words.pop(0)
+            if not words or not re.fullmatch(r'(?:/[\w./-]+/)?sed', words[0][0]):
                 continue
-            if not explicit_script and (not value or value.startswith('-')):
-                continue
-            matches = list(SED_EXPRESSION.finditer(value))
-            if not matches or ''.join(m.group() for m in matches) != value:
-                break
-            for match in matches:
-                for group in ('pattern', 'replacement'):
-                    a, b = match.span(group)
-                    values.append((start + a, start + b))
-            if not explicit_script:
-                break
-            explicit_script = False
-            # With -e, only another -e option can introduce a further script.
-            next_word = shell_word(text, cursor)
-            if next_word is None or next_word[0] not in ('-e', '--expression'):
-                break
+            for script, offsets in _sed_scripts(words[1:]):
+                for match in _sed_operands(script):
+                    for group in ('pattern', 'replacement'):
+                        a, b = match.span(group)
+                        if a < b:
+                            values.append((offsets[a][0], offsets[b - 1][1]))
+                        else:
+                            # Keep pairs for path_components, including s//x/.
+                            values.append((offsets[a][0], offsets[a][0]))
     return tuple(values)
 
 

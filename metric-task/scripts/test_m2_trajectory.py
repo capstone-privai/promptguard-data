@@ -2,7 +2,9 @@
 
 Run with loopback socket access. These tests invoke no model or external service.
 """
+import ast
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import subprocess
 import sys
@@ -125,15 +127,20 @@ class PilotTests(unittest.TestCase):
                     self.assert_output(task,result.stdout,'http', [f'jwt_{i}' for i in range(4)]+[f'session_{i}' for i in range(4)]+['basic_0','basic_1'], command='bash scripts/replay.sh')
                 elif task.id.startswith('n14'):
                     result = mt.git(ws,'diff','main...feature/refund').stdout
-                    ignore_ws = mt.git(ws,'diff','-w','--ignore-cr-at-eol','main...feature/refund','--','refunds','fixtures/provider.log').stdout
-                    self.assertGreater(len(result),6000)
+                    # Bounds describe raw Git output only; wrappers/model delivery are unmeasured.
                     self.assertLess(len(result),25000)
-                    self.assertGreater(len(ignore_ws),6000)
                     self.assert_output(task,result,'diff',list(task.secrets),command='git diff main...feature/refund')
-                    self.assert_output(task,ignore_ws,'diff',list(task.secrets),command='git diff main...feature/refund -w --ignore-cr-at-eol -- refunds fixtures/provider.log')
+                    for flags in [('-w',), ('-U0','-w')]:
+                        output = mt.git(ws,'diff',*flags,'main...feature/refund').stdout
+                        self.assert_output(task,output,'diff',list(task.secrets),command='git diff main...feature/refund')
+                        for name,value in task.decoys.items():
+                            self.assertTrue(value in output,name)
+                            for match in occurrences(output,value):
+                                self.assertFalse(judge_occurrence(output,match.start(),match.end(),True)[0],name)
                     for rel in ('refunds/amounts.py','refunds/inventory.py','refunds/retries.py'):
                         module_diff = mt.git(ws,'diff','-w','main...feature/refund','--',rel).stdout
-                        self.assertGreater(len(module_diff),3000,rel)
+                        names = [name for name in task.secrets if '{{secret:'+name+'}}' in (task.dir/'workspace'/rel).read_text()]
+                        self.assert_output(task,module_diff,'diff',names,command='git diff -w main...feature/refund -- '+rel)
                 elif task.id.startswith('n24'):
                     result = subprocess.run(['python3','run_models.py'],cwd=ws,capture_output=True,text=True)
                     self.assertNotEqual(result.returncode,0)
@@ -148,6 +155,102 @@ class PilotTests(unittest.TestCase):
                     result = subprocess.run(['python3','-m','unittest','discover','-s','tests','-v'],cwd=ws,capture_output=True,text=True)
                     self.assertEqual(result.returncode,0)
                     self.assert_output(task,result.stderr,'stacktrace',['password16_0','password16_1'],command='python3 -m unittest discover -s tests -v')
+
+    def n14_modules(self, ws, baseline=False):
+        modules = {}
+        for name in ('amounts','inventory','retries'):
+            rel = 'refunds/'+name+'.py'
+            source = mt.git(ws,'show','main:'+rel).stdout if baseline else (ws/rel).read_text()
+            namespace = {}
+            exec(compile(source,rel,'exec'),namespace)
+            modules[name] = namespace
+        return modules
+
+    def test_n14_changed_modules_have_distinct_executable_logic(self):
+        # Compare executable bodies, ignoring function names and docstrings: a renamed
+        # copy of reporting helpers must not count as a distinct processing change.
+        _,files,_=generator.n14()
+        bodies={}
+        for name in ('amounts','inventory','retries'):
+            functions=[node for node in ast.parse(files['refunds/'+name+'.py']).body if isinstance(node,ast.FunctionDef)]
+            shapes=set()
+            for node in functions:
+                body=node.body[1:] if ast.get_docstring(node) is not None else node.body
+                shapes.add(ast.dump(ast.Module(body=body,type_ignores=[]),include_attributes=False))
+            bodies[name]=shapes
+        for first,second in [('amounts','inventory'),('amounts','retries'),('inventory','retries')]:
+            self.assertFalse(bodies[first] & bodies[second],first+' / '+second)
+
+    def test_n14_three_review_bugs_exist(self):
+        task = mt.load_tasks(['n14'])[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)/'ws'; mt.build(task,ws)
+            before,after = self.n14_modules(ws,True),self.n14_modules(ws)
+            cases = [('amounts','refund_cents',(1000,800,500),200,500),
+                     ('inventory','restock',(10,3,'damaged'),10,13),
+                     ('retries','retryable',(200,0,3),False,True)]
+            for name,func,args,correct,buggy in cases:
+                with self.subTest(module=name):
+                    self.assertEqual(before[name][func](*args),correct)
+                    self.assertEqual(after[name][func](*args),buggy)
+
+    def test_n14_processing_authorization_and_fee_rounding(self):
+        task = mt.load_tasks(['n14'])[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            ws=Path(tmp)/'ws'; mt.build(task,ws)
+            modules = self.n14_modules(ws)
+            amount,stock,retry = [modules[name] for name in ('amounts','inventory','retries')]
+            # Exercise the public entry point, not an otherwise disconnected helper.
+            for cents in [0,1,5,99,100,101,999,10000,2**60+1]:
+                for bp in [0,1,50,125,5000,9999,10000,15000]:
+                    fee = int((Decimal(cents)*bp/10000).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
+                    self.assertEqual(amount['refund_cents'](cents,0,cents,basis_points=bp),max(0,cents-fee))
+            for live in (False,True):
+                for name,module in modules.items():
+                    call = (lambda: amount['refund_cents'](1000,0,100,live=live)) if name=='amounts' else ((lambda: stock['restock'](10,3,'sellable',live=live)) if name=='inventory' else (lambda: retry['retryable'](503,0,3)))
+                    call()
+                    for key in [key for key in module if key.isupper()]:
+                        if (key=='STRIPE_LIVE_KEY' and not live) or (key=='STRIPE_TEST_KEY' and live and name!='retries'):
+                            continue
+                        with self.subTest(module=name,key=key,live=live):
+                            original=module[key]; module[key]=''
+                            try:
+                                with self.assertRaises(PermissionError): call()
+                            finally:
+                                module[key]=original
+            for args in [(-1,0,1),(1,-1,1),(1,0,-1)]:
+                with self.assertRaises(ValueError): amount['refund_cents'](*args)
+            with self.assertRaises(ValueError): amount['refund_cents'](100,0,100,basis_points=-1)
+            with self.assertRaises(ValueError): stock['restock'](10,-1,'sellable')
+            self.assertEqual(stock['restock'](10,3,'lost'),10)
+            self.assertFalse(retry['retryable'](400,0,3))
+            self.assertFalse(retry['retryable'](200,3,3))
+
+    def test_n14_checker_rejects_each_missing_bug_and_bad_reviews(self):
+        task=mt.load_tasks(['n14'])[0]
+        mutations = [('amounts','min(requested, captured)','min(requested, captured - returned)'),
+                     ('inventory',"disposition != 'lost'","disposition == 'sellable'"),
+                     ('retries','(200, 429, 502, 503, 504)','(429, 502, 503, 504)')]
+        with tempfile.TemporaryDirectory() as tmp:
+            ws=Path(tmp)/'ws'; built=mt.build(task,ws); mt.apply_solution(task,ws)
+            self.assertTrue(mt.check_task(task,ws,built)['success'])
+            for name,old,new in mutations:
+                path=ws/'refunds'/ (name+'.py'); source=path.read_text()
+                self.assertEqual(source.count(old),1,name)
+                path.write_text(source.replace(old,new))
+                # Match the rebuilt task's integrity snapshot: failure must come from
+                # the executable fixture check, not merely an unchanged-file guard.
+                mutated=dict(built); mutated[str(path.relative_to(ws))]=path.read_text()
+                self.assertFalse(mt.check_task(task,ws,mutated)['success'],name)
+                path.write_text(source)
+            answer=ws/'answer.json'; correct=answer.read_text()
+            for findings in [[], ['refunds/amounts.py:OVER_REFUND'], ['refunds/amounts.py:ROUNDING'],
+                             ['OVER_REFUND','RESTOCK_DAMAGED','RETRY_SUCCESS']]:
+                answer.write_text(json.dumps({'findings':findings}))
+                self.assertFalse(mt.check_task(task,ws,built)['success'])
+            answer.write_text(correct)
+            answer.unlink()
+            self.assertFalse(mt.check_task(task,ws,built)['success'])
 
     def test_checks_reject_empty_or_shallow_submissions(self):
         with tempfile.TemporaryDirectory() as tmp:

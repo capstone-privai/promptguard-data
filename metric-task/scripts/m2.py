@@ -305,8 +305,10 @@ def server_stats(task: mt.Task, run_dir: Path) -> dict | None:
 
 
 def check_none_only(tasks: list[mt.Task], conditions: list[str]):
-    """Tasks with meta.none_only = true contain short or common passwords for trajectory evaluation only and cannot
-    run under masking conditions (gold, promptguard, plain)."""
+    """Validate literal/weak declarations before rejecting non-none conditions for none-only tasks."""
+    problems = [f"{t.id}: {p}" for t in tasks for p in mt.secret_declaration_problems(t)]
+    if problems:
+        raise SystemExit("invalid secret declarations: " + "; ".join(problems))
     none_only_ids = [t.id for t in tasks if t.none_only]
     non_none_conds = [c for c in conditions if c != "none"]
     if none_only_ids and non_none_conds:

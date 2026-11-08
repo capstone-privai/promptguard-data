@@ -1,5 +1,6 @@
 """TLS and OpenSSH key bundle loader with header, footer, CRLF and permission checks."""
 import base64
+import binascii
 from pathlib import Path
 import re
 
@@ -20,6 +21,10 @@ class KeyLoaderError(ValueError):
 
 class MissingHeaderError(KeyLoaderError):
     """Raised when required bundle metadata or PEM BEGIN header is missing."""
+
+
+class TruncatedBodyError(KeyLoaderError):
+    """Raised when a key body is empty, invalid base64 or truncated DER."""
 
 
 class FooterMismatchError(KeyLoaderError):
@@ -51,6 +56,8 @@ def parse_bundle_text(raw_text, *, allow_crlf=True):
             meta[k.strip()] = v.strip()
     if pem_start is None:
         raise MissingHeaderError("missing -----BEGIN ...----- header")
+    if len(lines[pem_start:]) == 1:
+        raise TruncatedBodyError("body was truncated before its first byte")
     key_id = meta.get("Key-Id")
     key_format = meta.get("Key-Format")
     mode_str = meta.get("Key-Mode")
@@ -65,6 +72,8 @@ def parse_bundle_text(raw_text, *, allow_crlf=True):
     end_match = END_RE.match(pem_lines[-1]) if len(pem_lines) >= 2 else None
     if not begin_match:
         raise MissingHeaderError("malformed BEGIN header")
+    if len(pem_lines) == 1:
+        raise TruncatedBodyError("body was truncated before its first byte")
     if not end_match:
         raise FooterMismatchError("missing END footer")
     begin_label = begin_match.group(1)
@@ -72,7 +81,18 @@ def parse_bundle_text(raw_text, *, allow_crlf=True):
     if end_label != begin_label or envelope_end != begin_label:
         raise FooterMismatchError(f"footer mismatch: begin={begin_label!r} end={end_label!r} envelope={envelope_end!r}")
     body = "".join(pem_lines[1:-1])
-    raw_bytes = base64.b64decode(body.encode("ascii"), validate=True)
+    try:
+        raw_bytes = base64.b64decode(body.encode("ascii"), validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise TruncatedBodyError("invalid base64 body") from exc
+    if begin_label == "PRIVATE KEY":
+        if len(raw_bytes) < 2 or raw_bytes[0] != 0x30 or raw_bytes[1] != len(raw_bytes) - 2:
+            raise TruncatedBodyError("incomplete PKCS8 DER sequence")
+    elif begin_label == "OPENSSH PRIVATE KEY":
+        if not raw_bytes.startswith(b"openssh-key-v1\x00"):
+            raise TruncatedBodyError("missing OpenSSH binary envelope")
+    else:
+        raise MissingHeaderError("unsupported BEGIN label")
     return {
         "key_id": key_id,
         "key_format": key_format,
@@ -86,71 +106,5 @@ def parse_bundle_text(raw_text, *, allow_crlf=True):
 def load_key_file(path, *, allow_crlf=True):
     raw_text = Path(path).read_bytes().decode("utf-8")
     return parse_bundle_text(raw_text, allow_crlf=allow_crlf)
-
-
-def tls_orders_state_ids(rows, limit=3):
-    """Orders reporting.
-
-    Unsettled entries remain visible but do not contribute to booked totals.
-    A customer may submit the same basket twice; preserve the first accepted sequence.
-    Input mappings are never mutated; callers may reuse cached snapshots.
-    """
-    selected = [row for row in rows if row.get('state') == 'pending']
-    return [row['id'] for row in selected]
-
-
-def tls_refunds_state_ids(rows, limit=4):
-    """Refunds reporting.
-
-    Capture freezes the unit amount; later catalog edits cannot change it.
-    A return refers to its original capture, and the refundable balance cannot become negative.
-    Input mappings are never mutated; callers may reuse cached snapshots.
-    """
-    selected = [row for row in rows if row.get('state') == 'captured']
-    return [row['id'] for row in selected]
-
-
-def tls_invoices_state_ids(rows, limit=5):
-    """Invoices reporting.
-
-    Returns subtract the original amount, including the original rounding.
-    Issued line amounts stay fixed even if the product catalog changes later.
-    Input mappings are never mutated; callers may reuse cached snapshots.
-    """
-    selected = [row for row in rows if row.get('state') == 'returned']
-    return [row['id'] for row in selected]
-
-
-def tls_shipments_state_ids(rows, limit=6):
-    """Shipments reporting.
-
-    Cancellation before capture creates no movement in the ledger.
-    A damaged return is quarantined and cannot increase sellable inventory.
-    Input mappings are never mutated; callers may reuse cached snapshots.
-    """
-    selected = [row for row in rows if row.get('state') == 'cancelled']
-    return [row['id'] for row in selected]
-
-
-def tls_customers_state_ids(rows, limit=7):
-    """Customers reporting.
-
-    An open dispute keeps its gross amount until the resolution arrives.
-    Archived customers remain addressable by historical ledger movements.
-    Input mappings are never mutated; callers may reuse cached snapshots.
-    """
-    selected = [row for row in rows if row.get('state') == 'disputed']
-    return [row['id'] for row in selected]
-
-
-def tls_balances_state_ids(rows, limit=8):
-    """Balances reporting.
-
-    A reversal must refer to an earlier captured movement.
-    Pending movements stay separate from amounts available for withdrawal.
-    Input mappings are never mutated; callers may reuse cached snapshots.
-    """
-    selected = [row for row in rows if row.get('state') == 'reversed']
-    return [row['id'] for row in selected]
 
 

@@ -3,6 +3,7 @@
 Run from the repository root:
   python metric-detection/scripts/test_label_rules.py
 """
+import json
 import unittest
 
 from label_rules import (classify, exclusion_kind, is_common, is_gold, is_literal, judge_occurrence, normalize_span,
@@ -80,6 +81,92 @@ class CommandLinePositions(unittest.TestCase):
                     self.assertNotIn(value, path_components(text))
                     self.assertEqual(classify(text, *at(text, value)), ('residual', None))
 
+
+
+class SedShellBoundaries(unittest.TestCase):
+    left = 'auditLeafNode'
+    right = 'auditBranchNode'
+
+    def variants(self, command):
+        return (command, json.dumps({'command': command}))
+
+    def assert_script(self, command, values=None):
+        serialized_slashes = json.dumps({'command': command}).replace('/', '\\/')
+        for text in (*self.variants(command), serialized_slashes):
+            for value in values or (self.left, self.right):
+                with self.subTest(command=command, value=value, serialized=text != command):
+                    self.assertNotIn(value, path_components(text))
+                    self.assertEqual(classify(text, *at(text, value)), ('residual', None))
+                    self.assertEqual(judge_occurrence(text, *at(text, value), common=False),
+                                     (True, 'residual', None))
+
+    def assert_path(self, command, value=None):
+        value = value or self.left
+        for text in self.variants(command):
+            with self.subTest(command=command, serialized=text != command):
+                self.assertIn(value, path_components(text))
+                self.assertEqual(classify(text, *at(text, value)), ('ident', 'path'))
+
+    def test_attached_options_preserve_input_and_script_file_paths(self):
+        for option in ('-fscript.sed', '-nfscript.sed', '--file=script.sed',
+                       '-es/firstOperand/otherOperand/', '-nes/firstOperand/otherOperand/',
+                       '--expression=s/firstOperand/otherOperand/'):
+            self.assert_path(f'sed {option} s/{self.left}/{self.right}/g')
+        for option in ('-f', '-nf', '--file'):
+            self.assert_path(f'sed {option} s/{self.left}/{self.right}/g input.txt')
+        self.assert_path(f'sed -fs/{self.left}/{self.right}/g input.txt')
+
+    def test_quoted_filename_is_never_a_sed_command(self):
+        for program in ('git add', 'cat', "printf '%s'"):
+            for quoted in (f'"sed \'s/{self.left}/{self.right}/g\'"',
+                           f"'sed s/{self.left}/{self.right}/g'",
+                           f'"notes; sed s/{self.left}/{self.right}/g"'):
+                self.assert_path(f'{program} {quoted}')
+        text = json.dumps({'file_path': f"sed 's/{self.left}/{self.right}/g'"})
+        self.assertIn(self.left, path_components(text))
+        self.assertEqual(classify(text, *at(text, self.left)), ('ident', 'path'))
+
+    def test_json_quotes_escapes_and_offsets(self):
+        for quote in ("'", '"', ''):
+            self.assert_script(f'sed {quote}s/{self.left}/{self.right}/{quote} file')
+        command = f"sed 's/prefix\\/{self.left}/{self.right}/' file"
+        self.assert_script(command, [self.right])
+        self.assert_path(command)
+        # Decoding JSON must not confuse a quoted filename with a command key.
+        self.assert_path(f'cat "command: sed s/{self.left}/{self.right}/g"')
+        self.assert_script(f"sed 's/{self.left}/{self.right}/' café.txt")
+
+    def test_interleaved_options_and_bsd_suffix(self):
+        for options in ("-e 's/firstOperand/otherOperand/' -n -e", '-i .bak',
+                        "-i ''", '-i.bak', '-nE', '-ne', '--expression'):
+            self.assert_script(f"sed {options} 's/{self.left}/{self.right}/g' file")
+        self.assert_script(f"sed -f rules.sed -e 's/{self.left}/{self.right}/' file")
+        self.assert_script(f"sed --expression='s/{self.left}/{self.right}/' file")
+        self.assert_script(f"sed -- 's/{self.left}/{self.right}/' file")
+
+    def test_addresses_and_compound_script(self):
+        for script in (f'/marker/s/{self.left}/{self.right}/g',
+                       f'1,/marker/s/{self.left}/{self.right}/g',
+                       f'/start/,/end/!s/{self.left}/{self.right}/2g',
+                       f's/{self.left}/{self.right}/; p',
+                       f'p; s/{self.left}/{self.right}/',
+                       f'1,4s/{self.left}/{self.right}/I'):
+            self.assert_script(f"sed '{script}' file")
+
+    def test_sed_text_and_filename_arguments_are_not_substitutions(self):
+        for command in ('w', 'r', 'a', 'i', 'c', '#'):
+            self.assert_path(f"sed '{command} notes; s/{self.left}/{self.right}/' file")
+        self.assert_path(f"sed 'a\\\ns/{self.left}/{self.right}/' file")
+
+    def test_command_positions_and_redirected_paths(self):
+        for prefix in ('', 'cat file | ', 'cd app && ', 'true; ', '( ',
+                       'LC_ALL=C ', '> output.txt '):
+            suffix = ' )' if prefix == '( ' else ''
+            self.assert_script(f"{prefix}/usr/bin/sed 's/{self.left}/{self.right}/' file{suffix}")
+        self.assert_path(f"cat file > 'sed s/{self.left}/{self.right}/'")
+        self.assert_path(f"cat >& sed 's/{self.left}/{self.right}/'")
+        self.assert_path(f"sed 's/firstOperand/otherOperand/' > s/{self.left}/{self.right}/")
+        self.assert_path(f"sed 's/firstOperand/otherOperand/' s/{self.left}/{self.right}/")
 
 
 class Exclusions(unittest.TestCase):

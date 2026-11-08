@@ -166,6 +166,41 @@ class GoldTests(unittest.TestCase):
                          [("new", "propagated", "distinct"), ("old", "propagated", "distinct")])
         self.assertEqual(cmd_others, [])
 
+    def test_json_sed_options_do_not_poison_session_propagation(self):
+        old, new = made_up("json-sed-old"), made_up("json-sed-new")
+        entries = [entry("old", old), entry("new", new)]
+        prompt = f"observed {old} and {new}"
+        for command in (f'sed "s/{old}/{new}/" file',
+                        f"sed -e 's/firstOperand/otherOperand/' -n -e '/marker/s/{old}/{new}/; p' file",
+                        f"sed -i .bak 's/{old}/{new}/' file",
+                        f"sed 's/prefix\\/unusedOperand/{new}/' file"):
+            tool_input = json.dumps({"command": command})
+            common = ct.common_values(entries, [prompt, tool_input])
+            self.assertEqual(common, set())
+            spans, others = ct.find_candidates(prompt, entries, common, set())
+            self.assertEqual(len(spans), 2)
+            self.assertEqual(others, [])
+            spans, others = ct.find_candidates(tool_input, entries, common, set())
+            self.assertEqual(len(spans), 2 if old in command else 1)
+            self.assertEqual(others, [])
+
+    def test_sed_shaped_input_paths_still_make_session_values_common(self):
+        value = made_up("sed-path-boundary")
+        entries = [entry("path", value)]
+        for command in (f'sed -fscript.sed s/{value}/file/g',
+                        f'sed -es/firstOperand/otherOperand/ s/{value}/file/g',
+                        f'git add "sed \'s/{value}/file/g\'"'):
+            tool_input = json.dumps({"command": command})
+            prompt = f'observed {value}'
+            common = ct.common_values(entries, [prompt, tool_input])
+            self.assertEqual(common, {value})
+            spans, others = ct.find_candidates(tool_input, entries, common, set())
+            self.assertEqual(spans, [])
+            self.assertEqual([o["kind"] for o in others], ["identifier"])
+            spans, others = ct.find_candidates(prompt, entries, common, set())
+            self.assertEqual(spans, [])
+            self.assertEqual([o["kind"] for o in others], ["not_propagated"])
+
     def test_an_encoded_form_is_gold_and_records_how(self):
         spans, _ = self.find(f"the value was {SECRET[::-1]} in base64", [entry(
             "t", SECRET, forms=[{"how": "exact", "text": SECRET}, {"how": "base64", "text": SECRET[::-1]}])])

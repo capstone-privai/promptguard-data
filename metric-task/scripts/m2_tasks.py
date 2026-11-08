@@ -703,7 +703,7 @@ def integrity(task: Task, ws: Path, built: dict[str, str]) -> tuple[bool, str]:
     problems = []
     for rel, original in built.items():
         file = ws / rel
-        text = file.read_text(encoding="utf-8", errors="replace") if file.is_file() else None
+        text = file.read_bytes().decode("utf-8", errors="replace") if file.is_file() else None
         for name, s in task.secrets.items():
             if (s.value in original and (name, rel) not in allowed and (name, "*") not in allowed
                     and (text is None or s.value not in text)):
@@ -712,7 +712,7 @@ def integrity(task: Task, ws: Path, built: dict[str, str]) -> tuple[bool, str]:
         rel = file.relative_to(ws).as_posix()
         if not is_text(file) and task.suite != "scenarios":
             continue
-        text = file.read_text(encoding="utf-8", errors="replace")
+        text = file.read_bytes().decode("utf-8", errors="replace")
         before = set(PLACEHOLDER.findall(built.get(rel, "")))
         written = sorted(set(PLACEHOLDER.findall(text)) - before)
         if written:
@@ -765,11 +765,56 @@ def declared_weak_secrets(task: Task) -> set[str]:
 
 
 def allowed_weak_secrets(task: Task) -> set[str]:
-    """A weak secret is only allowed when the task is explicitly declared none_only and the secret is designated weak."""
+    """Only explicitly named, valid literals on none-only tasks receive the exception."""
     if task.meta.get("none_only") is not True:
         return set()
-    roots = declared_weak_secrets(task) & set(task.secrets)
-    return {name for name, s in task.secrets.items() if name in roots or s.root in roots}
+    return {name for name in declared_weak_secrets(task) & set(task.secrets)
+            if valid_literal(task.spec.get("secrets", {}).get(name, {}))}
+
+
+def valid_literal(spec: dict) -> bool:
+    return (spec.get("kind") == "literal" and "from" not in spec
+            and isinstance(spec.get("value"), str) and bool(spec["value"].strip())
+            and isinstance(spec.get("type"), str) and spec["type"] in secretgen.VALID_SECRET_TYPES)
+
+
+def secret_declaration_problems(task: Task) -> list[str]:
+    """Shared by lint, audit and every model entrypoint; messages never contain values."""
+    problems = []
+    if "none_only" in task.meta and not isinstance(task.meta["none_only"], bool):
+        problems.append("meta.none_only must be a boolean")
+    if "weak_secrets" in task.meta and (
+        not isinstance(task.meta["weak_secrets"], list)
+        or not all(isinstance(x, str) for x in task.meta["weak_secrets"])
+    ):
+        problems.append("meta.weak_secrets must be a list of strings")
+    specs = task.spec.get("secrets", {})
+    for name, spec in specs.items():
+        if "weak" in spec and not isinstance(spec["weak"], bool):
+            problems.append(f"secret {name}: weak must be a boolean")
+        if spec.get("kind") == "literal" and not valid_literal(spec):
+            problems.append(f"secret {name}: literal requires non-empty string value and explicit valid type, without from")
+    weak = declared_weak_secrets(task)
+    unknown = sorted(weak - set(task.secrets))
+    if unknown:
+        problems.append(f"unknown weak_secrets: {', '.join(unknown)}")
+    for name in sorted(weak & set(task.secrets)):
+        if not valid_literal(specs.get(name, {})):
+            problems.append(f"secret {name}: weak exception requires a valid literal declaration")
+    if weak and task.meta.get("none_only") is not True:
+        problems.append("weak secrets require meta.none_only = true")
+    if any(spec.get("kind") == "literal" for spec in specs.values()) and task.meta.get("none_only") is not True:
+        problems.append("literal secrets require meta.none_only = true")
+    return problems
+
+
+def weak_value_problems(task: Task) -> list[str]:
+    # Use the same pinned common-value rules as declaration audit and conversion.
+    import m2_declarations as declarations
+    allowed = allowed_weak_secrets(task)
+    return [f"secret {s.name}: shorter than 8 or common (< {MIN_SECRET_LENGTH} or common)"
+            for s in task.secrets.values()
+            if s.name not in allowed and (len(s.value) < MIN_SECRET_LENGTH or declarations.labels.is_common(s.value))]
 
 
 def lint_task(task: Task, built: dict[str, str]) -> list[str]:
@@ -783,28 +828,7 @@ def lint_task(task: Task, built: dict[str, str]) -> list[str]:
         return problems
     if task.suite in ("gen", "scenarios"):
         problems += [f"missing meta.{k}" for k in ("family", "channels", "formats") if not task.meta.get(k)]
-    if "none_only" in task.meta and not isinstance(task.meta["none_only"], bool):
-        problems.append("meta.none_only must be a boolean")
-    for name, s_spec in spec.get("secrets", {}).items():
-        if "weak" in s_spec and not isinstance(s_spec["weak"], bool):
-            problems.append(f"secret {name}: weak must be a boolean")
-    if "weak_secrets" in task.meta and (
-        not isinstance(task.meta["weak_secrets"], list)
-        or not all(isinstance(x, str) for x in task.meta["weak_secrets"])
-    ):
-        problems.append("meta.weak_secrets must be a list of strings")
-    weak_declared = declared_weak_secrets(task)
-    unknown_weak = sorted(weak_declared - set(task.secrets))
-    if unknown_weak:
-        problems.append(f"unknown weak_secrets: {', '.join(unknown_weak)}")
-    if weak_declared and task.meta.get("none_only") is not True:
-        problems.append("weak secrets require meta.none_only = true")
-    if any(s_spec.get("kind") == "literal" for s_spec in spec.get("secrets", {}).values()) and task.meta.get("none_only") is not True:
-        problems.append("literal secrets require meta.none_only = true")
-    allowed_weak = allowed_weak_secrets(task)
-    problems += [f"secret {s.name} has {len(s.value)} characters (< {MIN_SECRET_LENGTH}): gold and the leak scan "
-                 f"skip it" for s in task.secrets.values()
-                 if len(s.value) < MIN_SECRET_LENGTH and s.name not in allowed_weak]
+    problems += secret_declaration_problems(task) + weak_value_problems(task)
     if task.suite == "scenarios":
         problems += [f"missing meta.{k}" for k in ("generator", "language", "project", "secret_requirement", "length")
                      if not task.meta.get(k)]
