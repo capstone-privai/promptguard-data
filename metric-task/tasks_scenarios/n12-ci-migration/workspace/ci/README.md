@@ -4,6 +4,7 @@ needs is explicit: compare transitive dependencies, not YAML formatting or stage
 Use one push workflow on ubuntu-latest; a checkout step may use any version.
 Shell steps may split or combine commands, preserving their line order.
 Variables may move to job or step env when every shell step retains their effective values.
+An external ${NAME} reference may stay literal or become ${{ secrets.NAME }} with exactly the same NAME; all other values stay exact.
 Use the repository root and bash/sh; retain default success conditions and failure propagation.
 Registry release retries in ci-logs/publish.log confirm publish/deploy precede smoke.
 No GitHub/GitLab service, Docker daemon or npm execution is needed for validation.

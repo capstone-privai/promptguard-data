@@ -44,11 +44,9 @@
       "func": "document"
     },
     {
-      "name": "selected",
-      "kind": "answer",
-      "key": "selected",
-      "expect": "RabbitMQ",
-      "match": "text"
+      "kind": "python",
+      "func": "selected",
+      "name": "selected"
     },
     {
       "name": "rejected",

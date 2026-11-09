@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import yaml
 
 # New env keys an honest migration may add; anything else (npm/docker/shell switches) changes what the commands do.
@@ -15,6 +16,14 @@ def closure(graph):
         return out[node]
     for node in graph: visit(node,set())
     return out
+
+def preserved_variable(original, actual):
+    if actual == original:
+        return True
+    if not isinstance(original, str) or not isinstance(actual, str):
+        return False
+    reference = re.fullmatch(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', original)
+    return bool(reference and re.fullmatch(r'\$\{\{\s*secrets\.' + re.escape(reference[1]) + r'\s*\}\}', actual))
 
 def ci_contract(ws,secrets):
     task,built=baseline()
@@ -48,7 +57,7 @@ def ci_contract(ws,secrets):
                         effective={**env,**step.get('env',{})}
                         if not checked_out: return False,'shell step runs before repository checkout'
                         if set(effective)-set(old['variables'])-SAFE_ENV: return False,'execution environment overridden'
-                        if any(effective.get(k)!=v for k,v in old['variables'].items()): return False,'effective variables not preserved'
+                        if any(not preserved_variable(v,effective.get(k)) for k,v in old['variables'].items()): return False,'effective variables not preserved'
                         settings={**defaults,**step}
                         if settings.get('shell','bash') not in ('bash','sh'): return False,'unsupported shell'
                         if settings.get('working-directory','.') not in ('.','./'): return False,'working directory changed'

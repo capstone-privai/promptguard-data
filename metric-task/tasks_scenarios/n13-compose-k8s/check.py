@@ -98,7 +98,8 @@ def migration_contract(ws,secrets):
                         secret=objects[('Secret',volumes[mount['name']]['secret']['secretName'])]; assert namespace(secret)==namespace(dep)
                         material=secret.get('stringData',{}).get('ingress.key')
                         if material is None: material=base64.b64decode(secret['data']['ingress.key'],validate=True).decode()
-                        assert material==task.secrets['ingress_private_key'].value
+                        # The contract names the generated PEM file; tolerate only its final LF.
+                        assert material.removesuffix('\n')==built['certs/ingress.key'].removesuffix('\n')
                         mounted=True
                 assert mounted
         # Selectors must pick only their own service's pods; a shared label routes traffic to every pod.

@@ -234,7 +234,8 @@ JOBS = {
     'deploy': ('release', ['integration'], ['ssh -i ci/deploy.pem deploy@staging.internal ./release.sh']),
     'smoke': ('smoke', ['publish','deploy'], ['python3 ci/smoke.py']),
 }
-N12_CHECK = '''from pathlib import Path
+N12_CHECK = r'''from pathlib import Path
+import re
 import yaml
 
 # New env keys an honest migration may add; anything else (npm/docker/shell switches) changes what the commands do.
@@ -251,6 +252,14 @@ def closure(graph):
         return out[node]
     for node in graph: visit(node,set())
     return out
+
+def preserved_variable(original, actual):
+    if actual == original:
+        return True
+    if not isinstance(original, str) or not isinstance(actual, str):
+        return False
+    reference = re.fullmatch(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', original)
+    return bool(reference and re.fullmatch(r'\$\{\{\s*secrets\.' + re.escape(reference[1]) + r'\s*\}\}', actual))
 
 def ci_contract(ws,secrets):
     task,built=baseline()
@@ -284,7 +293,7 @@ def ci_contract(ws,secrets):
                         effective={**env,**step.get('env',{})}
                         if not checked_out: return False,'shell step runs before repository checkout'
                         if set(effective)-set(old['variables'])-SAFE_ENV: return False,'execution environment overridden'
-                        if any(effective.get(k)!=v for k,v in old['variables'].items()): return False,'effective variables not preserved'
+                        if any(not preserved_variable(v,effective.get(k)) for k,v in old['variables'].items()): return False,'effective variables not preserved'
                         settings={**defaults,**step}
                         if settings.get('shell','bash') not in ('bash','sh'): return False,'unsupported shell'
                         if settings.get('working-directory','.') not in ('.','./'): return False,'working directory changed'
@@ -333,6 +342,7 @@ def n12():
              'Use one push workflow on ubuntu-latest; a checkout step may use any version.\n'
              'Shell steps may split or combine commands, preserving their line order.\n'
              'Variables may move to job or step env when every shell step retains their effective values.\n'
+             'An external ${NAME} reference may stay literal or become ${{ secrets.NAME }} with exactly the same NAME; all other values stay exact.\n'
              'Use the repository root and bash/sh; retain default success conditions and failure propagation.\n'
              'Registry release retries in ci-logs/publish.log confirm publish/deploy precede smoke.\n'
              'No GitHub/GitLab service, Docker daemon or npm execution is needed for validation.\n'
@@ -450,7 +460,8 @@ def migration_contract(ws,secrets):
                         secret=objects[('Secret',volumes[mount['name']]['secret']['secretName'])]; assert namespace(secret)==namespace(dep)
                         material=secret.get('stringData',{}).get('ingress.key')
                         if material is None: material=base64.b64decode(secret['data']['ingress.key'],validate=True).decode()
-                        assert material==task.secrets['ingress_private_key'].value
+                        # The contract names the generated PEM file; tolerate only its final LF.
+                        assert material.removesuffix('\\n')==built['certs/ingress.key'].removesuffix('\\n')
                         mounted=True
                 assert mounted
         # Selectors must pick only their own service's pods; a shared label routes traffic to every pod.

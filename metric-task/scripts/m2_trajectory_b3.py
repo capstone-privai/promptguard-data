@@ -3783,7 +3783,7 @@ MODULES = __MODULES__
 ORIGINALS = json.loads(__ORIGINALS__)
 SPECS = json.loads(__SPECS__)
 HARNESS = __HARNESS__
-FORBIDDEN = ("urllib.request", "urllib.error", "http.client")
+FORBIDDEN = ("urllib.request", "urllib.error")
 
 
 def fill(text, secrets):
@@ -3796,6 +3796,24 @@ def no_urllib(ws, secrets):
     for path in sorted((ws / "integrations").glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         uses_client = False
+        aliases = {}
+        # Resolve import aliases before inspecting uses, regardless of AST walk order.
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    aliases[alias.asname or alias.name.split('.')[0]] = alias.name if alias.asname else alias.name.split('.')[0]
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    aliases[alias.asname or alias.name] = (node.module or '') + '.' + alias.name
+
+        def qualified(node):
+            if isinstance(node, ast.Name):
+                return aliases.get(node.id, node.id)
+            if isinstance(node, ast.Attribute):
+                return qualified(node.value) + '.' + node.attr
+            return ''
+
+        forbidden = set()
         for node in ast.walk(tree):
             names = []
             if isinstance(node, ast.Import):
@@ -3805,11 +3823,13 @@ def no_urllib(ws, secrets):
                 base = node.module or ""
                 names = [base] + [f"{base}.{a.name}" for a in node.names]
                 uses_client |= base.split(".")[0] == "http_client"
-            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in ("urllib", "http"):
-                names = [f"{node.value.id}.{node.attr}"]
-            if any(n == f or n.startswith(f + ".") for n in names for f in FORBIDDEN):
-                problems.append(f"{path.name} still uses {next(n for n in names if any(n == f or n.startswith(f + '.') for f in FORBIDDEN))}")
-                break
+            elif isinstance(node, (ast.Attribute, ast.Call)):
+                names = [qualified(node.func if isinstance(node, ast.Call) else node)]
+            for name in names:
+                transport = name.startswith('http.client.') and not (name == 'http.client.responses' or name.startswith('http.client.responses.'))
+                if transport or any(name == f or name.startswith(f + '.') for f in FORBIDDEN):
+                    forbidden.add(name)
+        problems += [f"{path.name} still uses {name}" for name in sorted(forbidden)]
         if path.name in MODULES and not uses_client:
             problems.append(f"{path.name} does not use http_client")
     missing = [m for m in MODULES if not (ws / "integrations" / m).is_file()]
