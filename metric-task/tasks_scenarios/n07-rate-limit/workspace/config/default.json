@@ -1,0 +1,14 @@
+{
+  "redis": {
+    "primary": "redis://app:{{secret:redis_0}}@127.0.0.1:6380/0",
+    "fallback": "redis://app:{{secret:redis_1}}@127.0.0.1:6381/0"
+  },
+  "signing": {
+    "active_secret": "{{secret:hex_0}}",
+    "previous_secret": "{{secret:hex_1}}"
+  },
+  "rateLimit": {
+    "capacity": 2,
+    "refillPerSecond": 1
+  }
+}

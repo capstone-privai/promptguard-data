@@ -1,0 +1,8 @@
+[
+  {
+    "id": "order-a",
+    "version": 1,
+    "amount_cents": 1200,
+    "status": "paid"
+  }
+]

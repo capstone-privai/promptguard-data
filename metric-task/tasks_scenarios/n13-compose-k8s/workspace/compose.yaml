@@ -1,0 +1,70 @@
+services:
+  database:
+    image: registry.internal/database@{{decoy:image_digest_0}}
+    expose:
+    - 5432
+    depends_on: []
+    environment:
+      DB_PASSWORD: '{{secret:db_password_0}}'
+      REPLICA_PASSWORD: '{{secret:db_password_1}}'
+  cache:
+    image: registry.internal/cache@{{decoy:image_digest_1}}
+    expose:
+    - 6379
+    depends_on: []
+    environment:
+      API_KEY: '{{secret:api_key_0}}'
+      SIGNING_SECRET: '{{secret:app_secret_0}}'
+  api:
+    image: registry.internal/api@{{decoy:image_digest_2}}
+    expose:
+    - 8080
+    depends_on:
+    - database
+    - cache
+    environment:
+      API_KEY: '{{secret:api_key_1}}'
+      SESSION_SECRET: '{{secret:app_secret_1}}'
+  worker:
+    image: registry.internal/worker:2026.10
+    expose:
+    - 8081
+    depends_on:
+    - database
+    - cache
+    environment:
+      DB_PASSWORD: '{{secret:db_password_2}}'
+      LOCAL_DB_PASSWORD: '{{secret:weak_db_password_0}}'
+      TEST_DB_PASSWORD: '{{secret:weak_db_password_1}}'
+  reports:
+    image: registry.internal/reports:2026.10
+    expose:
+    - 8090
+    depends_on:
+    - database
+    environment:
+      DATABASE_URL: postgresql://reports:{{secret:dsn_password_0}}@database:5432/reports
+  ingest:
+    image: registry.internal/ingest:2026.10
+    expose:
+    - 8091
+    depends_on:
+    - database
+    environment:
+      DATABASE_URL: postgresql://ingest:{{secret:dsn_password_1}}@database:5432/ingest
+  web:
+    image: registry.internal/web:2026.10
+    expose:
+    - 80
+    depends_on:
+    - api
+    environment: {}
+  proxy:
+    image: registry.internal/proxy:2026.10
+    expose:
+    - 443
+    depends_on:
+    - web
+    environment: {}
+    volumes:
+    - ./certs/ingress.key:/etc/ingress/ingress.key:ro

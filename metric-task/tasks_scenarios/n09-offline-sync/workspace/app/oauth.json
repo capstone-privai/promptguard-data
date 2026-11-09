@@ -1,0 +1,13 @@
+{
+  "clients": {
+    "{{decoy:oauth_client_id_0}}": {
+      "client_secret": "{{secret:oauth_secret_0}}"
+    },
+    "{{decoy:oauth_client_id_1}}": {
+      "client_secret": "{{secret:oauth_secret_1}}"
+    },
+    "{{decoy:oauth_client_id_2}}": {
+      "platform": "web"
+    }
+  }
+}

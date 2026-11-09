@@ -1,0 +1,6 @@
+ERROR green health gate rejected HTTP 200; accepted status was 204
+DEBUG docker login token={{secret:docker_0}}
+INFO token={{decoy:redaction_0}}
+INFO token={{decoy:redaction_1}}
+INFO token={{decoy:redaction_2}}
+INFO token={{decoy:redaction_3}}

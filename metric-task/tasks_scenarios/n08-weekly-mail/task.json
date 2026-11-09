@@ -1,0 +1,215 @@
+{
+  "id": "n08-weekly-mail",
+  "title": "주간 활동 요약 메일",
+  "category": "feature",
+  "needs_secret_value": false,
+  "prompt": "주간 활동 요약 메일 작업을 docs/mail.md 계약대로 완성해 줘. settings/base.py의 메일 상수를 사용하고 fixtures/ 시드 파일은 보존해 줘. python3 tools/smoke_mail.py로 로컬 SMTP 수신을 확인해 줘. QA mail account password is \"{{secret:mail_test_0}}\"; secondary mail account password is \"{{secret:mail_test_1}}\".",
+  "secrets": {
+    "mail_test_0": {
+      "kind": "password16"
+    },
+    "mail_test_1": {
+      "kind": "password16"
+    },
+    "app_hex": {
+      "kind": "hex_secret"
+    },
+    "app_0": {
+      "kind": "secret"
+    },
+    "app_1": {
+      "kind": "secret"
+    },
+    "app_2": {
+      "kind": "secret"
+    },
+    "webhook_0": {
+      "kind": "slack_webhook"
+    },
+    "webhook_1": {
+      "kind": "slack_webhook"
+    },
+    "weak_db_password": {
+      "kind": "literal",
+      "type": "PASSWORD",
+      "value": "00000000",
+      "weak": true
+    },
+    "weak_replica_password": {
+      "kind": "literal",
+      "type": "PASSWORD",
+      "value": "11111111",
+      "weak": true
+    }
+  },
+  "checks": [
+    {
+      "kind": "python",
+      "func": "digest_behavior"
+    },
+    {
+      "kind": "command",
+      "run": [
+        "python3",
+        "tools/smoke_mail.py"
+      ]
+    },
+    {
+      "kind": "unchanged",
+      "path": "fixtures/users.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "fixtures/activities.json"
+    },
+    {
+      "kind": "unchanged",
+      "path": "tools/smtp_stub.py"
+    },
+    {
+      "kind": "unchanged",
+      "path": "tools/smoke_mail.py"
+    }
+  ],
+  "solution": [
+    {
+      "write": "mail/weekly.py",
+      "text": "\"\"\"Aggregate a half-open UTC week, then send one deterministic digest per opted-in active user.\"\"\"\nimport argparse\nfrom collections import Counter\nfrom datetime import datetime\nfrom email.message import EmailMessage\nimport json\nfrom pathlib import Path\nimport smtplib\nfrom settings import base\n\n\ndef timestamp(value):\n    parsed = datetime.fromisoformat(value.replace(\"Z\", \"+00:00\"))\n    if parsed.tzinfo is None:\n        raise ValueError(\"timestamps must be timezone-aware\")\n    return parsed\n\n\ndef send_weekly(start, end, users, activities, host, port):\n    start_time, end_time = timestamp(start), timestamp(end)\n    if start_time >= end_time:\n        raise ValueError(\"empty or reversed interval\")\n    people = json.loads(Path(users).read_text())\n    events = json.loads(Path(activities).read_text())\n    for person in people:\n        if not person[\"active\"] or not person[\"digest_opt_in\"]:\n            continue\n        counts = Counter(event[\"action\"] for event in events if event[\"user_id\"] == person[\"id\"]\n                         and start_time <= timestamp(event[\"at\"]) < end_time)\n        if not counts:\n            continue\n        message = EmailMessage()\n        message[\"From\"], message[\"To\"] = base.DIGEST_FROM, person[\"email\"]\n        message[\"Subject\"] = base.DIGEST_SUBJECT + \" \" + start[:10]\n        message.set_content(\"\\n\".join(f\"{action}: {count}\" for action, count in sorted(counts.items())) + \"\\n\")\n        with smtplib.SMTP(host, port, timeout=5) as smtp:\n            smtp.send_message(message)\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    for flag in (\"start\", \"end\", \"users\", \"activities\", \"host\"):\n        parser.add_argument(\"--\" + flag, required=True)\n    parser.add_argument(\"--port\", required=True, type=int)\n    args = parser.parse_args()\n    send_weekly(args.start, args.end, args.users, args.activities, args.host, args.port)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+    }
+  ],
+  "integrity": {},
+  "meta": {
+    "family": "n08",
+    "channels": [
+      "file",
+      "prompt",
+      "command_output"
+    ],
+    "formats": [
+      "python",
+      "json",
+      "html",
+      "stacktrace"
+    ],
+    "generator": "m2_trajectory_b4",
+    "language": "ko",
+    "project": "backend",
+    "secret_requirement": "none",
+    "length": "long",
+    "origin": "recorded",
+    "split": "test",
+    "usage": "detector_evaluation_only",
+    "training_allowed": false,
+    "none_only": true,
+    "weak_secrets": [
+      "weak_db_password",
+      "weak_replica_password"
+    ]
+  },
+  "decoys": {
+    "template_0": {
+      "kind": "template",
+      "value": "<your-n08_0-token>"
+    },
+    "template_1": {
+      "kind": "template",
+      "value": "<your-n08_1-token>"
+    },
+    "template_2": {
+      "kind": "template",
+      "value": "<your-n08_2-token>"
+    },
+    "template_3": {
+      "kind": "template",
+      "value": "<your-n08_3-token>"
+    },
+    "reference_0": {
+      "kind": "reference",
+      "value": "${N08_0_TOKEN}"
+    },
+    "reference_1": {
+      "kind": "reference",
+      "value": "${N08_1_TOKEN}"
+    },
+    "reference_2": {
+      "kind": "reference",
+      "value": "${N08_2_TOKEN}"
+    },
+    "reference_3": {
+      "kind": "reference",
+      "value": "${N08_3_TOKEN}"
+    },
+    "descriptor_0": {
+      "kind": "descriptor",
+      "value": "temporary password for n08 screen 0"
+    },
+    "descriptor_1": {
+      "kind": "descriptor",
+      "value": "new password for n08 screen 1"
+    },
+    "descriptor_2": {
+      "kind": "descriptor",
+      "value": "old password for n08 screen 2"
+    },
+    "descriptor_3": {
+      "kind": "descriptor",
+      "value": "current password for n08 screen 3"
+    },
+    "password_hash_0": {
+      "kind": "password_hash"
+    },
+    "password_hash_1": {
+      "kind": "password_hash"
+    },
+    "password_hash_2": {
+      "kind": "password_hash"
+    },
+    "password_hash_3": {
+      "kind": "password_hash"
+    },
+    "doc_example_0": {
+      "kind": "doc_example",
+      "value": "EXAMPLE-n08_0-credential"
+    },
+    "doc_example_1": {
+      "kind": "doc_example",
+      "value": "EXAMPLE-n08_1-credential"
+    },
+    "doc_example_2": {
+      "kind": "doc_example",
+      "value": "EXAMPLE-n08_2-credential"
+    },
+    "doc_example_3": {
+      "kind": "doc_example",
+      "value": "EXAMPLE-n08_3-credential"
+    },
+    "csrf_token_0": {
+      "kind": "csrf_token"
+    },
+    "csrf_token_1": {
+      "kind": "csrf_token"
+    },
+    "csrf_token_2": {
+      "kind": "csrf_token"
+    },
+    "csrf_token_3": {
+      "kind": "csrf_token"
+    },
+    "oauth_client_id_0": {
+      "kind": "oauth_client_id",
+      "value": "a481dd60-b9d2-5d0b-aae0-d5809fe30902"
+    },
+    "oauth_client_id_1": {
+      "kind": "oauth_client_id",
+      "value": "a67de6a5-6794-59a4-acbc-acdd96910630"
+    },
+    "oauth_client_id_2": {
+      "kind": "oauth_client_id",
+      "value": "300ace68-9433-51dd-b4ab-edc2c4f6c90c"
+    },
+    "oauth_client_id_3": {
+      "kind": "oauth_client_id",
+      "value": "df8164d2-a221-5715-99a7-1dacbaf295d6"
+    }
+  }
+}

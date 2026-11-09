@@ -1,0 +1,16 @@
+# Slack destinations used by the deploy tooling in the infra repository.
+# Bot tokens live in Vault under secret/ledger/slack; only webhooks are listed here.
+bots:
+  release: ledger-release-bot
+  alerts: ledger-alerts-bot
+channels:
+  releases:
+    webhook: {{secret:slack_webhook_0}}
+    events: [release_published]
+  ledger-alerts:
+    webhook: {{secret:slack_webhook_1}}
+    events: [settlement_failed, settlement_retry_exhausted]
+  billing-ops:
+    webhook: {{secret:slack_webhook_2}}
+    events: [daily_digest]
+    schedule: "0 9 * * 1-5"

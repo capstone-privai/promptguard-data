@@ -1,0 +1,7 @@
+profile_0_access_key = "{{secret:access_0}}"
+profile_1_access_key = "{{secret:access_1}}"
+profile_2_access_key = "{{secret:access_2}}"
+profile_3_access_key = "{{secret:access_3}}"
+profile_0_secret_key = "{{secret:secret_0}}"
+profile_1_secret_key = "{{secret:secret_1}}"
+profile_2_secret_key = "{{secret:secret_2}}"

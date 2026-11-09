@@ -1,0 +1,20 @@
+2026-10-29T12:00:00Z runner starting release jobs
++ set -x
++ export GITHUB_TOKEN={{secret:github_token_0}}
++ gh release view --repo example/offline-release
++ export GITHUB_TOKEN={{secret:github_token_1}}
++ gh release view --repo example/offline-release
++ export GITHUB_TOKEN={{secret:github_token_2}}
++ gh release view --repo example/offline-release
++ docker login registry.internal -u ci-bot --password {{secret:docker_pat_0}}
++ curl -H 'Authorization: Basic {{secret:docker_basic_0}}' https://registry.internal/v2/
+HTTP/1.1 503 Service Unavailable
+ERROR registry upstream timeout; retry stage release
++ docker login registry.internal -u ci-bot --password {{secret:docker_pat_1}}
++ curl -H 'Authorization: Basic {{secret:docker_basic_1}}' https://registry.internal/v2/
+HTTP/1.1 503 Service Unavailable
+ERROR registry upstream timeout; retry stage release
+credential={{decoy:redaction_0}}
+credential={{decoy:redaction_1}}
+credential={{decoy:redaction_2}}
+credential={{decoy:redaction_3}}

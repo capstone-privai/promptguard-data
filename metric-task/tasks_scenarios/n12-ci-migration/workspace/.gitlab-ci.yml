@@ -1,0 +1,73 @@
+stages:
+- verify
+- build
+- test
+- release
+- smoke
+variables:
+  NPM_TOKEN_0: '{{secret:npm_token_0}}'
+  NPM_TOKEN_1: '{{secret:npm_token_1}}'
+  NPM_TOKEN_2: '{{secret:npm_token_2}}'
+  DOCKER_PAT_0: '{{secret:docker_pat_0}}'
+  DOCKER_PAT_1: '{{secret:docker_pat_1}}'
+  DOCKER_PAT_2: '{{secret:docker_pat_2}}'
+  GITLAB_PAT_0: '{{secret:gitlab_pat_0}}'
+  GITLAB_PAT_1: '{{secret:gitlab_pat_1}}'
+  GITLAB_PAT_2: '{{secret:gitlab_pat_2}}'
+  AWS_ACCESS_KEY_0: '{{secret:aws_access_key_0}}'
+  AWS_ACCESS_KEY_1: '{{secret:aws_access_key_1}}'
+  REMOTE_TOKEN_0: '{{decoy:reference_0}}'
+  REMOTE_TOKEN_1: '{{decoy:reference_1}}'
+  REMOTE_TOKEN_2: '{{decoy:reference_2}}'
+  REMOTE_TOKEN_3: '{{decoy:reference_3}}'
+  REMOTE_TOKEN_4: '{{decoy:reference_4}}'
+lint:
+  stage: verify
+  needs: []
+  script:
+  - python3 ci/lint.py
+unit:
+  stage: verify
+  needs: []
+  script:
+  - python3 -m unittest discover -s tests
+package:
+  stage: build
+  needs:
+  - lint
+  - unit
+  script:
+  - npm ci
+  - npm pack
+image:
+  stage: build
+  needs:
+  - unit
+  script:
+  - docker build -t registry.internal/app:ci .
+integration:
+  stage: test
+  needs:
+  - package
+  - image
+  script:
+  - python3 ci/integration.py
+publish:
+  stage: release
+  needs:
+  - integration
+  script:
+  - npm publish
+deploy:
+  stage: release
+  needs:
+  - integration
+  script:
+  - ssh -i ci/deploy.pem deploy@staging.internal ./release.sh
+smoke:
+  stage: smoke
+  needs:
+  - publish
+  - deploy
+  script:
+  - python3 ci/smoke.py

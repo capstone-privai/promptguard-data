@@ -74,3 +74,36 @@ n01 = { work = "test", credential = "incidental" }
 n02 = { work = "test", credential = "incidental" }
 n04 = { work = "test", credential = "incidental" }
 n05 = { work = "test", credential = "central" }
+
+# Trajectory expansion: offline implementations b1-b7
+n09 = { work = "feature", credential = "incidental" }
+n12 = { work = "migration", credential = "incidental" }
+n13 = { work = "migration", credential = "central" }
+
+# Append under the existing [scenes] table.
+n15 = { work = "review", credential = "incidental" }
+n22 = { work = "data", credential = "incidental" }
+n30 = { work = "deploy", credential = "central" }
+
+# trajectory expansion b3 (append under the existing [scenes] table)
+n10 = { work = "migration", credential = "incidental" }
+n11 = { work = "migration", credential = "incidental" }
+n27 = { work = "refactor", credential = "incidental" }
+
+# b4: append under the existing [scenes] table
+n06 = { work = "feature", credential = "incidental" }
+n07 = { work = "feature", credential = "incidental" }
+n08 = { work = "feature", credential = "incidental" }
+
+# trajectory expansion b5 (append under the existing [scenes] table)
+n16 = { work = "review", credential = "incidental" }
+n17 = { work = "review", credential = "incidental" }
+n18 = { work = "docs", credential = "incidental" }
+
+n20 = { work = "docs", credential = "incidental" }
+n21 = { work = "docs", credential = "incidental" }
+n23 = { work = "data", credential = "incidental" }
+
+n25 = { work = "data", credential = "incidental" }
+n28 = { work = "lookup", credential = "incidental" }
+n29 = { work = "lookup", credential = "incidental" }
