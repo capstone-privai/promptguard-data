@@ -1,6 +1,7 @@
 """Scene labels stay complete, and counts are per scene rather than per task."""
 from pathlib import Path
 import sys
+sys.dont_write_bytecode = True  # check_task loads each task's check.py in-process; keep task folders free of __pycache__ (generator --check compares every file)
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

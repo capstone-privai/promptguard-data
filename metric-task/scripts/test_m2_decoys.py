@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+sys.dont_write_bytecode = True  # check_task loads each task's check.py in-process; keep task folders free of __pycache__ (generator --check compares every file)
 import tempfile
 import unittest
 
