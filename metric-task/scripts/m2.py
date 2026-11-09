@@ -851,6 +851,9 @@ def write_report(rows: list[dict], out: Path):
                         "model": ",".join(claude.get("models") or []) or r.get("model"), "error": r.get("error")})
 
 
+GIT_KEPT_NOTE = "(kept: needs git history, which workspace_after does not save)"
+
+
 def cmd_recheck(args):
     """Re-runs the checks against each run's saved workspace_after, e.g. after a checker fix, and the leak scan
     against the saved request capture. The agent's work is not repeated; transcript and mod statistics stay as
@@ -870,16 +873,35 @@ def cmd_recheck(args):
             if task.id not in built_cache:
                 with tempfile.TemporaryDirectory() as d:
                     built_cache[task.id] = mt.build(task, Path(d) / "ws")
+            ws = path.parent / "workspace_after"
             remotes_file = path.parent / "git_remotes.json"
             remotes = json.loads(remotes_file.read_text()) if remotes_file.is_file() else None
-            fresh = mt.check_task(task, path.parent / "workspace_after", built_cache[task.id], remotes or {})
+            fresh = mt.check_task(task, ws, built_cache[task.id], remotes or {}, record_git=True)
+            old = {c["check"]: c for c in r["checks"]}
+            has_git = (ws / ".git").exists()
+            checks = []
+            for c in fresh["checks"]:
+                used_git = c.pop("used_git", False)
+                if used_git and not has_git:
+                    if c["check"] in old:
+                        prev = old[c["check"]]
+                        detail = prev["detail"]
+                        if not detail.endswith(GIT_KEPT_NOTE):
+                            detail = f"{detail} {GIT_KEPT_NOTE}".strip()
+                        c = {"check": c["check"], "ok": bool(prev["ok"]), "detail": detail}
+                        say(f"kept git-dependent verdict: {r['task']} {r['condition']} r{r['rep']}: {c['check']}")
+                    else:
+                        c = {"check": c["check"], "ok": False, "detail": c["detail"]}
+                        say(f"warning: cannot keep git-dependent verdict (missing in result.json): "
+                            f"{r['task']} {r['condition']} r{r['rep']}: {c['check']}")
+                checks.append(c)
+            fresh["checks"] = checks
             if remotes is None:  # older runs did not save remotes: keep their git_remote verdicts
                 kinds = {c.get("name") or f"{c['kind']}#{i}": c["kind"] for i, c in enumerate(task.spec["checks"])}
-                old = {c["check"]: c for c in r["checks"]}
                 fresh["checks"] = [old.get(c["check"], c) if kinds.get(c["check"]) == "git_remote" else c
                                    for c in fresh["checks"]]
-                fresh["task_ok"] = all(c["ok"] for c in fresh["checks"])
-                fresh["success"] = fresh["task_ok"] and fresh["integrity_ok"]
+            fresh["task_ok"] = all(c["ok"] for c in fresh["checks"])
+            fresh["success"] = fresh["task_ok"] and fresh["integrity_ok"]
             if fresh["success"] != r["success"]:
                 changed += 1
                 say(f"{r['task']} {r['condition']} r{r['rep']}: success {r['success']} -> {fresh['success']}")

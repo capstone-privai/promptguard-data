@@ -25,15 +25,19 @@ from __future__ import annotations
 
 import base64
 import configparser
+import contextlib
 import hashlib
 import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
+import threading
 import tomllib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -237,10 +241,16 @@ def is_text(path: Path) -> bool:
         "known_hosts", "id_ed25519", "id_rsa", "authorized_keys", "crontab", "htpasswd"}
 
 
-def git(ws: Path, *args: str, check: bool = True, date: str | None = None) -> subprocess.CompletedProcess:
+def git(ws: Path, *args: str, check: bool = True, date: str | None = None,
+        ceiling: bool = False) -> subprocess.CompletedProcess:
     env = None
-    if date:
-        env = {**os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+    if date or ceiling:
+        env = dict(os.environ)
+        if date:
+            env["GIT_AUTHOR_DATE"] = date
+            env["GIT_COMMITTER_DATE"] = date
+        if ceiling:
+            env["GIT_CEILING_DIRECTORIES"] = str(ws.resolve().parent)
     return subprocess.run(["git", "-C", str(ws), "-c", "user.name=metric2", "-c", "user.email=metric2@example.invalid",
                            "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", *args],
                           capture_output=True, text=True, check=check, env=env)
@@ -576,6 +586,11 @@ def read_ws(ws: Path, rel: str) -> str:
 # size, within the same second, would be loaded instead of the edited source, and it would end up in the saved
 # workspace.
 CHECK_ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+ENVIRON_LOCK = threading.RLock()
+
+
+def check_env(ws: Path) -> dict[str, str]:
+    return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "GIT_CEILING_DIRECTORIES": str(ws.resolve().parent)}
 
 
 def run_check(task: Task, ws: Path, check: dict, built: dict[str, str],
@@ -646,7 +661,7 @@ def run_check(task: Task, ws: Path, check: dict, built: dict[str, str],
     if kind == "command":
         try:
             proc = subprocess.run([task.fill(a) for a in check["run"]], cwd=ws, capture_output=True, text=True,
-                                  timeout=check.get("timeout", 60), env=CHECK_ENV)
+                                  timeout=check.get("timeout", 60), env=check_env(ws))
         except (OSError, subprocess.TimeoutExpired) as e:
             return False, f"{' '.join(check['run'])}: {type(e).__name__}"
         ok = proc.returncode == check.get("exit", 0)
@@ -664,7 +679,19 @@ def run_check(task: Task, ws: Path, check: dict, built: dict[str, str],
         return ok, "remote matches" if ok else "remote differs"
     if kind == "python":
         module = load_check_module(task)
-        return getattr(module, check["func"])(ws, {n: s.value for n, s in task.secrets.items()})
+        secrets = {n: s.value for n, s in task.secrets.items()}
+        if (ws / ".git").exists():
+            return getattr(module, check["func"])(ws, secrets)
+        with ENVIRON_LOCK:
+            prev_ceiling = os.environ.get("GIT_CEILING_DIRECTORIES")
+            os.environ["GIT_CEILING_DIRECTORIES"] = str(ws.resolve().parent)
+            try:
+                return getattr(module, check["func"])(ws, secrets)
+            finally:
+                if prev_ceiling is None:
+                    os.environ.pop("GIT_CEILING_DIRECTORIES", None)
+                else:
+                    os.environ["GIT_CEILING_DIRECTORIES"] = prev_ceiling
     raise ValueError(f"{task.id}: unknown check kind {kind!r}")
 
 
@@ -721,19 +748,54 @@ def integrity(task: Task, ws: Path, built: dict[str, str]) -> tuple[bool, str]:
 
 
 def git_remotes(ws: Path) -> dict[str, str]:
-    proc = git(ws, "remote", check=False)
+    proc = git(ws, "remote", check=False, ceiling=True)
     names = proc.stdout.split() if proc.returncode == 0 else []
-    return {n: git(ws, "remote", "get-url", n, check=False).stdout.strip() for n in names}
+    return {n: git(ws, "remote", "get-url", n, check=False, ceiling=True).stdout.strip() for n in names}
 
 
-def check_task(task: Task, ws: Path, built: dict[str, str], remotes: dict[str, str] | None = None) -> dict:
-    results = []
-    for i, check in enumerate(task.spec["checks"]):
+@contextlib.contextmanager
+def _git_recorder(enabled: bool):
+    if not enabled:
+        yield None
+        return
+    real_git = shutil.which("git")
+    if not real_git:
+        raise RuntimeError("git not found in PATH")
+    with ENVIRON_LOCK, tempfile.TemporaryDirectory(prefix="m2-git-") as d:
+        prev_path = os.environ.get("PATH")
+        wrapper_dir = Path(d)
+        marker = wrapper_dir / "used_git"
+        wrapper = wrapper_dir / "git"
+        wrapper.write_text(
+            f"#!/bin/sh\n: > {shlex.quote(str(marker))}\nexec {shlex.quote(real_git)} \"$@\"\n",
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+        os.environ["PATH"] = f"{wrapper_dir}{os.pathsep}{prev_path}" if prev_path else str(wrapper_dir)
         try:
-            ok, detail = run_check(task, ws, check, built, remotes)
-        except Exception as e:  # a broken workspace must not stop the batch
-            ok, detail = False, f"{type(e).__name__}: {e}"
-        results.append({"check": check.get("name") or f"{check['kind']}#{i}", "ok": bool(ok), "detail": detail})
+            yield marker
+        finally:
+            if prev_path is None:
+                os.environ.pop("PATH", None)
+            else:
+                os.environ["PATH"] = prev_path
+
+
+def check_task(task: Task, ws: Path, built: dict[str, str], remotes: dict[str, str] | None = None,
+               record_git: bool = False) -> dict:
+    results = []
+    with _git_recorder(record_git) as marker:
+        for i, check in enumerate(task.spec["checks"]):
+            if marker is not None:
+                marker.unlink(missing_ok=True)
+            try:
+                ok, detail = run_check(task, ws, check, built, remotes)
+            except Exception as e:  # a broken workspace must not stop the batch
+                ok, detail = False, f"{type(e).__name__}: {e}"
+            row = {"check": check.get("name") or f"{check['kind']}#{i}", "ok": bool(ok), "detail": detail}
+            if marker is not None:
+                row["used_git"] = marker.is_file() and check["kind"] != "git_remote"
+            results.append(row)
     ok_integrity, detail = integrity(task, ws, built)
     task_ok = all(r["ok"] for r in results)
     return {"success": task_ok and ok_integrity, "task_ok": task_ok, "integrity_ok": ok_integrity,

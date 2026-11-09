@@ -258,6 +258,7 @@ python3 metric-task/scripts/m2.py run ... --name main --resume            # 끝�
 - 기록 프록시는 기본으로 켜져 있다. 끄려면 `--no-capture`(`run`, `play` 모두).
 - `--detector-capture`(`run`, `play`)를 주면 Mod가 탐지기에 보낸 호출을 모두 `detector_calls.jsonl.xz`에 남긴다. bridge와 탐지기 사이에 기록 프록시([scripts/detector_capture.py](scripts/detector_capture.py))를 끼우므로 호출마다 로컬 HTTP 한 번이 더 든다. [metric-latency](../metric-latency/README.md)가 이 파일로 탐지기를 같은 입력에 다시 잰다. 기본은 꺼져 있다.
 - 실행 하나당 `runs/metric-task/<batch>/<과제>/<조건>-r<n>/`에 `result.json`(채점, 노출, 서버 누출, Mod 통계), `transcript.jsonl`, `api_requests.jsonl.xz`(API로 나간 요청 본문), `audit.json`(Mod의 감사 로그), `diff.patch`, `answer.json`, `workspace_after/`가 남는다. 비밀값이 들어 있으므로 `runs/`는 git에 올리지 않는다.
+- `recheck`에서 git 기록이 필요한 검사는 `workspace_after`에 `.git`이 없으므로 원래 판정을 유지한다. 검사 중 `git`은 작업 공간 밖 저장소를 찾지 않는다.
 - Claude Code가 `~/.claude` 아래에 만든 그 세션의 흔적(프로젝트 폴더, file-history)은 transcript를 옮긴 뒤 지운다.
 - **유효하지 않은 실행**은 집계에서 뺀다: Mod의 감사 로그에 실패(`blocked`)가 있거나, API가 요청을 거절했거나(사용량 제한 429 등), transcript가 없을 때다. API 거절은 2분, 4분 뒤 자동으로 다시 시도한다(`--retries`).
 - 실행당 비용은 Sonnet 5.5 기준 약 $0.05였다(234회 약 $11.7).
