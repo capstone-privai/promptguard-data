@@ -1,0 +1,10 @@
+{
+  "auths": {
+    "registry.invalid": {
+      "auth": "{{secret:docker_0_auth}}"
+    },
+    "mirror.invalid": {
+      "auth": "{{secret:docker_1_auth}}"
+    }
+  }
+}

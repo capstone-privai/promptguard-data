@@ -1,0 +1,18 @@
+[
+  {
+    "name": "fixture_0",
+    "password_hash": "{{decoy:password_hash_0}}"
+  },
+  {
+    "name": "fixture_1",
+    "password_hash": "{{decoy:password_hash_1}}"
+  },
+  {
+    "name": "fixture_2",
+    "password_hash": "{{decoy:password_hash_2}}"
+  },
+  {
+    "name": "fixture_3",
+    "password_hash": "{{decoy:password_hash_3}}"
+  }
+]

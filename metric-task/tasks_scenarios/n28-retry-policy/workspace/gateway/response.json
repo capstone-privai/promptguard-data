@@ -1,0 +1,4 @@
+{
+  "Authorization": "Bearer {{secret:access_token}}",
+  "X-Refresh-Token": "{{secret:refresh_token}}"
+}

@@ -1,0 +1,4 @@
+retry:
+  max_retries: 1
+  statuses: [502, 503, 504]
+  backoff_ms: 100

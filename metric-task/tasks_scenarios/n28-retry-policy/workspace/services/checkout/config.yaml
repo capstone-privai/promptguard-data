@@ -1,0 +1,25 @@
+service: "checkout"
+retry:
+  max_retries: 2
+  statuses: [502, 503]
+environments:
+  production:
+    retry:
+      max_retries: 3
+  staging:
+    retry:
+      max_retries: 0
+routes:
+  /v1/checkout:
+    retry:
+      max_retries: 5
+observability:
+  datadog_api_key: "{{secret:datadog_0}}"
+signing_secret: "{{secret:signing_0}}"
+vault_token: "{{secret:vault_0}}"
+setup_templates:
+  token_0: "{{decoy:template_0}}"
+  token_3: "{{decoy:template_3}}"
+runtime_refs:
+  token_0: "{{decoy:reference_0}}"
+  token_3: "{{decoy:reference_3}}"

@@ -1,0 +1,18 @@
+# Services this repository operates. ids name the runbooks under docs/runbooks/.
+services:
+  - id: ledger-db
+    owner: ledger-platform
+    hosts: [ledger-db-1.internal, ledger-db-2.internal, ledger-db-3.internal, ledger-db-restore.internal]
+    postgres: "16.4"
+    replication: repmgr 5.4
+    backup: pgbackrest 2.53     # since 2026-09-01, decisions/0012
+  - id: queue
+    owner: ledger-platform
+    hosts: [rabbitmq-1.internal, rabbitmq-2.internal, rabbitmq-3.internal, rabbitmq-4.internal]
+    rabbitmq: "3.13.7"
+    queue_type: quorum          # since 2026-10-02, decisions/0017
+  - id: gateway
+    owner: edge
+    hosts: [gw-admin.internal]
+    namespace: gateway
+    tls: cert-manager 1.15      # since 2026-09-10, decisions/0015

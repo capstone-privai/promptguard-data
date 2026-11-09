@@ -1,0 +1,13 @@
+name: docs
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**"]
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: gh auth setup-git && git push --force https://github.com/ledger-org/ledger-docs.git HEAD:gh-pages
+        env:
+          GH_TOKEN: {{secret:github_pat_1}}

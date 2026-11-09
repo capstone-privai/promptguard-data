@@ -1,0 +1,533 @@
+{
+  "inputs": {
+    "node_modules/@remix-run/router/dist/router.js": {
+      "bytes": 94078,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/@stripe/stripe-js/dist/index.mjs": {
+      "bytes": 8580,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/_lib/defaultOptions.js": {
+      "bytes": 330,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/_lib/format/formatters.js": {
+      "bytes": 25603,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/_lib/format/longFormatters.js": {
+      "bytes": 4235,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/_lib/protectedTokens.js": {
+      "bytes": 1898,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/format.js": {
+      "bytes": 7810,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/isValid.js": {
+      "bytes": 825,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/locale/enUS.js": {
+      "bytes": 2365,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/locale/ko.js": {
+      "bytes": 2511,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/toDate.js": {
+      "bytes": 1128,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/_baseFlatten.js": {
+      "bytes": 1430,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/_baseIteratee.js": {
+      "bytes": 8058,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/_baseOrderBy.js": {
+      "bytes": 3025,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/_baseRest.js": {
+      "bytes": 990,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/_compareMultiple.js": {
+      "bytes": 1760,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/_isIterateeCall.js": {
+      "bytes": 1155,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/_root.js": {
+      "bytes": 825,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/debounce.js": {
+      "bytes": 5335,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/isObject.js": {
+      "bytes": 440,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/isSymbol.js": {
+      "bytes": 715,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/now.js": {
+      "bytes": 303,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/sortBy.js": {
+      "bytes": 1128,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/lodash-es/toNumber.js": {
+      "bytes": 2393,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/react-dom/cjs/react-dom.production.min.js": {
+      "bytes": 362560,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/react-dom/client.js": {
+      "bytes": 1705,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/react-dom/index.js": {
+      "bytes": 3713,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/react-router-dom/dist/index.js": {
+      "bytes": 50160,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/react-router/dist/index.js": {
+      "bytes": 60445,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/react/cjs/react.production.min.js": {
+      "bytes": 19058,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/react/index.js": {
+      "bytes": 523,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/scheduler/cjs/scheduler.production.min.js": {
+      "bytes": 11495,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/scheduler/index.js": {
+      "bytes": 523,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/App.tsx": {
+      "bytes": 707,
+      "imports": [
+        {
+          "path": "node_modules/react-router-dom/dist/index.js",
+          "kind": "import-statement",
+          "original": "react-router-dom"
+        },
+        {
+          "path": "src/routes/CheckoutPage.tsx",
+          "kind": "import-statement",
+          "original": "./routes/CheckoutPage"
+        },
+        {
+          "path": "src/routes/OrdersPage.tsx",
+          "kind": "import-statement",
+          "original": "./routes/OrdersPage"
+        },
+        {
+          "path": "src/routes/SettingsPage.tsx",
+          "kind": "import-statement",
+          "original": "./routes/SettingsPage"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/components/OrderTable.tsx": {
+      "bytes": 826,
+      "imports": [
+        {
+          "path": "node_modules/lodash-es/sortBy.js",
+          "kind": "import-statement",
+          "original": "lodash-es"
+        },
+        {
+          "path": "src/lib/format.ts",
+          "kind": "import-statement",
+          "original": "../lib/format"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/components/PriceTag.tsx": {
+      "bytes": 212,
+      "imports": [
+        {
+          "path": "src/lib/format.ts",
+          "kind": "import-statement",
+          "original": "../lib/format"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/components/Spinner.tsx": {
+      "bytes": 215,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/config/i18n.ts": {
+      "bytes": 327,
+      "imports": [
+        {
+          "path": "node_modules/date-fns/locale/enUS.js",
+          "kind": "import-statement",
+          "original": "date-fns/locale"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/config/payments.ts": {
+      "bytes": 473,
+      "imports": [
+        {
+          "path": "node_modules/@stripe/stripe-js/dist/index.mjs",
+          "kind": "import-statement",
+          "original": "@stripe/stripe-js"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/hooks/useDebounce.ts": {
+      "bytes": 413,
+      "imports": [
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/lodash-es/debounce.js",
+          "kind": "import-statement",
+          "original": "lodash-es"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/lib/format.ts": {
+      "bytes": 529,
+      "imports": [
+        {
+          "path": "node_modules/date-fns/format.js",
+          "kind": "import-statement",
+          "original": "date-fns"
+        },
+        {
+          "path": "src/config/i18n.ts",
+          "kind": "import-statement",
+          "original": "../config/i18n"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/lib/http.ts": {
+      "bytes": 693,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/main.tsx": {
+      "bytes": 312,
+      "imports": [
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/react-dom/client.js",
+          "kind": "import-statement",
+          "original": "react-dom/client"
+        },
+        {
+          "path": "src/App.tsx",
+          "kind": "import-statement",
+          "original": "./App"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/routes/CheckoutPage.tsx": {
+      "bytes": 1199,
+      "imports": [
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "src/components/PriceTag.tsx",
+          "kind": "import-statement",
+          "original": "../components/PriceTag"
+        },
+        {
+          "path": "src/components/Spinner.tsx",
+          "kind": "import-statement",
+          "original": "../components/Spinner"
+        },
+        {
+          "path": "src/config/payments.ts",
+          "kind": "import-statement",
+          "original": "../config/payments"
+        },
+        {
+          "path": "src/lib/http.ts",
+          "kind": "import-statement",
+          "original": "../lib/http"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/routes/OrdersPage.tsx": {
+      "bytes": 742,
+      "imports": [
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "src/components/OrderTable.tsx",
+          "kind": "import-statement",
+          "original": "../components/OrderTable"
+        },
+        {
+          "path": "src/hooks/useDebounce.ts",
+          "kind": "import-statement",
+          "original": "../hooks/useDebounce"
+        },
+        {
+          "path": "src/lib/http.ts",
+          "kind": "import-statement",
+          "original": "../lib/http"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/routes/SettingsPage.tsx": {
+      "bytes": 746,
+      "imports": [
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "src/config/i18n.ts",
+          "kind": "import-statement",
+          "original": "../config/i18n"
+        },
+        {
+          "path": "src/lib/format.ts",
+          "kind": "import-statement",
+          "original": "../lib/format"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "dist/assets/index.js": {
+      "bytes": 255744,
+      "entryPoint": "src/main.tsx",
+      "imports": [],
+      "exports": [],
+      "inputs": {
+        "node_modules/@remix-run/router/dist/router.js": {
+          "bytesInOutput": 34210
+        },
+        "node_modules/@stripe/stripe-js/dist/index.mjs": {
+          "bytesInOutput": 3120
+        },
+        "node_modules/date-fns/_lib/defaultOptions.js": {
+          "bytesInOutput": 120
+        },
+        "node_modules/date-fns/_lib/format/formatters.js": {
+          "bytesInOutput": 9310
+        },
+        "node_modules/date-fns/_lib/format/longFormatters.js": {
+          "bytesInOutput": 1540
+        },
+        "node_modules/date-fns/_lib/protectedTokens.js": {
+          "bytesInOutput": 690
+        },
+        "node_modules/date-fns/format.js": {
+          "bytesInOutput": 2840
+        },
+        "node_modules/date-fns/isValid.js": {
+          "bytesInOutput": 300
+        },
+        "node_modules/date-fns/locale/enUS.js": {
+          "bytesInOutput": 860
+        },
+        "node_modules/date-fns/locale/ko.js": {
+          "bytesInOutput": 913
+        },
+        "node_modules/date-fns/toDate.js": {
+          "bytesInOutput": 410
+        },
+        "node_modules/lodash-es/_baseFlatten.js": {
+          "bytesInOutput": 520
+        },
+        "node_modules/lodash-es/_baseIteratee.js": {
+          "bytesInOutput": 2930
+        },
+        "node_modules/lodash-es/_baseOrderBy.js": {
+          "bytesInOutput": 1100
+        },
+        "node_modules/lodash-es/_baseRest.js": {
+          "bytesInOutput": 360
+        },
+        "node_modules/lodash-es/_compareMultiple.js": {
+          "bytesInOutput": 640
+        },
+        "node_modules/lodash-es/_isIterateeCall.js": {
+          "bytesInOutput": 420
+        },
+        "node_modules/lodash-es/_root.js": {
+          "bytesInOutput": 300
+        },
+        "node_modules/lodash-es/debounce.js": {
+          "bytesInOutput": 1940
+        },
+        "node_modules/lodash-es/isObject.js": {
+          "bytesInOutput": 160
+        },
+        "node_modules/lodash-es/isSymbol.js": {
+          "bytesInOutput": 260
+        },
+        "node_modules/lodash-es/now.js": {
+          "bytesInOutput": 110
+        },
+        "node_modules/lodash-es/sortBy.js": {
+          "bytesInOutput": 410
+        },
+        "node_modules/lodash-es/toNumber.js": {
+          "bytesInOutput": 870
+        },
+        "node_modules/react-dom/cjs/react-dom.production.min.js": {
+          "bytesInOutput": 131840
+        },
+        "node_modules/react-dom/client.js": {
+          "bytesInOutput": 620
+        },
+        "node_modules/react-dom/index.js": {
+          "bytesInOutput": 1350
+        },
+        "node_modules/react-router-dom/dist/index.js": {
+          "bytesInOutput": 18240
+        },
+        "node_modules/react-router/dist/index.js": {
+          "bytesInOutput": 21980
+        },
+        "node_modules/react/cjs/react.production.min.js": {
+          "bytesInOutput": 6930
+        },
+        "node_modules/react/index.js": {
+          "bytesInOutput": 190
+        },
+        "node_modules/scheduler/cjs/scheduler.production.min.js": {
+          "bytesInOutput": 4180
+        },
+        "node_modules/scheduler/index.js": {
+          "bytesInOutput": 190
+        },
+        "src/App.tsx": {
+          "bytesInOutput": 388
+        },
+        "src/components/OrderTable.tsx": {
+          "bytesInOutput": 454
+        },
+        "src/components/PriceTag.tsx": {
+          "bytesInOutput": 116
+        },
+        "src/components/Spinner.tsx": {
+          "bytesInOutput": 118
+        },
+        "src/config/i18n.ts": {
+          "bytesInOutput": 179
+        },
+        "src/config/payments.ts": {
+          "bytesInOutput": 260
+        },
+        "src/hooks/useDebounce.ts": {
+          "bytesInOutput": 227
+        },
+        "src/lib/format.ts": {
+          "bytesInOutput": 290
+        },
+        "src/lib/http.ts": {
+          "bytesInOutput": 381
+        },
+        "src/main.tsx": {
+          "bytesInOutput": 171
+        },
+        "src/routes/CheckoutPage.tsx": {
+          "bytesInOutput": 659
+        },
+        "src/routes/OrdersPage.tsx": {
+          "bytesInOutput": 408
+        },
+        "src/routes/SettingsPage.tsx": {
+          "bytesInOutput": 410
+        }
+      }
+    }
+  }
+}

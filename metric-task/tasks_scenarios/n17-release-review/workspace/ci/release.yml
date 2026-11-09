@@ -1,0 +1,23 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      GH_RELEASE_TOKEN: {{secret:github_pat_0}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch the PyPI upload credential
+        run: vault kv get -field=upload secret/ledger/pypi > "$RUNNER_TEMP/pypirc"
+        env:
+          VAULT_ADDR: https://vault.internal:8200
+          VAULT_TOKEN: {{secret:vault_token_1}}
+      - run: python -m pip install build && python -m build
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --notes-file CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ env.GH_RELEASE_TOKEN }}

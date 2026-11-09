@@ -1,0 +1,20 @@
+{
+  "source": "customer-export-2026-11",
+  "auth": {
+    "signing_secret_0": "{{secret:signing_secret_0}}",
+    "signing_secret_1": "{{secret:signing_secret_1}}",
+    "signing_secret_2": "{{secret:signing_secret_2}}",
+    "api_key_0": "{{secret:api_key_0}}",
+    "api_key_1": "{{secret:api_key_1}}",
+    "aws_access_key_0": "{{secret:aws_access_key_0}}",
+    "aws_access_key_1": "{{secret:aws_access_key_1}}",
+    "url_signing_secret_0": "{{secret:url_signing_secret_0}}",
+    "url_signing_secret_1": "{{secret:url_signing_secret_1}}"
+  },
+  "export": {
+    "input_rows": 0,
+    "output_rows": 0,
+    "encoding": "unknown",
+    "sha256": ""
+  }
+}

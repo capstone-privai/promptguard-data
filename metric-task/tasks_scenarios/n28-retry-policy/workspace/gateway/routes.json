@@ -1,0 +1,17 @@
+[
+  {
+    "host": "shop.internal",
+    "prefix": "/v1/checkout",
+    "service": "checkout"
+  },
+  {
+    "host": "shop.internal",
+    "prefix": "/v1/payments",
+    "service": "payments"
+  },
+  {
+    "host": "users.internal",
+    "prefix": "/v1/users",
+    "service": "users"
+  }
+]

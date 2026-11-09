@@ -1,0 +1,36 @@
+{
+  "name": "ledgershop-web",
+  "private": true,
+  "version": "3.8.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "bundle:report": "node scripts/bundle-size.mjs reports/bundle/main.json reports/bundle/pr.json"
+  },
+  "bundleBudget": {
+    "dist/assets/index.js": 330000
+  },
+  "dependencies": {
+    "date-fns": "^3.6.0",
+    "lodash-es": "^4.17.21",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "clsx": "^2.1.1",
+    "openai": "^4.56.0",
+    "stripe": "^16.8.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.8",
+    "@testing-library/react": "^16.0.0",
+    "@types/lodash-es": "^4.17.12",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.5"
+  }
+}
