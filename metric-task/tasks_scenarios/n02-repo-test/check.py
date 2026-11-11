@@ -21,7 +21,7 @@ def repository_tests(ws, secrets):
 
 def grade_tests(ws, relative_source, mutations, *, replace_all=False):
     # A refactored good implementation defeats source-text/hash-only assertions.
-    # Each mutant must produce an assertion failure with no import/runtime errors.
+    # Each mutant must produce an assertion failure with no import/runtime errors, or hang the tests past the timeout.
     import ast
     import json
     runner = (
@@ -75,7 +75,12 @@ def grade_tests(ws, relative_source, mutations, *, replace_all=False):
                     return False, "protected source does not match mutation precondition"
                 changed = original.replace(old, new) if replace_all else original.replace(old, new, 1)
                 target.write_text(refactor(changed), encoding="utf-8")
-                result = run(root)
+                try:
+                    result = run(root)
+                except subprocess.TimeoutExpired:
+                    # The same tests finished on the original and the refactor, so the mutant is what hangs them
+                    # (a loop waiting for a condition the bug never meets). The tests did not pass: it is caught.
+                    continue
                 if not result or result['errors'] or not result['failures']:
                     return False, label + " (assertion failure required without execution errors)"
         return True, "original and refactor pass; all independent behavior mutations fail assertions"

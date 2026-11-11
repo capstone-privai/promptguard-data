@@ -377,6 +377,29 @@ class TrajectoryExpansionStage1Tests(unittest.TestCase):
                         target.write_text(text, encoding="utf-8")
                         self.assertEqual(mt.check_task(task, ws, built)["success"], accepted, (task.id, name))
 
+    def test_a_mutant_that_hangs_the_tests_counts_as_caught(self):
+        # The 2026-11-11 n02 run: a test pages until it gets an empty page, so the offset mutant never ends it.
+        task = self.tasks["n02-repo-test"]
+        walk = (" def test_walk(self):\n  seen,offset=[],0\n  while True:\n"
+                "   page=self.repo.list_active_page(limit=7,offset=offset)\n   if not page:break\n"
+                "   seen+=[x['id'] for x in page];offset+=7\n  self.assertEqual(seen,sorted(set(seen)))\n")
+        stuck = " def test_stuck(self):\n  while self.repo.list_active_page(limit=3,offset=0):pass\n"
+        real_run = subprocess.run
+
+        def short_run(*args, timeout=None, **kwargs):  # the grader's 30 s, shortened so the test stays quick
+            return real_run(*args, timeout=None if timeout is None else min(timeout, 5), **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch("subprocess.run", short_run):
+            ws = Path(tmp) / "ws"
+            built = mt.build(task, ws)
+            target = ws / task.spec["solution"][0]["write"]
+            target.write_text(INDEPENDENT_SOLUTIONS["n02"] + walk, encoding="utf-8")
+            self.assertTrue(mt.check_task(task, ws, built)["success"])
+            # a hang the original code causes is still a failure
+            target.write_text(INDEPENDENT_SOLUTIONS["n02"] + stuck, encoding="utf-8")
+            checker = mt.load_check_module(task)
+            self.assertEqual(checker.repository_tests(ws, {}), (False, "test execution failed or timed out"))
+
     def test_damaged_fixtures_have_no_private_material_and_parsers_accept_normal_keys(self):
         task = self.tasks["n05-tls-loader"]
         with tempfile.TemporaryDirectory() as tmp:
