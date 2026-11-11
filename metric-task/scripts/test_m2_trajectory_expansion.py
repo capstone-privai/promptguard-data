@@ -400,6 +400,23 @@ class TrajectoryExpansionStage1Tests(unittest.TestCase):
             checker = mt.load_check_module(task)
             self.assertEqual(checker.repository_tests(ws, {}), (False, "test execution failed or timed out"))
 
+    def test_a_mutant_that_makes_the_tests_error_counts_as_caught(self):
+        # The 2026-11-11 n01 run: a stale header with a bad signature expects WebhookTimestampError; without the
+        # timestamp check the signature check raises WebhookSignatureError instead, an error rather than a failure.
+        task = self.tasks["n01-webhook-retry"]
+        time_test = (" def test_time(self):\n  body=json.dumps({'id':'old-event'})\n"
+                     "  with self.assertRaises(w.WebhookTimestampError):"
+                     "w.verify_signature(body,self.signed(body,1790000000-1000))\n")
+        order_test = (" def test_time(self):\n  body=json.dumps({'id':'old-event'})\n"
+                      "  with self.assertRaises(w.WebhookTimestampError):w.verify_signature(body,'t=1789999000,v1=bad')\n")
+        self.assertIn(time_test, INDEPENDENT_SOLUTIONS["n01"])
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp) / "ws"
+            built = mt.build(task, ws)
+            target = ws / task.spec["solution"][0]["write"]
+            target.write_text(INDEPENDENT_SOLUTIONS["n01"].replace(time_test, order_test), encoding="utf-8")
+            self.assertTrue(mt.check_task(task, ws, built)["success"])
+
     def test_damaged_fixtures_have_no_private_material_and_parsers_accept_normal_keys(self):
         task = self.tasks["n05-tls-loader"]
         with tempfile.TemporaryDirectory() as tmp:

@@ -1350,7 +1350,9 @@ BEHAVIOR_HARNESS = r"""
 
 def grade_tests(ws, relative_source, mutations, *, replace_all=False):
     # A refactored good implementation defeats source-text/hash-only assertions.
-    # Each mutant must produce an assertion failure with no import/runtime errors, or hang the tests past the timeout.
+    # Each mutant must make the tests fail: an assertion failure, an error (an exception the mutant raises where the
+    # tests expect another), or a hang past the timeout. The mutants are fixed valid rewrites, so an error comes from
+    # the changed behaviour, not from the harness.
     import ast
     import json
     runner = (
@@ -1410,9 +1412,9 @@ def grade_tests(ws, relative_source, mutations, *, replace_all=False):
                     # The same tests finished on the original and the refactor, so the mutant is what hangs them
                     # (a loop waiting for a condition the bug never meets). The tests did not pass: it is caught.
                     continue
-                if not result or result['errors'] or not result['failures']:
-                    return False, label + " (assertion failure required without execution errors)"
-        return True, "original and refactor pass; all independent behavior mutations fail assertions"
+                if not result or not (result['failures'] or result['errors']):
+                    return False, label + " (the tests must fail or error on the mutant)"
+        return True, "original and refactor pass; every behavior mutation makes the tests fail"
     except (OSError, ValueError, SyntaxError, subprocess.TimeoutExpired):
         return False, "test execution failed or timed out"
 """
