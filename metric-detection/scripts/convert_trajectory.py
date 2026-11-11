@@ -1,15 +1,21 @@
-"""Convert a metric-task batch (real Claude Code runs on tasks with planted secrets) into our session format.
+"""Convert metric-task batches (real Claude Code runs on tasks with planted secrets) into one dataset in our format.
 
-Run from the repository root, after metric-task/scripts/m2_planted.py wrote planted.json into the batch:
-  python metric-detection/scripts/convert_trajectory.py runs/metric-task/<batch>
+Run from the repository root, after metric-task/scripts/m2_planted.py wrote planted.json into every batch:
+  python metric-detection/scripts/convert_trajectory.py runs/metric-task/<batch> [runs/metric-task/<batch> ...]
+
+Every batch goes into the same three files, so the scorer sees one dataset. Batches are taken in name order whatever
+the order of the arguments, and each session keeps its own batch in meta.batch and meta.dataset_version. Adding a batch
+means converting all of them again: the files are rewritten, never appended to. A batch name given twice, or a
+session_id two batches share, stops the conversion before anything is written.
 
 Only valid runs of the none condition become sessions: nothing was masked, so the text is what a detector would see.
 origin=recorded and split=test, so these sessions are never trained on (dataset_policy.allowed_use).
 
-Writes, under --out (default metric-detection/):
-  data_test/sessions_from_trajectory-<batch>.jsonl  one session per run
-  data_answer/gold_from_trajectory-<batch>.jsonl    gold spans (same schema as gold.jsonl)
-  labels_from_trajectory-<batch>.jsonl              gold spans, excluded candidates and rows to review (no values)
+Writes, under --out (default metric-detection/), the same names for one batch or many:
+  data_test/sessions_from_trajectory.jsonl  one session per run
+  data_answer/gold_from_trajectory.jsonl    gold spans (same schema as gold.jsonl; span_id counts within an item)
+  labels_from_trajectory.jsonl              gold spans, excluded candidates and rows to review (no values)
+The coverage report printed to stdout covers every batch together and lists the sessions of each batch.
 
 Items come from api_requests.jsonl.xz, what the server received, not the transcript, which has neither the system
 prompt nor the system reminders. Every /v1/messages request that succeeded is read, so a subagent's or a side request's
@@ -395,6 +401,29 @@ def convert(batch: Path):
     return sessions, gold, labels, stats
 
 
+class BatchError(ValueError):
+    """The batches given cannot make one dataset: a name given twice, or a session_id two of them share."""
+
+
+def convert_batches(batches: list[Path]):
+    """convert() of every batch, in name order, joined into one dataset. Raises BatchError before returning rows."""
+    names = Counter(b.name for b in batches)
+    if repeated := sorted(n for n, k in names.items() if k > 1):
+        raise BatchError(f"batch given more than once: {', '.join(repeated)}")
+    sessions, gold, labels = [], [], []
+    stats: Counter = Counter()
+    for batch in sorted(batches, key=lambda b: b.name):
+        batch_sessions, batch_gold, batch_labels, batch_stats = convert(batch)
+        sessions += batch_sessions
+        gold += batch_gold
+        labels += batch_labels
+        stats.update(batch_stats)  # update, not +, keeps zero counts
+    ids = Counter(s["session_id"] for s in sessions)
+    if shared := sorted(i for i, k in ids.items() if k > 1):
+        raise BatchError(f"session_id in more than one batch: {', '.join(shared)}")
+    return sessions, gold, labels, stats
+
+
 def axis_counts(rows: list[dict], field: str) -> dict:
     """{value: spans, unique values, scenes, short} of the rows, short meaning below the minimum for a coverage axis."""
     groups = defaultdict(list)
@@ -417,6 +446,7 @@ def coverage(sessions: list[dict], gold: list[dict], labels: list[dict], stats: 
     scored_gold = [r for r in labels if r["gold"] and r["channel"] in SCORED_CHANNELS]
     negatives = [r for r in labels if not r["gold"] and not r.get("review")]
     return {
+        "sessions_by_batch": dict(sorted(Counter(s["meta"]["batch"] for s in sessions).items())),
         "shape": {"sessions": len(sessions), "items": len(items),
                   "items_by_channel": dict(Counter(i["channel"] for i in items)),
                   "items_per_session_median": statistics.median(len(s["items"]) for s in sessions) if sessions else None,
@@ -436,9 +466,9 @@ def coverage(sessions: list[dict], gold: list[dict], labels: list[dict], stats: 
     }
 
 
-def write_outputs(batch: Path, out: Path) -> dict:
-    sessions, gold, labels, stats = convert(batch)
-    name = f"trajectory-{batch.name}"
+def write_outputs(batches: list[Path], out: Path) -> dict:
+    sessions, gold, labels, stats = convert_batches(batches)
+    name = "trajectory"
     for sub in ("data_test", "data_answer"):
         (out / sub).mkdir(parents=True, exist_ok=True)
     write_jsonl(out / "data_test" / f"sessions_from_{name}.jsonl", sessions)
@@ -449,10 +479,14 @@ def write_outputs(batch: Path, out: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("batch", type=Path)
+    parser.add_argument("batch", type=Path, nargs="+", help="metric-task batch folder; give every batch of the dataset")
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args()
-    print(json.dumps(write_outputs(args.batch, args.out), ensure_ascii=False, indent=2))
+    try:
+        report = write_outputs(args.batch, args.out)
+    except BatchError as e:
+        parser.error(f"{e}; nothing written")
+    print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 """convert_trajectory.py on hand-made request bodies. Values are generated here, in no provider's format."""
 import base64
 from collections import Counter
+import contextlib
+import io
 import json
 import lzma
 from pathlib import Path
@@ -361,6 +363,113 @@ class ConvertTests(unittest.TestCase):
             self.assertEqual([r["how"] for r in labels if r["gold"]], ["urlencoded"])
             self.assertEqual(ct.coverage(sessions, gold, labels, stats)["axes"]["how"],
                              {"urlencoded": {"spans": 1, "unique_values": 1, "scenes": 1, "short": True}})
+
+
+class MergeTests(unittest.TestCase):
+    """Several batches into one file: the order of the arguments and a repeated batch."""
+
+    def make_batch(self, root: Path, name: str, tasks) -> Path:
+        batch = root / "runs" / name
+        batch.mkdir(parents=True)
+        (batch / "batch.json").write_text(json.dumps({"model": "sonnet", "claude_version": "x", "system_commit": "c"}))
+        for task in tasks:
+            ConvertTests.make_run(self, batch, task, "none-r1")
+        return batch
+
+    def batches(self, root: Path) -> list[Path]:
+        return [self.make_batch(root, "b2", ["t01-a"]), self.make_batch(root, "b1", ["t01-a", "t02-b"])]
+
+    @staticmethod
+    def outputs(out: Path) -> dict[str, bytes]:
+        names = ("data_test/sessions_from_trajectory.jsonl", "data_answer/gold_from_trajectory.jsonl",
+                 "labels_from_trajectory.jsonl")
+        return {n: (out / n).read_bytes() for n in names}
+
+    def test_two_batches_make_one_file_of_the_sessions_each_alone_makes(self):
+        with tempfile.TemporaryDirectory() as d:
+            b2, b1 = self.batches(Path(d))
+            sessions, gold, labels, stats = ct.convert_batches([b2, b1])
+            alone = [ct.convert(b1), ct.convert(b2)]  # name order
+            self.assertEqual(len(sessions), sum(len(a[0]) for a in alone))
+            self.assertEqual(sessions, alone[0][0] + alone[1][0])
+            self.assertEqual(gold, alone[0][1] + alone[1][1])
+            self.assertEqual(labels, alone[0][2] + alone[1][2])
+            self.assertEqual([s["meta"]["batch"] for s in sessions], ["b1", "b1", "b2"])
+            self.assertEqual({s["meta"]["dataset_version"] for s in sessions},
+                             {f"{ct.SOURCE}@b1", f"{ct.SOURCE}@b2"})
+            report = ct.write_outputs([b2, b1], Path(d) / "out")
+            self.assertEqual(report["sessions_by_batch"], {"b1": 2, "b2": 1})
+            self.assertEqual(report["shape"]["sessions"], 3)
+            # byte for byte, each line of the merged file is the line the batch alone writes
+            merged = self.outputs(Path(d) / "out")
+            for batch in (b1, b2):
+                ct.write_outputs([batch], Path(d) / batch.name)
+            for name, data in merged.items():
+                self.assertEqual(data, b"".join(self.outputs(Path(d) / b)[name] for b in ("b1", "b2")), name)
+
+    def test_the_order_of_the_arguments_does_not_change_a_byte(self):
+        with tempfile.TemporaryDirectory() as d:
+            b2, b1 = self.batches(Path(d))
+            ct.write_outputs([b2, b1], Path(d) / "x")
+            ct.write_outputs([b1, b2], Path(d) / "y")
+            self.assertEqual(self.outputs(Path(d) / "x"), self.outputs(Path(d) / "y"))
+
+    def test_a_batch_given_twice_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            b2, b1 = self.batches(Path(d))
+            again = Path(d) / "elsewhere" / "b1"  # another folder of the same name counts too
+            again.parent.mkdir()
+            again.symlink_to(b1, target_is_directory=True)
+            for batches in ([b1, b2, b1], [b1, again]):
+                out = Path(d) / "out"
+                with self.assertRaises(ct.BatchError):
+                    ct.write_outputs(batches, out)
+                self.assertFalse(out.exists())
+            with mock_argv(["convert_trajectory.py", str(b1), str(b1), "--out", str(Path(d) / "cli")]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                ct.main()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertFalse((Path(d) / "cli").exists())
+
+    def verify(self, sessions: Path, batches: list[Path]) -> tuple[int, dict | None, str]:
+        out, err = io.StringIO(), io.StringIO()
+        code = 0
+        with mock_argv(["dataset_verify.py", str(sessions), "--trajectory", *map(str, batches)]), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                dv.main()
+            except SystemExit as e:
+                code = e.code
+        return code, json.loads(out.getvalue()) if code == 0 else None, err.getvalue()
+
+    def test_reproduction_needs_every_batch_and_no_other(self):
+        with tempfile.TemporaryDirectory() as d:
+            b2, b1 = self.batches(Path(d))
+            extra = self.make_batch(Path(d), "b3", ["t01-a"])
+            out = Path(d) / "out"
+            ct.write_outputs([b1, b2], out)
+            sessions = out / "data_test" / "sessions_from_trajectory.jsonl"
+            code, report, _ = self.verify(sessions, [b2, b1])
+            self.assertEqual(code, 0)
+            self.assertEqual((report["labeling"], report["reproduction"], report["sessions"]), ("passed", "passed", 3))
+            code, _, err = self.verify(sessions, [b1])
+            self.assertEqual(code, 1)
+            self.assertIn("sessions come from batches not given: b2", err)
+            code, _, err = self.verify(sessions, [b1, b2, extra])
+            self.assertEqual(code, 1)
+            self.assertIn("batches given that no session comes from: b3", err)
+            code, _, err = self.verify(sessions, [b1, b2, b1])
+            self.assertEqual(code, 1)
+            self.assertIn("batch given more than once: b1", err)
+
+
+@contextlib.contextmanager
+def mock_argv(argv: list[str]):
+    saved, sys.argv = sys.argv, argv
+    try:
+        yield
+    finally:
+        sys.argv = saved
 
 
 if __name__ == "__main__":

@@ -18,11 +18,13 @@ CLAUDE_CONFIG_DIR=~/.claude-trajectory M2_RUNS_DIR=<저장소>/runs/metric-task 
   python3 metric-task/scripts/m2_loop.py --name NAME -- --tasks all --conditions none --reps 1 --model sonnet --jobs 1 --budget 2
 # 2. 심은 값의 목록을 실행 폴더마다 쓴다
 python3 metric-task/scripts/m2_planted.py runs/metric-task/NAME
-# 3. 평가셋으로 바꾼다 (표준 출력이 커버리지 리포트)
-python3 metric-detection/scripts/convert_trajectory.py runs/metric-task/NAME
-# 4. LABELING 검사와 바이트 재현
-python3 metric-detection/scripts/dataset_verify.py metric-detection/data_test/sessions_from_trajectory-NAME.jsonl --trajectory runs/metric-task/NAME
+# 3. 모든 배치를 한 평가셋으로 바꾼다 (표준 출력이 전체 커버리지 리포트와 배치별 세션 수)
+python3 metric-detection/scripts/convert_trajectory.py runs/metric-task/NAME1 runs/metric-task/NAME2 ...
+# 4. LABELING 검사와 바이트 재현 (3단계와 같은 배치를 빠짐없이 준다)
+python3 metric-detection/scripts/dataset_verify.py metric-detection/data_test/sessions_from_trajectory.jsonl --trajectory runs/metric-task/NAME1 runs/metric-task/NAME2 ...
 ```
+
+배치를 하나 더하면 기존 배치까지 모든 배치를 다시 넣어 3·4단계를 돌린다. 출력 파일은 이어 쓰지 않고 새로 쓴다.
 
 ## 정답
 
