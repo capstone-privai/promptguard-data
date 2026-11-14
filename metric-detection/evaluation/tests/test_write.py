@@ -15,7 +15,8 @@ from evaluation.cli import EXIT_OK, execute_run  # noqa: E402
 from evaluation.dataset.io import load_sessions  # noqa: E402
 from evaluation.report.write import create_run_dir  # noqa: E402
 
-SAFE_FILES = ("run_meta.json", "metrics.json", "per_span.jsonl", "per_edit.jsonl", "report.md")
+SAFE_FILES = ("run_meta.json", "metrics.json", "per_span.jsonl", "per_edit.jsonl", "report.md", "per_finding.jsonl",
+              "per_scan.jsonl")
 
 
 def _gold_values() -> set[str]:
@@ -58,6 +59,11 @@ class WriteTests(unittest.TestCase):
         edits = [json.loads(line) for line in (run_dir / "per_edit.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(set(edits[0]), {"session_id", "item_id", "start", "end", "channel", "scored", "overlaps_gold",
                                          "within_gold"})
+        findings = [json.loads(line) for line in (run_dir / "per_finding.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertTrue(findings)
+        self.assertTrue({"adapter", "rule_id", "start", "end", "overlaps_gold", "within_gold"} <= set(findings[0]))
+        scans = [json.loads(line) for line in (run_dir / "per_scan.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(scans), 24)  # every fixture item is in a scanned channel
         metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
         self.assertEqual(metrics["counts"]["gold_total"], 12)
         self.assertEqual(metrics["counts"]["gold_total"], sum(span["scored"] for span in spans))

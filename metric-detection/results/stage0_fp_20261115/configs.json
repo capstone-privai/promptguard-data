@@ -1,0 +1,202 @@
+[
+  {
+    "config": "ML off",
+    "describe": [
+      {
+        "adapters": [
+          {
+            "name": "credsweeper",
+            "version": "1.19.0"
+          },
+          {
+            "name": "gitleaks",
+            "version": "8.30.1"
+          },
+          {
+            "name": "promptguard-rules",
+            "version": "0.1.0"
+          },
+          {
+            "name": "shell-aware",
+            "version": "0.2.2"
+          }
+        ],
+        "candidate_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules",
+          "shell-aware"
+        ],
+        "candidate_only_adapters": [
+          "shell-aware"
+        ],
+        "candidate_policy": "union",
+        "consensus": "majority",
+        "detector": "ensemble",
+        "majority_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules"
+        ],
+        "majority_required_votes": 2,
+        "protection_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules",
+          "shell-aware"
+        ],
+        "required_votes": 1,
+        "skipped": []
+      }
+    ],
+    "datasets": [
+      "sessions",
+      "sessions_2",
+      "sessions_from_CredData",
+      "sessions_from_Nemotron-PII",
+      "sessions_from_SWE-Gym",
+      "sessions_from_example",
+      "sessions_from_noseyparker",
+      "sessions_from_openhands-feedback",
+      "sessions_from_trajectory"
+    ]
+  },
+  {
+    "config": "system + v10",
+    "describe": [
+      {
+        "adapters": [
+          {
+            "name": "credsweeper",
+            "version": "1.19.0"
+          },
+          {
+            "name": "gitleaks",
+            "version": "8.30.1"
+          },
+          {
+            "name": "promptguard-rules",
+            "version": "0.1.0"
+          },
+          {
+            "name": "shell-aware",
+            "version": "0.2.2"
+          },
+          {
+            "name": "ml-span",
+            "version": "span-detector-v10:abc32620dd4f"
+          }
+        ],
+        "candidate_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules",
+          "shell-aware",
+          "ml-span"
+        ],
+        "candidate_only_adapters": [
+          "ml-span",
+          "shell-aware"
+        ],
+        "candidate_policy": "union",
+        "consensus": "majority",
+        "detector": "ensemble",
+        "majority_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules"
+        ],
+        "majority_required_votes": 2,
+        "protection_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules",
+          "shell-aware",
+          "ml-span"
+        ],
+        "required_votes": 1,
+        "skipped": []
+      }
+    ],
+    "datasets": [
+      "sessions",
+      "sessions_2",
+      "sessions_from_CredData",
+      "sessions_from_Nemotron-PII",
+      "sessions_from_SWE-Gym",
+      "sessions_from_example",
+      "sessions_from_noseyparker",
+      "sessions_from_openhands-feedback",
+      "sessions_from_trajectory"
+    ]
+  },
+  {
+    "config": "system + B seed110",
+    "describe": [
+      {
+        "adapters": [
+          {
+            "name": "credsweeper",
+            "version": "1.19.0"
+          },
+          {
+            "name": "gitleaks",
+            "version": "8.30.1"
+          },
+          {
+            "name": "promptguard-rules",
+            "version": "0.1.0"
+          },
+          {
+            "name": "shell-aware",
+            "version": "0.2.2"
+          },
+          {
+            "name": "ml-span",
+            "version": "span-pilot-step0-b-seed110:abc32620dd4f"
+          }
+        ],
+        "candidate_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules",
+          "shell-aware",
+          "ml-span"
+        ],
+        "candidate_only_adapters": [
+          "ml-span",
+          "shell-aware"
+        ],
+        "candidate_policy": "union",
+        "consensus": "majority",
+        "detector": "ensemble",
+        "majority_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules"
+        ],
+        "majority_required_votes": 2,
+        "protection_adapters": [
+          "credsweeper",
+          "gitleaks",
+          "promptguard-rules",
+          "shell-aware",
+          "ml-span"
+        ],
+        "required_votes": 1,
+        "skipped": []
+      }
+    ],
+    "datasets": [
+      "sessions",
+      "sessions_2",
+      "sessions_from_CredData",
+      "sessions_from_Nemotron-PII",
+      "sessions_from_SWE-Gym",
+      "sessions_from_example",
+      "sessions_from_noseyparker",
+      "sessions_from_openhands-feedback",
+      "sessions_from_trajectory"
+    ]
+  }
+]

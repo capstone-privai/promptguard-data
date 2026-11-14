@@ -163,7 +163,11 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 | `per_span.jsonl` | 정답 span 하나당 한 줄: `session_id`, `item_id`, `span_id`, `start`, `end`, `type`, `channel`, `scored`, `status`, `exposed_chars` |
 | `per_edit.jsonl` | edit 하나당 한 줄: `session_id`, `item_id`, `start`, `end`, `channel`, `scored`, `overlaps_gold`, `within_gold` |
 | `report.md` | 위 내용을 사람이 읽기 좋게 정리한 요약 |
+| `per_finding.jsonl` | PromptGuard 전용. 탐지기가 겹치는 span을 합치기 전에 각 탐지 모듈이 낸 결과 하나당 한 줄: `adapter`, `rule_id`, `type`, `confidence`, `score`(ML), 원문 코드 포인트 기준 `start`, `end`, `valid`(시스템이 거부하는 빈·범위 밖 span이면 false), edit와 같은 규칙의 `overlaps_gold`, `within_gold`, 겹치는 `gold_span_ids`, `item_blocked`. 탐지기의 `collect` 결과를 그대로 기록하며(`scan`은 그대로 돈다) 텍스트는 넣지 않는다 |
+| `per_scan.jsonl` | PromptGuard 전용. 검사한 item 하나당 한 줄: 결과 수, 실패한 탐지 모듈(`adapter_errors`, 예: `ADAPTER_FAILURE:ml-v9`), Mod가 검사하지 못한 이유(`failure`), `blocked` |
 | `debug/items.jsonl` | `--debug` 전용. PromptGuard는 item마다 worker 결과(위치, 유형, 규칙, 값의 HMAC)와 탐지기 실패 이유. 원문 위치를 알려 주므로 공유하지 않는다 |
+
+규칙별 정밀도와 단독·공유 오탐, 단독으로 찾은 정답, 오탐 유형은 `python -m evaluation.report.fp_analysis --config "<이름>" <실행 폴더들의 상위 폴더> ... --out <폴더>`(metric-detection/에서 실행)로 `per_finding.jsonl`에서 계산한다. 탐지 결과를 합쳐 다시 채점한 값과 실행의 채점(`per_edit`, `per_span`)이 어떻게 다른지(Mod의 remask)도 함께 낸다. 오탐 유형은 그때 데이터셋 텍스트를 읽어 정하고, 결과에는 유형 이름과 수만 쓴다.
 
 `per_span.jsonl`과 `per_edit.jsonl`에는 채점하지 않는 `tool_input`의 행도 `scored: false`로 남는다(진단용). 지표는 `scored: true`인 행만으로 계산한다. `debug/` 밖의 파일에는 원문 텍스트가 들어가지 않는다. git 정보는 `git`을 실행하지 않고 `.git`에서 직접 읽으므로 `dirty`는 항상 `null`이다.
 

@@ -1,0 +1,10 @@
+dataset,system,config,status,recall,precision,f2,fp_per_1k_lines,seconds,run_dir,note
+sessions.jsonl,promptguard,,ok,0.7500,0.9000,0.7759,19.8675,40.7,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-195731_promptguard,
+sessions_2.jsonl,promptguard,,ok,0.7361,0.7826,0.7450,22.1169,74.8,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-195731_promptguard-2,
+sessions_from_CredData.jsonl,promptguard,,ok,0.7622,0.1876,0.4727,147.6766,19077.6,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-195731_promptguard-4,
+sessions_from_Nemotron-PII.jsonl,promptguard,,ok,0.2428,0.6365,0.2771,3.2413,7106.1,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-195731_promptguard-3,
+sessions_from_SWE-Gym.jsonl,promptguard,,ok,1.0000,0.0143,0.0677,3.6466,9655.1,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-195811_promptguard,
+sessions_from_example.jsonl,promptguard,,ok,1.0000,1.0000,1.0000,0.0000,9.3,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-195846_promptguard,
+sessions_from_noseyparker.jsonl,promptguard,,ok,0.7761,0.7852,0.7779,69.4836,800.1,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-195855_promptguard,
+sessions_from_openhands-feedback.jsonl,promptguard,,ok,0.8791,0.0653,0.2516,4.0352,7179.0,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-201215_promptguard,
+sessions_from_trajectory.jsonl,promptguard,,ok,0.8217,0.6357,0.7763,7.6731,1414.0,/home/ubuntu/develop/jungwoo/cau/26_2/capstone/promptguard-data/metric-detection/results/all_20261114-195730/20261114-215557_promptguard,

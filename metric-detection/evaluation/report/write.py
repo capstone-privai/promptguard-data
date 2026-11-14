@@ -1,4 +1,7 @@
-"""Write a run folder. Only debug/ may contain raw text; every other file holds offsets and counts."""
+"""Write a run folder. Only debug/ may contain raw text; every other file holds offsets and counts.
+
+A system that reports per-adapter findings (PromptGuard) also gets per_finding.jsonl and per_scan.jsonl
+(report/findings.py); the other files are the same with or without them."""
 
 from __future__ import annotations
 
@@ -9,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, SCORED_CHANNELS
+from evaluation.report.findings import per_finding_rows, per_scan_rows
 from evaluation.run import RunResult
 
 
@@ -137,6 +141,11 @@ def write_run(run_dir: Path, *, meta: dict[str, Any], result: RunResult, debug: 
     _jsonl(run_dir / "per_edit.jsonl", _per_edit(result))
     (run_dir / "report.md").write_text(render_report(meta, result), encoding="utf-8")
     written = ["run_meta.json", "metrics.json", "per_span.jsonl", "per_edit.jsonl", "report.md"]
+    if any(output.scan is not None for output in result.outputs.values()):
+        # Per-adapter findings before the system merged them (offsets only); see report/findings.py.
+        _jsonl(run_dir / "per_finding.jsonl", per_finding_rows(result))
+        _jsonl(run_dir / "per_scan.jsonl", per_scan_rows(result))
+        written += ["per_finding.jsonl", "per_scan.jsonl"]
     if debug:
         (run_dir / "debug").mkdir()
         rows = [{"session_id": session_id, "item_id": item_id, "debug": output.debug}
