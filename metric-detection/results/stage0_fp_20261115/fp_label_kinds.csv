@@ -1,0 +1,277 @@
+config,group,dataset,kind,fp_spans
+ML off,agent sessions,sessions,(dataset has no labels file),2
+ML off,agent sessions,sessions_2,(dataset has no labels file),12
+ML off,format detection,sessions_from_CredData,not_credential_position,3958
+ML off,format detection,sessions_from_CredData,code,3370
+ML off,format detection,sessions_from_CredData,reference,1000
+ML off,format detection,sessions_from_CredData,descriptor,2844
+ML off,format detection,sessions_from_CredData,(no labels row),3162
+ML off,format detection,sessions_from_CredData,identifier,1341
+ML off,format detection,sessions_from_CredData,template,793
+ML off,format detection,sessions_from_CredData,doc_example,262
+ML off,format detection,sessions_from_CredData,redaction,322
+ML off,format detection,sessions_from_CredData,not_propagated,32
+ML off,format detection,sessions_from_CredData,hash,46
+ML off,format detection,sessions_from_CredData,non_credential,11
+ML off,natural-language secrets,sessions_from_Nemotron-PII,known_example,118
+ML off,natural-language secrets,sessions_from_Nemotron-PII,doc_example,23
+ML off,natural-language secrets,sessions_from_Nemotron-PII,pii_other,107
+ML off,natural-language secrets,sessions_from_Nemotron-PII,non_auth_cookie,33
+ML off,natural-language secrets,sessions_from_Nemotron-PII,(no labels row),19
+ML off,natural-language secrets,sessions_from_Nemotron-PII,reference,1
+ML off,natural-language secrets,sessions_from_Nemotron-PII,code,2
+ML off,natural-language secrets,sessions_from_Nemotron-PII,cookie_name_only,1
+ML off,natural-language secrets,sessions_from_Nemotron-PII,identifier,1
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,code expression,278
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,plain identifier or word,146
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,short value never in a credential position (label_rules.classify),13
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,variable or attribute reference,27
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,"not a secret (code, name, identifier or option)",7
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,test placeholder value or secret name,19
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,hash output (dask tokenize),6
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,(no labels row),3
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,placeholder or redaction mark,3
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,"resource name, email address or path",12
+ML off,real-traffic over-masking,sessions_from_SWE-Gym,"number, version or time format",6
+ML off,format detection,sessions_from_noseyparker,identifier,12
+ML off,format detection,sessions_from_noseyparker,(no labels row),34
+ML off,format detection,sessions_from_noseyparker,known_example,8
+ML off,format detection,sessions_from_noseyparker,reference,3
+ML off,format detection,sessions_from_noseyparker,template,5
+ML off,format detection,sessions_from_noseyparker,descriptor,1
+ML off,format detection,sessions_from_noseyparker,doc_example,1
+ML off,format detection,sessions_from_noseyparker,placeholder,2
+ML off,real-traffic over-masking,sessions_from_openhands-feedback,placeholder or redaction mark,50
+ML off,real-traffic over-masking,sessions_from_openhands-feedback,variable or attribute reference,123
+ML off,real-traffic over-masking,sessions_from_openhands-feedback,short value never in a credential position (label_rules.classify),93
+ML off,real-traffic over-masking,sessions_from_openhands-feedback,"not a secret (code, name, URL, path or identifier)",146
+ML off,real-traffic over-masking,sessions_from_openhands-feedback,"number, version or time format",19
+ML off,real-traffic over-masking,sessions_from_openhands-feedback,plain identifier or word,15
+ML off,real agent trajectories,sessions_from_trajectory,(dataset has no labels file),229
+ML off,agent sessions,(group),(dataset has no labels file),14
+ML off,format detection,(group),not_credential_position,3958
+ML off,format detection,(group),code,3370
+ML off,format detection,(group),reference,1003
+ML off,format detection,(group),descriptor,2845
+ML off,format detection,(group),(no labels row),3196
+ML off,format detection,(group),identifier,1353
+ML off,format detection,(group),template,798
+ML off,format detection,(group),doc_example,263
+ML off,format detection,(group),redaction,322
+ML off,format detection,(group),not_propagated,32
+ML off,format detection,(group),hash,46
+ML off,format detection,(group),non_credential,11
+ML off,format detection,(group),known_example,8
+ML off,format detection,(group),placeholder,2
+ML off,natural-language secrets,(group),known_example,118
+ML off,natural-language secrets,(group),doc_example,23
+ML off,natural-language secrets,(group),pii_other,107
+ML off,natural-language secrets,(group),non_auth_cookie,33
+ML off,natural-language secrets,(group),(no labels row),19
+ML off,natural-language secrets,(group),reference,1
+ML off,natural-language secrets,(group),code,2
+ML off,natural-language secrets,(group),cookie_name_only,1
+ML off,natural-language secrets,(group),identifier,1
+ML off,real-traffic over-masking,(group),code expression,278
+ML off,real-traffic over-masking,(group),plain identifier or word,161
+ML off,real-traffic over-masking,(group),short value never in a credential position (label_rules.classify),106
+ML off,real-traffic over-masking,(group),variable or attribute reference,150
+ML off,real-traffic over-masking,(group),"not a secret (code, name, identifier or option)",7
+ML off,real-traffic over-masking,(group),test placeholder value or secret name,19
+ML off,real-traffic over-masking,(group),hash output (dask tokenize),6
+ML off,real-traffic over-masking,(group),(no labels row),3
+ML off,real-traffic over-masking,(group),placeholder or redaction mark,53
+ML off,real-traffic over-masking,(group),"resource name, email address or path",12
+ML off,real-traffic over-masking,(group),"number, version or time format",25
+ML off,real-traffic over-masking,(group),"not a secret (code, name, URL, path or identifier)",146
+ML off,real agent trajectories,(group),(dataset has no labels file),229
+system + v10,agent sessions,sessions,(dataset has no labels file),4
+system + v10,agent sessions,sessions_2,(dataset has no labels file),54
+system + v10,format detection,sessions_from_CredData,not_credential_position,5326
+system + v10,format detection,sessions_from_CredData,(no labels row),6866
+system + v10,format detection,sessions_from_CredData,identifier,2214
+system + v10,format detection,sessions_from_CredData,reference,1028
+system + v10,format detection,sessions_from_CredData,code,3556
+system + v10,format detection,sessions_from_CredData,template,851
+system + v10,format detection,sessions_from_CredData,descriptor,2924
+system + v10,format detection,sessions_from_CredData,doc_example,295
+system + v10,format detection,sessions_from_CredData,redaction,345
+system + v10,format detection,sessions_from_CredData,hash,82
+system + v10,format detection,sessions_from_CredData,non_credential,11
+system + v10,format detection,sessions_from_CredData,not_propagated,42
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,pii_other,8440
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,non_auth_cookie,95
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,(no labels row),227
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,pin,220
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,known_example,120
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,doc_example,79
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,cvv,8
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,code,2
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,not_propagated,1
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,cookie_name_only,3
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,non_credential,2
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,identifier,1
+system + v10,natural-language secrets,sessions_from_Nemotron-PII,reference,1
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,code expression,278
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,(no labels row),155
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,plain identifier or word,147
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,short value never in a credential position (label_rules.classify),13
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,variable or attribute reference,27
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,"not a secret (code, name, identifier or option)",12
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,test placeholder value or secret name,19
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,hash output (dask tokenize),6
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,placeholder or redaction mark,3
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,"UUID outside a secret's place (request id, resource id)",22
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,"resource name, email address or path",23
+system + v10,real-traffic over-masking,sessions_from_SWE-Gym,"number, version or time format",6
+system + v10,format detection,sessions_from_noseyparker,(no labels row),75
+system + v10,format detection,sessions_from_noseyparker,identifier,29
+system + v10,format detection,sessions_from_noseyparker,known_example,9
+system + v10,format detection,sessions_from_noseyparker,reference,4
+system + v10,format detection,sessions_from_noseyparker,template,5
+system + v10,format detection,sessions_from_noseyparker,descriptor,1
+system + v10,format detection,sessions_from_noseyparker,doc_example,1
+system + v10,format detection,sessions_from_noseyparker,placeholder,2
+system + v10,real-traffic over-masking,sessions_from_openhands-feedback,"not a secret (code, name, URL, path or identifier)",162
+system + v10,real-traffic over-masking,sessions_from_openhands-feedback,(no labels row),210
+system + v10,real-traffic over-masking,sessions_from_openhands-feedback,variable or attribute reference,123
+system + v10,real-traffic over-masking,sessions_from_openhands-feedback,"number, version or time format",20
+system + v10,real-traffic over-masking,sessions_from_openhands-feedback,placeholder or redaction mark,50
+system + v10,real-traffic over-masking,sessions_from_openhands-feedback,short value never in a credential position (label_rules.classify),93
+system + v10,real-traffic over-masking,sessions_from_openhands-feedback,plain identifier or word,15
+system + v10,real-traffic over-masking,sessions_from_openhands-feedback,public SSH host key fingerprint,3
+system + v10,real agent trajectories,sessions_from_trajectory,(dataset has no labels file),1250
+system + v10,agent sessions,(group),(dataset has no labels file),58
+system + v10,format detection,(group),not_credential_position,5326
+system + v10,format detection,(group),(no labels row),6941
+system + v10,format detection,(group),identifier,2243
+system + v10,format detection,(group),reference,1032
+system + v10,format detection,(group),code,3556
+system + v10,format detection,(group),template,856
+system + v10,format detection,(group),descriptor,2925
+system + v10,format detection,(group),doc_example,296
+system + v10,format detection,(group),redaction,345
+system + v10,format detection,(group),hash,82
+system + v10,format detection,(group),non_credential,11
+system + v10,format detection,(group),not_propagated,42
+system + v10,format detection,(group),known_example,9
+system + v10,format detection,(group),placeholder,2
+system + v10,natural-language secrets,(group),pii_other,8440
+system + v10,natural-language secrets,(group),non_auth_cookie,95
+system + v10,natural-language secrets,(group),(no labels row),227
+system + v10,natural-language secrets,(group),pin,220
+system + v10,natural-language secrets,(group),known_example,120
+system + v10,natural-language secrets,(group),doc_example,79
+system + v10,natural-language secrets,(group),cvv,8
+system + v10,natural-language secrets,(group),code,2
+system + v10,natural-language secrets,(group),not_propagated,1
+system + v10,natural-language secrets,(group),cookie_name_only,3
+system + v10,natural-language secrets,(group),non_credential,2
+system + v10,natural-language secrets,(group),identifier,1
+system + v10,natural-language secrets,(group),reference,1
+system + v10,real-traffic over-masking,(group),code expression,278
+system + v10,real-traffic over-masking,(group),(no labels row),365
+system + v10,real-traffic over-masking,(group),plain identifier or word,162
+system + v10,real-traffic over-masking,(group),short value never in a credential position (label_rules.classify),106
+system + v10,real-traffic over-masking,(group),variable or attribute reference,150
+system + v10,real-traffic over-masking,(group),"not a secret (code, name, identifier or option)",12
+system + v10,real-traffic over-masking,(group),test placeholder value or secret name,19
+system + v10,real-traffic over-masking,(group),hash output (dask tokenize),6
+system + v10,real-traffic over-masking,(group),placeholder or redaction mark,53
+system + v10,real-traffic over-masking,(group),"UUID outside a secret's place (request id, resource id)",22
+system + v10,real-traffic over-masking,(group),"resource name, email address or path",23
+system + v10,real-traffic over-masking,(group),"number, version or time format",26
+system + v10,real-traffic over-masking,(group),"not a secret (code, name, URL, path or identifier)",162
+system + v10,real-traffic over-masking,(group),public SSH host key fingerprint,3
+system + v10,real agent trajectories,(group),(dataset has no labels file),1250
+system + B seed110,agent sessions,sessions,(dataset has no labels file),2
+system + B seed110,agent sessions,sessions_2,(dataset has no labels file),15
+system + B seed110,format detection,sessions_from_CredData,(no labels row),3889
+system + B seed110,format detection,sessions_from_CredData,not_credential_position,4234
+system + B seed110,format detection,sessions_from_CredData,code,3404
+system + B seed110,format detection,sessions_from_CredData,reference,1001
+system + B seed110,format detection,sessions_from_CredData,descriptor,2853
+system + B seed110,format detection,sessions_from_CredData,template,795
+system + B seed110,format detection,sessions_from_CredData,redaction,332
+system + B seed110,format detection,sessions_from_CredData,identifier,1368
+system + B seed110,format detection,sessions_from_CredData,not_propagated,33
+system + B seed110,format detection,sessions_from_CredData,doc_example,265
+system + B seed110,format detection,sessions_from_CredData,hash,47
+system + B seed110,format detection,sessions_from_CredData,non_credential,11
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,non_auth_cookie,40
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,pii_other,763
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,known_example,121
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,(no labels row),29
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,doc_example,59
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,code,2
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,cookie_name_only,2
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,identifier,1
+system + B seed110,natural-language secrets,sessions_from_Nemotron-PII,reference,1
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,plain identifier or word,146
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,code expression,278
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,short value never in a credential position (label_rules.classify),13
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,"resource name, email address or path",12
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,variable or attribute reference,27
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,placeholder or redaction mark,3
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,(no labels row),12
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,"not a secret (code, name, identifier or option)",7
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,test placeholder value or secret name,19
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,hash output (dask tokenize),6
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,"UUID outside a secret's place (request id, resource id)",1
+system + B seed110,real-traffic over-masking,sessions_from_SWE-Gym,"number, version or time format",6
+system + B seed110,format detection,sessions_from_noseyparker,identifier,15
+system + B seed110,format detection,sessions_from_noseyparker,(no labels row),66
+system + B seed110,format detection,sessions_from_noseyparker,known_example,8
+system + B seed110,format detection,sessions_from_noseyparker,reference,3
+system + B seed110,format detection,sessions_from_noseyparker,template,5
+system + B seed110,format detection,sessions_from_noseyparker,descriptor,1
+system + B seed110,format detection,sessions_from_noseyparker,doc_example,2
+system + B seed110,format detection,sessions_from_noseyparker,password_hash,5
+system + B seed110,format detection,sessions_from_noseyparker,placeholder,3
+system + B seed110,real-traffic over-masking,sessions_from_openhands-feedback,"not a secret (code, name, URL, path or identifier)",146
+system + B seed110,real-traffic over-masking,sessions_from_openhands-feedback,variable or attribute reference,123
+system + B seed110,real-traffic over-masking,sessions_from_openhands-feedback,"number, version or time format",19
+system + B seed110,real-traffic over-masking,sessions_from_openhands-feedback,(no labels row),30
+system + B seed110,real-traffic over-masking,sessions_from_openhands-feedback,placeholder or redaction mark,51
+system + B seed110,real-traffic over-masking,sessions_from_openhands-feedback,short value never in a credential position (label_rules.classify),93
+system + B seed110,real-traffic over-masking,sessions_from_openhands-feedback,plain identifier or word,16
+system + B seed110,real agent trajectories,sessions_from_trajectory,(dataset has no labels file),244
+system + B seed110,agent sessions,(group),(dataset has no labels file),17
+system + B seed110,format detection,(group),(no labels row),3955
+system + B seed110,format detection,(group),not_credential_position,4234
+system + B seed110,format detection,(group),code,3404
+system + B seed110,format detection,(group),reference,1004
+system + B seed110,format detection,(group),descriptor,2854
+system + B seed110,format detection,(group),template,800
+system + B seed110,format detection,(group),redaction,332
+system + B seed110,format detection,(group),identifier,1383
+system + B seed110,format detection,(group),not_propagated,33
+system + B seed110,format detection,(group),doc_example,267
+system + B seed110,format detection,(group),hash,47
+system + B seed110,format detection,(group),non_credential,11
+system + B seed110,format detection,(group),known_example,8
+system + B seed110,format detection,(group),password_hash,5
+system + B seed110,format detection,(group),placeholder,3
+system + B seed110,natural-language secrets,(group),non_auth_cookie,40
+system + B seed110,natural-language secrets,(group),pii_other,763
+system + B seed110,natural-language secrets,(group),known_example,121
+system + B seed110,natural-language secrets,(group),(no labels row),29
+system + B seed110,natural-language secrets,(group),doc_example,59
+system + B seed110,natural-language secrets,(group),code,2
+system + B seed110,natural-language secrets,(group),cookie_name_only,2
+system + B seed110,natural-language secrets,(group),identifier,1
+system + B seed110,natural-language secrets,(group),reference,1
+system + B seed110,real-traffic over-masking,(group),plain identifier or word,162
+system + B seed110,real-traffic over-masking,(group),code expression,278
+system + B seed110,real-traffic over-masking,(group),short value never in a credential position (label_rules.classify),106
+system + B seed110,real-traffic over-masking,(group),"resource name, email address or path",12
+system + B seed110,real-traffic over-masking,(group),variable or attribute reference,150
+system + B seed110,real-traffic over-masking,(group),placeholder or redaction mark,54
+system + B seed110,real-traffic over-masking,(group),(no labels row),42
+system + B seed110,real-traffic over-masking,(group),"not a secret (code, name, identifier or option)",7
+system + B seed110,real-traffic over-masking,(group),test placeholder value or secret name,19
+system + B seed110,real-traffic over-masking,(group),hash output (dask tokenize),6
+system + B seed110,real-traffic over-masking,(group),"UUID outside a secret's place (request id, resource id)",1
+system + B seed110,real-traffic over-masking,(group),"number, version or time format",25
+system + B seed110,real-traffic over-masking,(group),"not a secret (code, name, URL, path or identifier)",146
+system + B seed110,real agent trajectories,(group),(dataset has no labels file),244

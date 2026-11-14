@@ -14,6 +14,9 @@ class ItemOutput:
     edits: list[Edit]  # original-text coordinates; the scorer verifies them against `text`
     elapsed_ms: float | None = None  # processing time; None for channels the system does not process
     debug: dict[str, Any] | None = None  # only with --debug; may contain raw secrets
+    # Per-adapter findings before the system merges them (PromptGuard only): adapter, rule id, type and offsets into
+    # the original text, never text. None for systems and channels that do not report them.
+    scan: dict[str, Any] | None = None
 
 
 class SystemUnderTest(Protocol):

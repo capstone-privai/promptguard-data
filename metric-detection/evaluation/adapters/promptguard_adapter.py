@@ -15,6 +15,12 @@ such an item as one edit over its whole text (its gold spans count as over-maske
 optional adapter the system skipped (an ML module without its packages or weights) stops the run instead of
 leaving a result that silently lacks it.
 
+Per-adapter findings: the detector's `scan` runs every adapter (`Detector.collect`) and then votes and merges
+overlapping spans, which joins their rule ids and loses each contributor's own span. The adapter records what
+`collect` returned for each item (adapter name, rule id, type, code point offsets; never text) by wrapping that
+method on its own detector instance, so `scan` itself runs unchanged. The rows land in `ItemOutput.scan` and the
+run folder's per_finding.jsonl / per_scan.jsonl. A detector without `collect` (a scripted test worker) records none.
+
 Load the detector package with system_root.load_worker() before constructing the adapter, or let the adapter
 do it. The detector is the system's own `load_detector()` with the checkout's own configuration: which adapters
 run, how they vote and any ML modules are the system's business, and this adapter only records what it reports
@@ -250,7 +256,44 @@ class PromptGuardAdapter:
         self.on_failure = on_failure
         self.failed_open = 0
         self.blocked = 0
+        self._collected: tuple[list[Any], list[str]] | None = None
+        self.records_findings = self._record_collect()
         self.detector.scan(_WARMUP_TEXT, "warmup")  # keep rule loading out of the recorded latencies
+
+    def _record_collect(self) -> bool:
+        """Wrap this detector instance's `collect` so each scan leaves its per-adapter ballots in `_collected`."""
+        collect = getattr(self.detector, "collect", None)
+        if not callable(collect):
+            return False
+
+        def recording(texts: Sequence[str]) -> tuple[list[Any], list[str]]:
+            per_text, errors = collect(texts)
+            self._collected = (per_text, list(errors))
+            return per_text, errors
+
+        self.detector.collect = recording
+        return True
+
+    def _scan_record(self, failure: str | None) -> dict[str, Any] | None:
+        """The last scan's per-adapter findings as offset rows (RawFinding offsets are code points, as gold is)."""
+        if not self.records_findings:
+            return None
+        collected, self._collected = self._collected, None
+        record: dict[str, Any] = {"collected": collected is not None, "adapter_errors": [], "findings": [],
+                                  "failure": failure}
+        if collected is None:  # scan raised before every adapter had answered
+            return record
+        per_text, errors = collected
+        record["adapter_errors"] = sorted(set(errors))
+        ballots = per_text[0] if per_text else {}
+        rows = []
+        for adapter, findings in ballots.items():
+            for raw in findings:
+                rows.append({"adapter": str(adapter), "rule_id": str(raw.rule_id), "type": str(raw.type),
+                             "start": int(raw.start), "end": int(raw.end), "confidence": str(raw.confidence),
+                             "score": None if raw.score is None else float(raw.score)})
+        record["findings"] = sorted(rows, key=lambda row: (row["start"], row["end"], row["adapter"], row["rule_id"]))
+        return record
 
     def _require(self, names: Sequence[str]) -> None:
         if not names:
@@ -289,6 +332,7 @@ class PromptGuardAdapter:
                 outputs[item.item_id] = passthrough(item.item_id, item.text)
                 continue
             started = time.perf_counter()
+            self._collected = None
             result = self._scan(item.text, source)
             failure = None
             try:
@@ -303,5 +347,5 @@ class PromptGuardAdapter:
                     self.failed_open += 1
             elapsed_ms = (time.perf_counter() - started) * 1000
             debug = {"source": source, "result": result, "failure": failure} if self.debug else None
-            outputs[item.item_id] = ItemOutput(item.item_id, text, edits, elapsed_ms, debug)
+            outputs[item.item_id] = ItemOutput(item.item_id, text, edits, elapsed_ms, debug, self._scan_record(failure))
         return outputs
