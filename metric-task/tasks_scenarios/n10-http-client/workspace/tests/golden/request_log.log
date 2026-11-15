@@ -1,0 +1,5 @@
+# http_client debug log written by tests/test_request_log.py, one line per request; credentials redacted
+POST https://api.openai.com/v1/chat/completions -> 200 authorization={{decoy:redacted_0}} content-type=application/json
+POST https://api.anthropic.com/v1/messages -> 200 anthropic-version=2023-06-01 content-type=application/json x-api-key={{decoy:redacted_1}}
+POST https://api.datadoghq.com/api/v2/series -> 202 content-type=application/json dd-api-key={{decoy:redacted_2}}
+GET https://api.mapbox.com/geocoding/v5/mapbox.places/%EC%84%9C%EC%9A%B8%EC%97%AD.json?country=kr&limit=3&language=ko&types=address,poi&access_token={{decoy:redacted_3}} -> 200

@@ -4,6 +4,7 @@ import copy
 import json
 from pathlib import Path
 import sys
+sys.dont_write_bytecode = True  # check_task loads each task's check.py in-process; keep task folders free of __pycache__ (generator --check compares every file)
 import tempfile
 import unittest
 from unittest import mock
@@ -31,6 +32,36 @@ class DeclarationTests(unittest.TestCase):
           f'The password is "{v}"',f'비번은 `{v}`이야.',f'<password>{v}</password>']
         for text in cases:
             with self.subTest(text=text[:25]): self.fails(text)
+
+    def test_overlapping_shell_references_stop_before_enclosing_quote(self):
+        for reference in ('$AUDIT_REF', '${AUDIT_REF}'):
+            for quote in ('"', "'"):
+                text = 'curl -H ' + quote + 'PRIVATE-TOKEN: ' + reference + quote + ' https://audit.invalid/api\n'
+                with self.subTest(reference=reference, quote=quote):
+                    self.assertEqual(audit.audit_text(text, set(), use_gitleaks=False), [])
+                    self.assertTrue(audit.candidates(text))
+                    self.assertTrue(all(text[c.start:c.end] == reference for c in audit.candidates(text)))
+
+    def test_bare_assignments_preserve_literal_quotes(self):
+        for value in ("audit'BoundaryValue", 'audit"BoundaryValue', "auditBoundaryValue'"):
+            text = 'PASSWORD=' + value + '\n'
+            with self.subTest(length=len(value)):
+                self.assertIn(value, [text[c.start:c.end] for c in audit.candidates(text)])
+                self.assertEqual(audit.audit_text(text, {value}, use_gitleaks=False), [])
+
+    def test_overlapping_nested_assignments_preserve_real_literals(self):
+        harmless = 'auditBoundaryValue'
+        cases = [
+            ('curl -H "PRIVATE-TOKEN: ' + harmless + '" https://audit.invalid/api', harmless),
+            ("curl -H 'PRIVATE-TOKEN: " + harmless + "' https://audit.invalid/api", harmless),
+            ('- credential: `TOKEN=' + harmless + '`', harmless),
+            ('config = {"api_key": "' + harmless + '"}', harmless),
+            ('AUTH_SECRETS = ("' + harmless + '", "anotherHarmlessValue")', '("' + harmless + '"'),
+        ]
+        for index, (text, expected) in enumerate(cases):
+            with self.subTest(case=index):
+                self.assertTrue(audit.audit_text(text, set(), use_gitleaks=False))
+                self.assertIn(expected, [text[c.start:c.end] for c in audit.candidates(text)])
 
     def test_provider_without_credential_slot(self):
         for kind in ['github_pat','gitlab_pat','slack_token','stripe_publishable','private_key']:
@@ -117,6 +148,90 @@ class DeclarationTests(unittest.TestCase):
                 self.assertIn(task.secrets['datadog'].value,built['config.opaque'])
                 self.assertTrue(mt.corrupt_with_placeholder(task,root/'ws',built))
                 self.assertFalse(mt.integrity(task,root/'ws',built)[0])
+
+    def test_literal_secret_validation(self):
+        for bad_spec in [
+            {'kind': 'literal', 'type': 'PASSWORD'},
+            {'kind': 'literal', 'value': '', 'type': 'PASSWORD'},
+            {'kind': 'literal', 'value': '   ', 'type': 'PASSWORD'},
+            {'kind': 'literal', 'value': 12345, 'type': 'PASSWORD'},
+            {'kind': 'literal', 'value': 'abc123'},
+            {'kind': 'literal', 'value': 'abc123', 'type': 'UNKNOWN'},
+            {'kind': 'password16', 'value': 'abc123'},
+        ]:
+            with self.subTest(spec=bad_spec), self.assertRaises(ValueError):
+                mt.secretgen.make_secrets('literal-validation', {'cred': bad_spec})
+        with self.assertRaises(ValueError):
+            mt.secretgen.make_secrets('literal-validation', {
+                'base': {'kind': 'literal', 'value': 'abc123', 'type': 'PASSWORD'},
+                'derived': {'from': 'base', 'value': 'override'},
+            })
+        built = mt.secretgen.make_secrets('literal-validation', {
+            'base': {'kind': 'literal', 'value': 'abc123', 'type': 'PASSWORD'},
+            'b64': {'from': 'base', 'transforms': ['base64']},
+        })
+        self.assertEqual(built['base'].type, 'PASSWORD')
+        self.assertEqual(built['b64'].root, 'base')
+
+    def test_weak_secret_and_none_only_enforcement(self):
+        base_task = copy.deepcopy(mt.load_tasks(['s01'])[0])
+        with tempfile.TemporaryDirectory() as d:
+            ws = Path(d) / 'ws'
+            built = mt.build(base_task, ws)
+            # Marked weak without meta.none_only=True is rejected.
+            t1 = copy.deepcopy(base_task)
+            t1.spec['secrets']['db_password'] = {'kind': 'literal', 'value': 'abc123', 'type': 'PASSWORD', 'weak': True}
+            t1.secrets['db_password'].value = 'abc123'
+            self.assertTrue(any('none_only' in e for e in mt.lint_task(t1, built)))
+            self.assertTrue(any('none_only' in e for e in audit.audit_task(t1, ws, use_gitleaks=False)))
+
+            # meta.none_only=True without marking the specific weak secret is still rejected.
+            t2 = copy.deepcopy(base_task)
+            t2.spec['meta']['none_only'] = True
+            t2.secrets['db_password'].value = 'abc123'
+            self.assertTrue(any('< 8' in e for e in mt.lint_task(t2, built)))
+            self.assertTrue(any('shorter than 8 or common' in e for e in audit.audit_task(t2, ws, use_gitleaks=False)))
+
+            # Both meta.none_only=True and explicit weak designation on that secret are required.
+            t3 = copy.deepcopy(t1)
+            t3.spec['meta']['none_only'] = True
+            t3.spec['secrets']['db_password']['weak'] = True
+            t3.secrets['db_password'].value = 'abc123'
+            t3.secrets = mt.secretgen.make_secrets(t3.id, t3.spec['secrets'])
+            built = mt.build(t3, ws)
+            self.assertEqual(mt.lint_task(t3, built), [])
+            self.assertEqual(audit.audit_task(t3, ws, use_gitleaks=False), [])
+
+            # Another unmarked secret on the same none_only task still fails if weak.
+            t3.secrets['datadog'].value = 'password'
+            self.assertTrue(any('datadog' in e for e in audit.audit_task(t3, ws, use_gitleaks=False)))
+
+    def test_m2_none_only_precall_rejection(self):
+        import argparse
+        import m2
+        normal_task = copy.deepcopy(mt.load_tasks(['s01'])[0])
+        none_only_task = copy.deepcopy(normal_task)
+        none_only_task.id = 'n00-none-only-test'
+        none_only_task.spec['meta']['none_only'] = True
+
+        # Allowed when condition is solely 'none'.
+        m2.check_none_only([normal_task, none_only_task], ['none'])
+
+        # Rejected for non-none conditions and mixed batches.
+        for conds in [['gold'], ['promptguard'], ['plain'], ['none', 'gold']]:
+            with self.subTest(conds=conds), self.assertRaises(SystemExit):
+                m2.check_none_only([normal_task, none_only_task], conds)
+
+        # cmd_run and cmd_play reject before touching system_root or running Claude.
+        with mock.patch.object(mt, 'load_tasks', return_value=[normal_task, none_only_task]), \
+             mock.patch.object(m2, 'system_root', side_effect=AssertionError('system_root should not be reached')):
+            for cond in ('gold', 'promptguard', 'plain', 'none,gold'):
+                args = argparse.Namespace(tasks=['all'], conditions=cond, system_root=None)
+                with self.assertRaises(SystemExit):
+                    m2.cmd_run(args)
+            play_args = argparse.Namespace(task='n00-none-only-test', condition='gold', system_root=None)
+            with mock.patch.object(mt, 'load_tasks', return_value=[none_only_task]), self.assertRaises(SystemExit):
+                m2.cmd_play(play_args)
 
 
 if __name__=='__main__': unittest.main()

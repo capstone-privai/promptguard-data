@@ -1,0 +1,4 @@
+{
+  "orders": {"type":"service_account", "private_key":"{{secret:sa_0_json}}"},
+  "audit": {"type":"service_account", "private_key":"{{secret:sa_1_json}}"}
+}

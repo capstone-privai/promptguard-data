@@ -1,0 +1,11 @@
+[
+  {
+    "resource_id": "{{decoy:resource_id_0}}"
+  },
+  {
+    "resource_id": "{{decoy:resource_id_1}}"
+  },
+  {
+    "resource_id": "{{decoy:resource_id_2}}"
+  }
+]

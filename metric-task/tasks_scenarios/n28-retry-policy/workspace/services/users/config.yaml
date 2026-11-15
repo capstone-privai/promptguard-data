@@ -1,0 +1,22 @@
+service: "users"
+retry:
+  max_retries: 4
+  statuses: [502, 503]
+environments:
+  production:
+    retry:
+      max_retries: 5
+  staging:
+    retry:
+      max_retries: 0
+routes:
+  /v1/users:
+    retry:
+      max_retries: 7
+observability:
+  datadog_api_key: "{{secret:datadog_2}}"
+signing_secret: "{{secret:signing_2}}"
+setup_templates:
+  token_2: "{{decoy:template_2}}"
+runtime_refs:
+  token_2: "{{decoy:reference_2}}"

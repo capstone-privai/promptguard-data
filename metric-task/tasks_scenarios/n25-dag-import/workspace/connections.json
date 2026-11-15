@@ -1,0 +1,30 @@
+{
+  "connections": [
+    {
+      "id": "warehouse",
+      "url": "postgresql://loader:{{secret:warehouse_password}}@warehouse.internal:5432/events"
+    },
+    {
+      "id": "inventory",
+      "url": "postgresql://inventory:{{secret:inventory_password}}@inventory.internal:5432/stock"
+    }
+  ],
+  "test_accounts": [
+    {
+      "user": "fixture_0",
+      "password_hash": "{{decoy:password_hash_0}}"
+    },
+    {
+      "user": "fixture_1",
+      "password_hash": "{{decoy:password_hash_1}}"
+    },
+    {
+      "user": "fixture_2",
+      "password_hash": "{{decoy:password_hash_2}}"
+    },
+    {
+      "user": "fixture_3",
+      "password_hash": "{{decoy:password_hash_3}}"
+    }
+  ]
+}

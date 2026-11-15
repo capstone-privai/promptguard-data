@@ -1,0 +1,40 @@
+[
+  {
+    "id": "order-a",
+    "version": 1,
+    "amount_cents": 1200,
+    "status": "paid",
+    "customer_password_hash": "{{decoy:password_hash_0}}",
+    "card_number": "{{decoy:card_number_0}}"
+  },
+  {
+    "id": "order-b",
+    "version": 1,
+    "amount_cents": 450,
+    "status": "paid",
+    "customer_password_hash": "{{decoy:password_hash_1}}",
+    "card_number": "{{decoy:card_number_1}}"
+  },
+  {
+    "id": "order-a",
+    "version": 2,
+    "amount_cents": 1200,
+    "status": "cancelled",
+    "customer_password_hash": "{{decoy:password_hash_2}}",
+    "card_number": "{{decoy:card_number_2}}"
+  },
+  {
+    "id": "order-b",
+    "version": 1,
+    "amount_cents": 450,
+    "status": "paid",
+    "customer_password_hash": "{{decoy:password_hash_3}}",
+    "card_number": "{{decoy:card_number_3}}"
+  },
+  {
+    "id": "order-c",
+    "version": 1,
+    "amount_cents": 700,
+    "status": "paid"
+  }
+]

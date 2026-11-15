@@ -1,0 +1,6 @@
+﻿customer_id,name,email,updated_at,card_number,pin,account_number,resource_id
+c1, AndrÃ© , ALPHA@example.invalid ,2026-10-01T00:00:00Z,{{decoy:card_number_0}},{{decoy:pin_0}},{{decoy:account_number_0}},{{decoy:resource_id_0}}
+c2,ZoÃ«,beta@example.invalid,2026-10-03T00:00:00Z,{{decoy:card_number_1}},{{decoy:pin_1}},{{decoy:account_number_1}},{{decoy:resource_id_1}}
+c3,RenÃ©e,gamma@example.invalid,2026-10-02T00:00:00Z,{{decoy:card_number_2}},,{{decoy:account_number_2}},{{decoy:resource_id_2}}
+c1,André,alpha@example.invalid,2026-11-01T00:00:00Z,{{decoy:card_number_0}},{{decoy:pin_0}},{{decoy:account_number_0}},{{decoy:resource_id_0}}
+c2, Zoë , BETA@EXAMPLE.INVALID ,2026-10-03T00:00:00Z,{{decoy:card_number_1}},{{decoy:pin_1}},{{decoy:account_number_1}},{{decoy:resource_id_1}}

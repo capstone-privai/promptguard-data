@@ -1,0 +1,18 @@
+[
+  {
+    "id": 0,
+    "password_hash": "{{decoy:password_hash_0}}"
+  },
+  {
+    "id": 1,
+    "password_hash": "{{decoy:password_hash_1}}"
+  },
+  {
+    "id": 2,
+    "password_hash": "{{decoy:password_hash_2}}"
+  },
+  {
+    "id": 3,
+    "password_hash": "{{decoy:password_hash_3}}"
+  }
+]

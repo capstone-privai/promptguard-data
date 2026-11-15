@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+customers-0,KRW,captured,362,1,362
+customers-1,USD,returned,381,2,-762
+customers-2,EUR,cancelled,400,3,0
+customers-3,KRW,disputed,419,4,1676
+customers-4,USD,reversed,438,5,-2190

@@ -1,0 +1,416 @@
+{
+  "service": "payments-webhook",
+  "events": [
+    {
+      "index": 0,
+      "request_id": "{{decoy:request_id_0}}",
+      "received_at": 1790000000,
+      "payload": {
+        "id": "evt_ledger_0000",
+        "type": "charge.succeeded",
+        "attempt": 1,
+        "data": {
+          "object_id": "obj_0000",
+          "amount_cents": 1500,
+          "currency": "KRW",
+          "state": "captured",
+          "description": "Webhook fixture event 0 for ledger settlement verification and retry queue testing."
+        }
+      },
+      "client_api_key": "{{secret:stripe_test_0}}"
+    },
+    {
+      "index": 1,
+      "request_id": "{{decoy:request_id_1}}",
+      "received_at": 1790000015,
+      "payload": {
+        "id": "evt_ledger_0001",
+        "type": "payout.paid",
+        "attempt": 2,
+        "data": {
+          "object_id": "obj_0001",
+          "amount_cents": 1825,
+          "currency": "USD",
+          "state": "pending",
+          "description": "Webhook fixture event 1 for ledger settlement verification and retry queue testing."
+        }
+      },
+      "client_api_key": "{{secret:stripe_test_1}}"
+    },
+    {
+      "index": 2,
+      "request_id": "{{decoy:request_id_2}}",
+      "received_at": 1790000030,
+      "payload": {
+        "id": "evt_ledger_0002",
+        "type": "invoice.finalized",
+        "attempt": 3,
+        "data": {
+          "object_id": "obj_0002",
+          "amount_cents": 2150,
+          "currency": "EUR",
+          "state": "returned",
+          "description": "Webhook fixture event 2 for ledger settlement verification and retry queue testing."
+        }
+      },
+      "client_api_key": "{{secret:stripe_test_2}}"
+    },
+    {
+      "index": 3,
+      "request_id": "{{decoy:request_id_3}}",
+      "received_at": 1790000045,
+      "payload": {
+        "id": "evt_ledger_0003",
+        "type": "refund.updated",
+        "attempt": 4,
+        "data": {
+          "object_id": "obj_0003",
+          "amount_cents": 2475,
+          "currency": "KRW",
+          "state": "disputed",
+          "description": "Webhook fixture event 3 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 4,
+      "request_id": "req-fixture-004",
+      "received_at": 1790000060,
+      "payload": {
+        "id": "evt_ledger_0004",
+        "type": "charge.succeeded",
+        "attempt": 1,
+        "data": {
+          "object_id": "obj_0004",
+          "amount_cents": 2800,
+          "currency": "USD",
+          "state": "captured",
+          "description": "Webhook fixture event 4 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 5,
+      "request_id": "req-fixture-005",
+      "received_at": 1790000075,
+      "payload": {
+        "id": "evt_ledger_0005",
+        "type": "payout.paid",
+        "attempt": 2,
+        "data": {
+          "object_id": "obj_0005",
+          "amount_cents": 3125,
+          "currency": "EUR",
+          "state": "pending",
+          "description": "Webhook fixture event 5 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 6,
+      "request_id": "req-fixture-006",
+      "received_at": 1790000090,
+      "payload": {
+        "id": "evt_ledger_0006",
+        "type": "invoice.finalized",
+        "attempt": 3,
+        "data": {
+          "object_id": "obj_0006",
+          "amount_cents": 3450,
+          "currency": "KRW",
+          "state": "returned",
+          "description": "Webhook fixture event 6 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 7,
+      "request_id": "req-fixture-007",
+      "received_at": 1790000105,
+      "payload": {
+        "id": "evt_ledger_0007",
+        "type": "refund.updated",
+        "attempt": 4,
+        "data": {
+          "object_id": "obj_0007",
+          "amount_cents": 3775,
+          "currency": "USD",
+          "state": "disputed",
+          "description": "Webhook fixture event 7 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 8,
+      "request_id": "req-fixture-008",
+      "received_at": 1790000120,
+      "payload": {
+        "id": "evt_ledger_0008",
+        "type": "charge.succeeded",
+        "attempt": 1,
+        "data": {
+          "object_id": "obj_0008",
+          "amount_cents": 4100,
+          "currency": "EUR",
+          "state": "captured",
+          "description": "Webhook fixture event 8 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 9,
+      "request_id": "req-fixture-009",
+      "received_at": 1790000135,
+      "payload": {
+        "id": "evt_ledger_0009",
+        "type": "payout.paid",
+        "attempt": 2,
+        "data": {
+          "object_id": "obj_0009",
+          "amount_cents": 4425,
+          "currency": "KRW",
+          "state": "pending",
+          "description": "Webhook fixture event 9 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 10,
+      "request_id": "req-fixture-010",
+      "received_at": 1790000150,
+      "payload": {
+        "id": "evt_ledger_0010",
+        "type": "invoice.finalized",
+        "attempt": 3,
+        "data": {
+          "object_id": "obj_0010",
+          "amount_cents": 4750,
+          "currency": "USD",
+          "state": "returned",
+          "description": "Webhook fixture event 10 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 11,
+      "request_id": "req-fixture-011",
+      "received_at": 1790000165,
+      "payload": {
+        "id": "evt_ledger_0011",
+        "type": "refund.updated",
+        "attempt": 4,
+        "data": {
+          "object_id": "obj_0011",
+          "amount_cents": 5075,
+          "currency": "EUR",
+          "state": "disputed",
+          "description": "Webhook fixture event 11 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 12,
+      "request_id": "req-fixture-012",
+      "received_at": 1790000180,
+      "payload": {
+        "id": "evt_ledger_0012",
+        "type": "charge.succeeded",
+        "attempt": 1,
+        "data": {
+          "object_id": "obj_0012",
+          "amount_cents": 5400,
+          "currency": "KRW",
+          "state": "captured",
+          "description": "Webhook fixture event 12 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 13,
+      "request_id": "req-fixture-013",
+      "received_at": 1790000195,
+      "payload": {
+        "id": "evt_ledger_0013",
+        "type": "payout.paid",
+        "attempt": 2,
+        "data": {
+          "object_id": "obj_0013",
+          "amount_cents": 5725,
+          "currency": "USD",
+          "state": "pending",
+          "description": "Webhook fixture event 13 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 14,
+      "request_id": "req-fixture-014",
+      "received_at": 1790000210,
+      "payload": {
+        "id": "evt_ledger_0014",
+        "type": "invoice.finalized",
+        "attempt": 3,
+        "data": {
+          "object_id": "obj_0014",
+          "amount_cents": 6050,
+          "currency": "EUR",
+          "state": "returned",
+          "description": "Webhook fixture event 14 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 15,
+      "request_id": "req-fixture-015",
+      "received_at": 1790000225,
+      "payload": {
+        "id": "evt_ledger_0015",
+        "type": "refund.updated",
+        "attempt": 4,
+        "data": {
+          "object_id": "obj_0015",
+          "amount_cents": 6375,
+          "currency": "KRW",
+          "state": "disputed",
+          "description": "Webhook fixture event 15 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 16,
+      "request_id": "req-fixture-016",
+      "received_at": 1790000240,
+      "payload": {
+        "id": "evt_ledger_0016",
+        "type": "charge.succeeded",
+        "attempt": 1,
+        "data": {
+          "object_id": "obj_0016",
+          "amount_cents": 6700,
+          "currency": "USD",
+          "state": "captured",
+          "description": "Webhook fixture event 16 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 17,
+      "request_id": "req-fixture-017",
+      "received_at": 1790000255,
+      "payload": {
+        "id": "evt_ledger_0017",
+        "type": "payout.paid",
+        "attempt": 2,
+        "data": {
+          "object_id": "obj_0017",
+          "amount_cents": 7025,
+          "currency": "EUR",
+          "state": "pending",
+          "description": "Webhook fixture event 17 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 18,
+      "request_id": "req-fixture-018",
+      "received_at": 1790000270,
+      "payload": {
+        "id": "evt_ledger_0018",
+        "type": "invoice.finalized",
+        "attempt": 3,
+        "data": {
+          "object_id": "obj_0018",
+          "amount_cents": 7350,
+          "currency": "KRW",
+          "state": "returned",
+          "description": "Webhook fixture event 18 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 19,
+      "request_id": "req-fixture-019",
+      "received_at": 1790000285,
+      "payload": {
+        "id": "evt_ledger_0019",
+        "type": "refund.updated",
+        "attempt": 4,
+        "data": {
+          "object_id": "obj_0019",
+          "amount_cents": 7675,
+          "currency": "USD",
+          "state": "disputed",
+          "description": "Webhook fixture event 19 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 20,
+      "request_id": "req-fixture-020",
+      "received_at": 1790000300,
+      "payload": {
+        "id": "evt_ledger_0020",
+        "type": "charge.succeeded",
+        "attempt": 1,
+        "data": {
+          "object_id": "obj_0020",
+          "amount_cents": 8000,
+          "currency": "EUR",
+          "state": "captured",
+          "description": "Webhook fixture event 20 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 21,
+      "request_id": "req-fixture-021",
+      "received_at": 1790000315,
+      "payload": {
+        "id": "evt_ledger_0021",
+        "type": "payout.paid",
+        "attempt": 2,
+        "data": {
+          "object_id": "obj_0021",
+          "amount_cents": 8325,
+          "currency": "KRW",
+          "state": "pending",
+          "description": "Webhook fixture event 21 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 22,
+      "request_id": "req-fixture-022",
+      "received_at": 1790000330,
+      "payload": {
+        "id": "evt_ledger_0022",
+        "type": "invoice.finalized",
+        "attempt": 3,
+        "data": {
+          "object_id": "obj_0022",
+          "amount_cents": 8650,
+          "currency": "USD",
+          "state": "returned",
+          "description": "Webhook fixture event 22 for ledger settlement verification and retry queue testing."
+        }
+      }
+    },
+    {
+      "index": 23,
+      "request_id": "req-fixture-023",
+      "received_at": 1790000345,
+      "payload": {
+        "id": "evt_ledger_0023",
+        "type": "refund.updated",
+        "attempt": 4,
+        "data": {
+          "object_id": "obj_0023",
+          "amount_cents": 8975,
+          "currency": "EUR",
+          "state": "disputed",
+          "description": "Webhook fixture event 23 for ledger settlement verification and retry queue testing."
+        }
+      }
+    }
+  ]
+}

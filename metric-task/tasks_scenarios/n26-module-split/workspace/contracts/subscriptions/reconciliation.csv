@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+subscriptions-0,KRW,returned,239,1,-239
+subscriptions-1,USD,cancelled,258,2,0
+subscriptions-2,EUR,disputed,277,3,831
+subscriptions-3,KRW,reversed,296,4,-1184
+subscriptions-4,USD,pending,315,5,0

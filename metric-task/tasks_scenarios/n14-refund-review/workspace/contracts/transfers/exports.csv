@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+transfers-0,KRW,captured,434,1,434
+transfers-1,USD,returned,453,2,-906
+transfers-2,EUR,cancelled,472,3,0
+transfers-3,KRW,disputed,491,4,1964
+transfers-4,USD,reversed,510,5,-2550

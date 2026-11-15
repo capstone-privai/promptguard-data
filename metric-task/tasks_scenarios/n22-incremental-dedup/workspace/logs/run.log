@@ -1,0 +1,7 @@
+INFO request_id={{decoy:request_id_0}} batch=window from=100 inclusive to=130
+ERROR request_id={{decoy:request_id_1}} duplicate id=order-a dsn=postgresql://etl:{{secret:db_0}}@orders.invalid:5432/orders
+ERROR request_id={{decoy:request_id_2}} duplicate id=order-b dsn=postgresql://etl:{{secret:db_1}}@audit.invalid:5432/orders
+INFO diagnostic_token={{decoy:redaction_0}}
+INFO diagnostic_token={{decoy:redaction_1}}
+INFO diagnostic_token={{decoy:redaction_2}}
+INFO diagnostic_token={{decoy:redaction_3}}

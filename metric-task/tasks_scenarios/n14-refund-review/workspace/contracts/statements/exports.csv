@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+statements-0,KRW,returned,437,1,-437
+statements-1,USD,cancelled,456,2,0
+statements-2,EUR,disputed,475,3,1425
+statements-3,KRW,reversed,494,4,-1976
+statements-4,USD,pending,513,5,0

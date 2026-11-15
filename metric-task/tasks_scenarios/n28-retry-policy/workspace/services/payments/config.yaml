@@ -1,0 +1,23 @@
+service: "payments"
+retry:
+  max_retries: 3
+  statuses: [502, 503]
+environments:
+  production:
+    retry:
+      max_retries: 4
+  staging:
+    retry:
+      max_retries: 0
+routes:
+  /v1/payments:
+    retry:
+      max_retries: 6
+observability:
+  datadog_api_key: "{{secret:datadog_1}}"
+signing_secret: "{{secret:signing_1}}"
+vault_token: "{{secret:vault_1}}"
+setup_templates:
+  token_1: "{{decoy:template_1}}"
+runtime_refs:
+  token_1: "{{decoy:reference_1}}"

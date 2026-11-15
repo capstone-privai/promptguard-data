@@ -1,0 +1,3 @@
+ERROR access_key={{secret:access_0}} status=403 object=/missing/diagnostic.csv
+ERROR access_key={{secret:access_1}} status=403 object=/missing/diagnostic.csv
+ERROR access_key={{secret:access_2}} status=403 object=/missing/diagnostic.csv

@@ -53,7 +53,7 @@ import detector_capture  # noqa: E402
 import m2_tasks as mt  # noqa: E402
 
 REPO_ROOT = mt.REPO_ROOT
-RUNS_DIR = REPO_ROOT / "runs" / "metric-task"
+RUNS_DIR = Path(os.environ.get("M2_RUNS_DIR") or REPO_ROOT / "runs" / "metric-task")
 WORK_ROOT = Path(tempfile.gettempdir()) / "promptguard-m2"
 DETECTOR = Path(__file__).resolve().parent / "detector_worker.py"
 FIXTURE_MCP = Path(__file__).resolve().parent / "fixture_mcp.py"
@@ -276,7 +276,7 @@ def audit_stats(run_dir: Path) -> dict:
     failures = [r for r in rows if r.get("blocked")]
     by_source = Counter()
     for r in rows:
-        by_source[r.get("source", "?")] += r.get("finding_count", 0)
+        by_source[r.get("source", "?")] += r.get("finding_count") or 0  # a tool_started row has null: nothing scanned
     return {"rows": len(rows), "findings": sum(by_source.values()), "findings_by_source": dict(by_source),
             "failures": len(failures), "failure_reasons": sorted({str(r.get("reason"))[:160] for r in failures})}
 
@@ -304,9 +304,24 @@ def server_stats(task: mt.Task, run_dir: Path) -> dict | None:
     return api_capture.scan(api_capture.load(path), mt.leak_forms(task.secrets))
 
 
+def check_none_only(tasks: list[mt.Task], conditions: list[str]):
+    """Validate literal/weak declarations before rejecting non-none conditions for none-only tasks."""
+    problems = [f"{t.id}: {p}" for t in tasks for p in mt.secret_declaration_problems(t)]
+    if problems:
+        raise SystemExit("invalid secret declarations: " + "; ".join(problems))
+    none_only_ids = [t.id for t in tasks if t.none_only]
+    non_none_conds = [c for c in conditions if c != "none"]
+    if none_only_ids and non_none_conds:
+        raise SystemExit(
+            f"none-only task(s) {none_only_ids} cannot run with condition(s) {non_none_conds}; "
+            f"only condition 'none' is allowed"
+        )
+
+
 def run_one(task: mt.Task, condition: str, rep: int, run_dir: Path, pg_root: Path, model: str | None,
             headless: bool = True, budget: float = 2.0, timeout: int = 900, capture: bool = True,
             record_detector: bool = False) -> dict:
+    check_none_only([task], [condition])
     run_dir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=f"{task.id[:5]}-{condition}-", dir=_work_root()))
     ws = work / "workspace"
@@ -486,8 +501,9 @@ def print_result(r: dict, run_dir: Path):
 
 
 def cmd_play(args):
-    pg_root = system_root(args.system_root)
     task = mt.load_tasks([args.task])[0]
+    check_none_only([task], [args.condition])
+    pg_root = system_root(args.system_root)
     run_dir = RUNS_DIR / "play" / f"{datetime.now():%Y%m%d-%H%M%S}_{task.id}_{args.condition}"
     print(f"task:      {task.id} ({task.spec['title']})")
     print(f"condition: {args.condition}")
@@ -574,12 +590,13 @@ def prepare_batch(batch: Path, metadata: dict, *, resume: bool) -> dict:
 
 
 def cmd_run(args):
-    pg_root = system_root(args.system_root)
     tasks = mt.load_tasks(args.tasks)
     conditions = args.conditions.split(",")
     unknown = set(conditions) - set(CONDITIONS)
     if unknown:
         raise SystemExit(f"unknown condition(s) {sorted(unknown)}; choose from {CONDITIONS}")
+    check_none_only(tasks, conditions)
+    pg_root = system_root(args.system_root)
     batch = RUNS_DIR / (args.name or f"batch_{datetime.now():%Y%m%d-%H%M%S}")
     prepare_batch(batch, batch_metadata(args, pg_root, tasks), resume=args.resume)
     jobs = [(t, c, rep) for rep in range(1, args.reps + 1) for t in tasks for c in conditions]
@@ -834,6 +851,9 @@ def write_report(rows: list[dict], out: Path):
                         "model": ",".join(claude.get("models") or []) or r.get("model"), "error": r.get("error")})
 
 
+GIT_KEPT_NOTE = "(kept: needs git history, which workspace_after does not save)"
+
+
 def cmd_recheck(args):
     """Re-runs the checks against each run's saved workspace_after, e.g. after a checker fix, and the leak scan
     against the saved request capture. The agent's work is not repeated; transcript and mod statistics stay as
@@ -853,16 +873,35 @@ def cmd_recheck(args):
             if task.id not in built_cache:
                 with tempfile.TemporaryDirectory() as d:
                     built_cache[task.id] = mt.build(task, Path(d) / "ws")
+            ws = path.parent / "workspace_after"
             remotes_file = path.parent / "git_remotes.json"
             remotes = json.loads(remotes_file.read_text()) if remotes_file.is_file() else None
-            fresh = mt.check_task(task, path.parent / "workspace_after", built_cache[task.id], remotes or {})
+            fresh = mt.check_task(task, ws, built_cache[task.id], remotes or {}, record_git=True)
+            old = {c["check"]: c for c in r["checks"]}
+            has_git = (ws / ".git").exists()
+            checks = []
+            for c in fresh["checks"]:
+                used_git = c.pop("used_git", False)
+                if used_git and not has_git:
+                    if c["check"] in old:
+                        prev = old[c["check"]]
+                        detail = prev["detail"]
+                        if not detail.endswith(GIT_KEPT_NOTE):
+                            detail = f"{detail} {GIT_KEPT_NOTE}".strip()
+                        c = {"check": c["check"], "ok": bool(prev["ok"]), "detail": detail}
+                        say(f"kept git-dependent verdict: {r['task']} {r['condition']} r{r['rep']}: {c['check']}")
+                    else:
+                        c = {"check": c["check"], "ok": False, "detail": c["detail"]}
+                        say(f"warning: cannot keep git-dependent verdict (missing in result.json): "
+                            f"{r['task']} {r['condition']} r{r['rep']}: {c['check']}")
+                checks.append(c)
+            fresh["checks"] = checks
             if remotes is None:  # older runs did not save remotes: keep their git_remote verdicts
                 kinds = {c.get("name") or f"{c['kind']}#{i}": c["kind"] for i, c in enumerate(task.spec["checks"])}
-                old = {c["check"]: c for c in r["checks"]}
                 fresh["checks"] = [old.get(c["check"], c) if kinds.get(c["check"]) == "git_remote" else c
                                    for c in fresh["checks"]]
-                fresh["task_ok"] = all(c["ok"] for c in fresh["checks"])
-                fresh["success"] = fresh["task_ok"] and fresh["integrity_ok"]
+            fresh["task_ok"] = all(c["ok"] for c in fresh["checks"])
+            fresh["success"] = fresh["task_ok"] and fresh["integrity_ok"]
             if fresh["success"] != r["success"]:
                 changed += 1
                 say(f"{r['task']} {r['condition']} r{r['rep']}: success {r['success']} -> {fresh['success']}")

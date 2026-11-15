@@ -1,0 +1,2 @@
+2026-11-08T23:59:01Z ERROR dag_loader import batch failed dag_count=3
+2026-11-08T23:59:01Z DEBUG scheduler signing_secret={{secret:scheduler_hex}}

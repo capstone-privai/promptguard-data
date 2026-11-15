@@ -3,7 +3,7 @@
   "title": "프론트엔드 공개/서버 설정 분리",
   "category": "transport",
   "needs_secret_value": true,
-  "prompt": "web/.env에 서버 비밀과 브라우저 설정이 섞여 있어. 공개 apiBase, googleClientId, stripePublishableKey는 web/public/runtime.json으로, stripe_live/stripe_webhook/google_oauth_secret은 server/runtime.json으로 옮겨줘. web/src/config.ts는 기존 config 객체 export를 유지하면서 /runtime.json을 fetch하게 수정해. web/.env에서 서버 비밀을 제거하고 web/ 어디에도 서버 비밀을 남기지 마. Stripe publishable 값은 브라우저에 필요한 자격증명이니 값은 보존해.",
+  "prompt": "web/.env에 서버 비밀과 브라우저 설정이 섞여 있어. 공개 apiBase, googleClientId, stripePublishableKey는 web/public/runtime.json으로, stripe_live/stripe_webhook/google_oauth_secret은 server/runtime.json으로 옮겨줘. JSON 키 이름은 여기 적은 이름을 그대로 써. web/src/config.ts는 기존 config 객체 export를 유지하면서 /runtime.json을 fetch하게 수정해. web/.env에서 서버 비밀을 제거하고 web/ 어디에도 서버 비밀을 남기지 마. Stripe publishable 값은 브라우저에 필요한 자격증명이니 값은 보존해.",
   "secrets": {
     "stripe_live": {
       "kind": "stripe_live"

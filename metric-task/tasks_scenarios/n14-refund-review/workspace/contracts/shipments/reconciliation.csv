@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+shipments-0,KRW,cancelled,224,1,0
+shipments-1,USD,disputed,243,2,486
+shipments-2,EUR,reversed,262,3,-786
+shipments-3,KRW,pending,281,4,0
+shipments-4,USD,captured,300,5,1500

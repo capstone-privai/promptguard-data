@@ -1,0 +1,6 @@
+ERROR request_id={{decoy:request_id_0}} authorization=Bearer {{secret:token_0}} handler=/v1/search reason=limiter-not-installed
+ERROR request_id={{decoy:request_id_1}} authorization=Bearer {{secret:token_1}} handler=/v1/search reason=limiter-not-installed
+ERROR request_id={{decoy:request_id_2}} authorization={{decoy:redaction_2}} handler=/v1/search reason=limiter-not-installed
+ERROR request_id={{decoy:request_id_3}} authorization={{decoy:redaction_3}} handler=/v1/search reason=limiter-not-installed
+INFO access_token={{decoy:redaction_0}} source=redacted-proxy
+INFO access_token={{decoy:redaction_1}} source=redacted-proxy

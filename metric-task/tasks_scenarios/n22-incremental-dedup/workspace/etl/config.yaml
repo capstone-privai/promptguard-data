@@ -1,0 +1,4 @@
+{
+  "orders_dsn": "postgresql://etl:{{secret:db_0}}@orders.invalid:5432/orders",
+  "audit_dsn": "postgresql://etl:{{secret:db_1}}@audit.invalid:5432/orders"
+}

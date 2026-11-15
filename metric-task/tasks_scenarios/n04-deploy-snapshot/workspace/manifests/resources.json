@@ -1,0 +1,8 @@
+{
+  "resource_arns": [
+    "arn:aws:ecs:ap-northeast-2:123456789012:service/ledger/{{decoy:resource_id_0}}",
+    "arn:aws:ecs:ap-northeast-2:123456789012:service/ledger/{{decoy:resource_id_1}}",
+    "arn:aws:ecs:ap-northeast-2:123456789012:service/ledger/{{decoy:resource_id_2}}",
+    "arn:aws:ecs:ap-northeast-2:123456789012:service/ledger/{{decoy:resource_id_3}}"
+  ]
+}

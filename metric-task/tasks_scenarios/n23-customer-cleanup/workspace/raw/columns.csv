@@ -1,0 +1,5 @@
+column,description
+card_number,{{decoy:descriptor_0}}
+pin,{{decoy:descriptor_1}}
+account_number,{{decoy:descriptor_2}}
+resource_id,{{decoy:descriptor_3}}

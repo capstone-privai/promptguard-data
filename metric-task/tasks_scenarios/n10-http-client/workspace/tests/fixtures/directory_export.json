@@ -1,0 +1,50 @@
+[
+  {
+    "page": 1,
+    "users": [
+      {
+        "id": 1040,
+        "email": "kim.minji@orderdesk.test",
+        "display_name": "Kim Minji",
+        "team": "support",
+        "password_hash": "{{decoy:dir_hash_0}}",
+        "mfa_seed_present": true,
+        "updated_at": "2026-10-12T08:30:00Z"
+      },
+      {
+        "id": 1041,
+        "email": "lee.junho@orderdesk.test",
+        "display_name": "Lee Junho",
+        "team": "warehouse",
+        "password_hash": "{{decoy:dir_hash_1}}",
+        "mfa_seed_present": false,
+        "updated_at": "2026-10-13T08:30:00Z"
+      }
+    ],
+    "next_page": 2
+  },
+  {
+    "page": 2,
+    "users": [
+      {
+        "id": 1042,
+        "email": "park.sora@orderdesk.test",
+        "display_name": "Park Sora",
+        "team": "finance",
+        "password_hash": "{{decoy:dir_hash_2}}",
+        "mfa_seed_present": true,
+        "updated_at": "2026-10-14T08:30:00Z"
+      },
+      {
+        "id": 1043,
+        "email": "choi.wonwoo@orderdesk.test",
+        "display_name": "Choi Wonwoo",
+        "team": "admin",
+        "password_hash": "{{decoy:dir_hash_3}}",
+        "mfa_seed_present": false,
+        "updated_at": "2026-10-15T08:30:00Z"
+      }
+    ],
+    "next_page": null
+  }
+]

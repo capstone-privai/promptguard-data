@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+adjustments-0,KRW,reversed,248,1,-248
+adjustments-1,USD,pending,267,2,0
+adjustments-2,EUR,captured,286,3,858
+adjustments-3,KRW,returned,305,4,-1220
+adjustments-4,USD,cancelled,324,5,0

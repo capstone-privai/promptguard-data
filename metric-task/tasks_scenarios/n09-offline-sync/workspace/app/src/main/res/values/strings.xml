@@ -1,0 +1,6 @@
+<resources>
+  <string name="password_label_0">{{decoy:descriptor_0}}</string>
+  <string name="password_label_1">{{decoy:descriptor_1}}</string>
+  <string name="password_label_2">{{decoy:descriptor_2}}</string>
+  <string name="password_label_3">{{decoy:descriptor_3}}</string>
+</resources>

@@ -9,6 +9,7 @@ Run from the repository root:
   python metric-detection/scripts/dataset_verify.py metric-detection/data_test/sessions_from_openhands-feedback.jsonl --openhands ../openhands-feedback
   python metric-detection/scripts/dataset_verify.py metric-detection/data_test/sessions_from_SWE-Gym.jsonl --swe-gym ../SWE-Gym-OpenHands-SFT-Trajectories
   python metric-detection/scripts/dataset_verify.py metric-detection/data_test/sessions_from_noseyparker.jsonl --noseyparker ../noseyparker
+  python metric-detection/scripts/dataset_verify.py metric-detection/data_test/sessions_from_trajectory.jsonl --trajectory runs/metric-task/<batch> [...]
 
 Checks:
   1. sessions schema: unique session_id, item_id = 0..n-1, known channel, no gold fields
@@ -24,7 +25,9 @@ Checks:
      d. a value whose format decides its type (label_rules.expected_type) has that type
      e. a common value (label_rules.is_common) that is gold sits in a credential position (label_rules.classify)
   6. reproduction: regenerating from the recorded source yields byte-identical files
-     (built-in corpus, meta.template, or the converter's source folder flag; skipped without the flag)
+     (built-in corpus, meta.template, or the converter's source folder flag; skipped without the flag).
+     A trajectory file is regenerated from every batch given to --trajectory, which must be exactly the batches its
+     sessions name in meta.batch: a missing or extra batch is an error.
 Exits 1 and lists every problem found if any check fails.
 """
 from __future__ import annotations
@@ -40,7 +43,7 @@ import tempfile
 from dataset_build import CHANNELS, REPO_ROOT, TYPES, build, from_template, write_jsonl
 from dataset_policy import ALLOWED_USE, allowed_use
 from label_rules import (classify, common_outside_slot, exclusion_kind, expected_type, is_common, judge_occurrence,
-                         normalize_span, occurrences, path_tokens)
+                         normalize_span, occurrences, path_components, path_tokens)
 
 SESSION_KEYS = {"session_id", "items", "meta"}
 ITEM_KEYS = {"item_id", "turn_id", "channel", "text"}
@@ -179,14 +182,17 @@ def check_labels(spans: list[tuple], texts: dict[tuple[str, int], str], errors: 
                           f"(LABELING.md 퍼뜨림 기준)")
 
 
-def used_as_identifier(value: str, keys: list, texts: dict[tuple[str, int], str]) -> bool:
-    """Whether the session uses the value as an identifier: in an identifier position, or as part of a path."""
+def used_as_identifier(value: str, keys: list, texts: dict[tuple[str, int], str], *,
+                       source: str | None = None) -> bool:
+    """Use whole path components for trajectory; preserve legacy path matching for existing datasets."""
     return any(any(classify(texts[k], m.start(), m.end())[0] == "ident" for m in occurrences(texts[k], value))
-               or any(value in t for t in path_tokens(texts[k])) for k in keys)
+               or (value in path_components(texts[k]) if source == "agent-trajectory"
+                   else any(value in t for t in path_tokens(texts[k]))) for k in keys)
 
 
 def check_coverage(spans: list[tuple], texts: dict[tuple[str, int], str], errors: list[str],
-                   exempt: dict[tuple[str, int], list[tuple[int, int, str]]] | None = None):
+                   exempt: dict[tuple[str, int], list[tuple[int, int, str]]] | None = None, *,
+                   source: str | None = None):
     # A value is searched only in the session it is gold in: gold comes from that session's own source, and
     # the same username or common password can appear in another session where nothing was planted.
     # Part of a longer string is not an occurrence (label_rules.occurrences, LABELING.md).
@@ -209,7 +215,8 @@ def check_coverage(spans: list[tuple], texts: dict[tuple[str, int], str], errors
                         continue
                     recorded = [k for s, e, k in exempt.get(key, []) if s <= m.start() and m.end() <= e]
                     # not_propagated is for a common value; a converter's record does not make a distinct value common
-                    if "identifier" in recorded or (recorded and (common or used_as_identifier(value, keys, texts))):
+                    if "identifier" in recorded or (recorded and (common or used_as_identifier(
+                            value, keys, texts, source=source))):
                         continue
                     if recorded or judge_occurrence(texts[key], m.start(), m.end(), common)[0]:
                         errors.append(f"uncovered occurrence of {value[:20]!r}... in {key} at {m.start()}")
@@ -264,6 +271,12 @@ def regenerate(sessions: list[dict], source: str | None, origin: str | None, cre
         new_sessions, new_gold, _, _ = convert_nemotron(upstream["nemotron"], sample["positives"],
                                                         sample["negatives"], sample["channel"])
         return (new_sessions, new_gold), None
+    if source == "agent-trajectory":
+        if not upstream.get("trajectory"):
+            return None, "skipped (pass --trajectory to regenerate)"
+        from convert_trajectory import convert_batches
+        new_sessions, new_gold, _, _ = convert_batches(upstream["trajectory"])
+        return (new_sessions, new_gold), None
     converters = {"openhands-feedback": ("openhands", "convert_openhands_feedback"),
                   "swe-gym": ("swe_gym", "convert_swe_gym"),
                   "noseyparker": ("noseyparker", "convert_noseyparker")}
@@ -274,6 +287,23 @@ def regenerate(sessions: list[dict], source: str | None, origin: str | None, cre
         new_sessions, new_gold, _, _ = __import__(module).convert(upstream[flag])
         return (new_sessions, new_gold), None
     return None, f"skipped (unknown source {source!r})"
+
+
+def check_trajectory_batches(sessions: list[dict], batches: list[Path], errors: list[str]) -> bool:
+    """The batches given are exactly those the file's sessions came from; otherwise regenerating proves nothing."""
+    recorded = {s["meta"].get("batch") for s in sessions if isinstance(s.get("meta"), dict)}
+    given = Counter(b.name for b in batches)
+    ok = True
+    if repeated := sorted(n for n, k in given.items() if k > 1):
+        errors.append(f"--trajectory: batch given more than once: {', '.join(repeated)}")
+        ok = False
+    if missing := sorted(map(str, recorded - set(given))):
+        errors.append(f"--trajectory: sessions come from batches not given: {', '.join(missing)}")
+        ok = False
+    if extra := sorted(set(given) - recorded):
+        errors.append(f"--trajectory: batches given that no session comes from: {', '.join(extra)}")
+        ok = False
+    return ok
 
 
 def check_reproduction(paths: tuple[Path, Path], rows, errors: list[str]):
@@ -305,6 +335,9 @@ def main():
     parser.add_argument("--openhands", type=Path, help="openhands-feedback copy, to regenerate sessions_from_openhands-feedback.jsonl")
     parser.add_argument("--swe-gym", type=Path, help="SWE-Gym trajectories copy, to regenerate sessions_from_SWE-Gym.jsonl")
     parser.add_argument("--noseyparker", type=Path, help="noseyparker checkout, to regenerate sessions_from_noseyparker.jsonl")
+    parser.add_argument("--trajectory", type=Path, nargs="+", metavar="BATCH",
+                        help="metric-task batch folders, to regenerate sessions_from_trajectory.jsonl; give every "
+                             "batch its sessions name in meta.batch, no more and no fewer")
     parser.add_argument("--skip-rebuild", action="store_true", help="skip the byte-reproduction check")
     args = parser.parse_args()
     gold_path = args.gold or gold_path_for(args.sessions)
@@ -316,12 +349,16 @@ def main():
     source, origin = check_meta(sessions, args.sessions.name, errors)
     spans = check_gold(gold, texts, gold_path.name, errors)
     check_labels(spans, texts, errors)
-    check_coverage(spans, texts, errors, excluded_on_purpose(args.sessions))
+    check_coverage(spans, texts, errors, excluded_on_purpose(args.sessions), source=source)
     reproduction = "skipped"
-    if not args.skip_rebuild and sessions:
+    if (not args.skip_rebuild and sessions and source == "agent-trajectory" and args.trajectory
+            and not check_trajectory_batches(sessions, args.trajectory, errors)):
+        reproduction = "failed (batches differ)"
+    elif not args.skip_rebuild and sessions:
         rows, reproduction = regenerate(sessions, source, origin, args.creddata, args.privesc,
                                         {"nemotron": args.nemotron, "openhands": args.openhands,
-                                         "swe_gym": args.swe_gym, "noseyparker": args.noseyparker})
+                                         "swe_gym": args.swe_gym, "noseyparker": args.noseyparker,
+                                         "trajectory": args.trajectory})
         if rows is not None:
             check_reproduction((args.sessions, gold_path), rows, errors)
             reproduction = "passed"

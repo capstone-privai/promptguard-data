@@ -1,0 +1,13 @@
+name: staging-smoke
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/smoke.py https://ledger.staging.internal
+        timeout-minutes: 5
+        env:
+          LEDGER_SMOKE_TOKEN: ${{ secrets.LEDGER_SMOKE_TOKEN }}

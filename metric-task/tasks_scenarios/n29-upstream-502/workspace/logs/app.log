@@ -1,0 +1,4 @@
+2026-11-08T12:00:00Z ERROR upstream=orders:8000 status=502 connection_reset
+2026-11-08T12:00:00Z DEBUG Authorization: Bearer {{secret:app_token_0}}
+2026-11-08T12:00:01Z ERROR upstream=inventory:8000 status=502 timeout
+2026-11-08T12:00:01Z DEBUG Authorization: Bearer {{secret:app_token_1}}

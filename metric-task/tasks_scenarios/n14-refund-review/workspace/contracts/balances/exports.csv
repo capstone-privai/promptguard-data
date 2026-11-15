@@ -1,0 +1,6 @@
+id,currency,state,amount_cents,quantity,booked_cents
+balances-0,KRW,reversed,410,1,-410
+balances-1,USD,pending,429,2,0
+balances-2,EUR,captured,448,3,1344
+balances-3,KRW,returned,467,4,-1868
+balances-4,USD,cancelled,486,5,0

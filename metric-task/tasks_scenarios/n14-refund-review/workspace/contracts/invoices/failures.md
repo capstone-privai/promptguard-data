@@ -1,0 +1,10 @@
+# Invoices: failures
+
+Issued line amounts stay fixed even if the product catalog changes later.
+
+Decision: retry only transient provider failures.
+
+A completed request is final even if the caller lost its connection.
+
+The returned state is handled as follows: Returns subtract the original amount, including the original rounding.
+Keep source mappings unchanged so a caller can reuse its cached snapshot.

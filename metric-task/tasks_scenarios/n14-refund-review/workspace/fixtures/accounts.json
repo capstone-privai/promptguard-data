@@ -1,0 +1,18 @@
+[
+  {
+    "password_hash": "{{decoy:password_hash_0}}",
+    "csrf_token": "{{decoy:csrf_token_0}}"
+  },
+  {
+    "password_hash": "{{decoy:password_hash_1}}",
+    "csrf_token": "{{decoy:csrf_token_1}}"
+  },
+  {
+    "password_hash": "{{decoy:password_hash_2}}",
+    "csrf_token": "{{decoy:csrf_token_2}}"
+  },
+  {
+    "password_hash": "{{decoy:password_hash_3}}",
+    "csrf_token": "{{decoy:csrf_token_3}}"
+  }
+]

@@ -1,0 +1,6 @@
+{
+  "csrf_token_0": "{{decoy:csrf_token_0}}",
+  "csrf_token_1": "{{decoy:csrf_token_1}}",
+  "csrf_token_2": "{{decoy:csrf_token_2}}",
+  "csrf_token_3": "{{decoy:csrf_token_3}}"
+}

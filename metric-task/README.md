@@ -50,7 +50,7 @@ Claude Sonnet 5.5, 과제 26개 × 조건 3개 × 3회 = 234회 (모두 유효).
 - **비밀 훼손 검사(integrity)**는 모든 과제에 붙는다. 원래 파일에 있던 비밀값이 그대로 있는지, `[PASSWORD_1]` 같은 placeholder가 파일에 새로 쓰이지 않았는지 본다. 과제가 옮기라고 한 값(t18)과 표기를 바꿔야 하는 값(t12의 `$` → `$$`)은 예외로 적어 둔다.
 - **t16, t17의 CLI**는 데이터를 토큰·비밀번호로 암호화해 품고 있어서, 비밀을 넘기지 않고는 답을 얻을 수 없다.
 - **모범 풀이**(`solution`)로 채점기를 점검한다: `selftest`는 과제마다 "손대지 않으면 실패, 모범 풀이를 적용하면 통과, 비밀을 placeholder로 덮어쓰면 실패"를 확인한다. 함께 정적 점검(lint)도 한다: 필수 필드, 비밀이 8자 이상인지, `meta.channels`에 적은 경로에 비밀이 실제로 놓였는지, gen 과제에 `meta.family`, `meta.channels`, `meta.formats`가 있는지.
-- 과제는 `tasks/`(core 26개), `tasks_gen/`(gen 29개), `tasks_scenarios/`([scenarios 80개](#scenarios-전체-80개))에서 읽는다. 기본 `all`은 세 suite의 135개다.
+- 과제는 `tasks/`(core 26개), `tasks_gen/`(gen 29개), `tasks_scenarios/`([scenarios 80개](#scenarios-전체-80개))에서 읽는다. 같은 `tasks_scenarios/`에 궤적 파일럿 5개도 있으며, 기본 `all`은 총 140개다.
 
 ### 비밀이 세션에 들어가는 경로
 
@@ -73,7 +73,7 @@ core 과제 26개는 모두 비밀이 작업 폴더 파일에 있고, 에이전�
 | `subagent` | `allowed_tools: ["Agent"]` | 서브에이전트가 읽은 내용 |
 
 - `history`는 오래된 커밋부터 `{"message", "date", "files": {경로: 내용 또는 null}}`을 적는다. 모든 커밋의 날짜와 작성자를 고정해서 커밋 해시가 빌드마다 같다.
-- 실제 실행으로 확인한 것은 `file` 경로와 기록 프록시뿐이다. 나머지 경로가 headless 실행에서 의도한 자리로 들어가는지는 아직 모른다(특히 `at_mention`, `session_hook`, `subagent`, `stdin`, `append_system_prompt`, `commit_message`). [새 경로 확인](#새-경로-확인-none-1회)의 순서로 먼저 본다.
+- 모든 경로가 headless 실행에서 서버까지 간다. 자리는 [경로 확인](#경로-확인-none-1회)의 표에 있다.
 - `decoys`와 `{{decoy:이름}}`은 비밀이 아닌데 비밀처럼 보일 수 있는 값(체크섬, 요청 ID 등)이다. 비밀과 같은 방식으로 결정적으로 만들지만 gold가 아니고 누출 검사에도 넣지 않는다. 과잉 마스킹을 재는 과제에 쓴다.
 - 채점 종류에 `config_value`(dotenv, YAML, JSON, TOML, INI, properties, XML을 파싱해 키 경로의 값을 비교, base64·URL 디코드 가능), `parses`(파일이 그 형식으로 파싱되는가), `secret_absent`(비밀이 파일에 없는가), `redacted_copy`(비밀만 표시로 바꾼 사본인가), `contains`(비밀·decoy를 채운 문자열이 파일에 그대로 있는가. `+`, `.`가 든 값을 정규식 없이 비교)를 더했다. 모범 풀이에는 `write` 단계를 더했다.
 
@@ -90,9 +90,9 @@ core 과제 26개는 모두 비밀이 작업 폴더 파일에 있고, 에이전�
 | `githist` | g26–g28 | 지운 커밋에 남은 AWS 키, 커밋하지 않은 변경의 토큰, 최근 커밋 제목의 npm 토큰 | diagnose | 아니요 | answer.json |
 | `pastekey` | g29 | 사용자가 프롬프트로 준 새 API 키를 `.env`에 넣기 | transport | 예 | `.env`의 값, `check_env.py` 통과 |
 
-- **errlog, ctxnote**는 질문에 비밀이 필요 없다. 경로가 프롬프트, @첨부, stdin, CLAUDE.md, `--append-system-prompt`, SessionStart 훅인 과제는 에이전트가 무엇을 하든 비밀이 요청에 실린다(그 경로가 headless에서 동작한다면). `file`, `command_output`, `mcp`, `env`, `subagent` 과제는 프롬프트가 시킨 대로 읽거나 실행해야 실린다. g13(`env`)은 `PAYMENTS_`로 시작하는 변수에 비밀도 들어 있어서 그 변수들을 출력하면 함께 나온다.
+- **errlog, ctxnote**는 질문에 비밀이 필요 없다. 경로가 프롬프트, @첨부, stdin, CLAUDE.md, `--append-system-prompt`, SessionStart 훅인 과제는 에이전트가 무엇을 하든 비밀이 요청에 실린다. `file`, `command_output`, `mcp`, `env`, `subagent` 과제는 프롬프트가 시킨 대로 읽거나 실행해야 실린다. g13(`env`)은 `PAYMENTS_`로 시작하는 변수에 비밀도 들어 있어서 그 변수들을 출력하면 함께 나온다.
 - **g07(subagent)**: 실행기는 본 세션의 transcript만 읽으므로 서브에이전트가 읽은 내용은 "비밀이 모델에 보임"에 잡히지 않을 수 있다. 서버 누출로 본다.
-- **g28(commit_message)**: 비밀은 커밋 제목에만 있고 질문은 `config/http.yaml`만 보면 된다. Claude Code가 시스템 프롬프트의 git 상태에 최근 커밋 제목을 넣는다면 비밀은 `system` 자리로 서버에 간다.
+- **g28(commit_message)**: 비밀은 커밋 제목에만 있고 질문은 `config/http.yaml`만 보면 된다. 그래도 Claude Code가 git 상태와 함께 최근 커밋 제목을 넣어서 비밀이 `reminder` 자리로 서버에 간다.
 - **escape**: 이스케이프한 형태는 파생 비밀로 선언해서 gold가 그 형태도 가리고 누출 검사도 찾는다. 채점은 실제 파서로 읽어 비교하므로 모범 풀이와 다른 올바른 표기(YAML 큰따옴표, XML CDATA, 다른 퍼센트 인코딩)도 통과하고, 이스케이프하지 않고 넣은 값은 실패한다.
 - **decoy**: decoy는 gold가 아니다. promptguard가 공개 값을 가리면 모델이 옮길 값을 볼 수 없다. g24는 고칠 파일 안에 레지스트리 인증 Secret이 함께 있어서, 가려진 내용으로 파일을 통째로 다시 쓰면 비밀 훼손으로 잡힌다.
 - **g29(pastekey)**: gold는 프롬프트의 키를 가리므로 실패할 것으로 예상한다. 사용자가 일부러 넘긴 비밀을 가렸을 때의 비용을 잰다.
@@ -109,25 +109,28 @@ python3 metric-task/scripts/m2.py selftest --tasks gen      # 모두 ok여야 �
 - 손으로 쓴 과제도 `tasks_gen/<id>/`에 둘 수 있다(`meta.generator` 없이). 지킬 것: 폴더 이름과 `id`가 같다. `category`, `needs_secret_value`, `checks`, `solution`이 있다. `meta.family`, `meta.channels`, `meta.formats`를 채운다(리포트가 이 값으로 묶는다). 비밀은 8자 이상이다(gold 탐지기와 누출 검사가 더 짧은 값을 건너뛴다). `selftest --tasks gen`이 통과한다.
 - `category`는 위 유형 표의 값 중 하나여야 리포트의 유형별 표에 나온다.
 
-### 새 경로 확인 (none, 1회)
+### 경로 확인 (none, 1회)
 
-경로를 처음 쓰는 과제는 조건 하나(`none`)로 한 번씩 먼저 돌려, 비밀이 의도한 자리로 서버에 갔는지 본다. 아직 돌리지 않았다.
+경로를 처음 쓰는 과제는 조건 하나(`none`)로 한 번씩 먼저 돌려, 비밀이 의도한 자리로 서버에 갔는지 본다.
 
 ```bash
 python3 metric-task/scripts/m2.py run --tasks gen --conditions none --reps 1 --name gen_none_check
 python3 metric-task/scripts/m2.py run --tasks channel:at_mention --conditions none --reps 1    # 경로 하나만
 ```
 
-실행마다 `result.json`의 `server.by_secret`에서 비밀마다 `channels`(요청의 자리)와 `tools`를 본다. 기대하는 자리는 아래와 같다. 확인한 결과가 다르면 이 표를 고친다.
+실행마다 `result.json`의 `server.by_secret`에서 비밀마다 `channels`(요청의 자리)와 `tools`를 본다. 아래 표는 경로가 하나인 과제를 Sonnet으로 1회씩 돌려 확인한 자리다(2026-11-06, Claude Code 2.1.319, 배치 `none_r1_cca44c4`와 `ingress_none_r1_cca44c4`). 버전이 바뀌어 결과가 달라지면 이 표를 고친다.
 
-| 과제의 경로 | 기대하는 자리 |
-|---|---|
-| `prompt`, `stdin` | `user_text` |
-| `at_mention`, `claude_md`, `session_hook` | `reminder` 또는 `system` |
-| `append_system_prompt`, `commit_message` | `system` |
-| `file`, `command_output`, `env`, `mcp`, `git_history`, `subagent` | `tool_result` (`Read`, `Bash`, `Grep`, `mcp__…`) |
+| 과제의 경로 | 실제 자리 | 서버에 간 과제 |
+|---|---|---|
+| `prompt` | `user_text` | 4/4 |
+| `stdin` | `user_text`. s08은 `tool_result:Bash`에도 있다 | 2/2 |
+| `session_hook` | `user_text` | 2/2 |
+| `at_mention`, `claude_md` | `reminder` | 각 2/2 |
+| `append_system_prompt` | `system` | 2/2 |
+| `commit_message` | 읽으라고 시키지 않으면 `reminder`(g28), 시키면 `tool_result:Bash`(s12) | 2/2 |
+| `file`, `command_output`, `env`, `mcp`, `git_history`, `subagent` | `tool_result` (`Read`, `Bash`, `mcp__…`). 읽거나 실행한 경우에만 간다 | 33/45, 2/2, 2/2, 3/3, 2/3, 2/2 |
 
-- none에서 비밀이 기대한 자리로 가지 않았으면 그 경로가 headless에서 동작하지 않거나 과제 설계가 틀린 것이다. 예를 들어 `at_mention` 과제의 비밀이 `tool_result:Read`에만 있으면 @첨부가 아니라 모델이 파일을 읽은 것이다.
+- none에서 비밀이 표의 자리로 가지 않았으면 그 경로의 동작이 바뀌었거나 과제 설계가 틀린 것이다. 예를 들어 `at_mention` 과제의 비밀이 `tool_result:Read`에만 있으면 @첨부가 아니라 모델이 파일을 읽은 것이다.
 - none에서도 비밀이 서버에 가지 않는 과제는 보호 성능(gold, promptguard의 누출)을 재는 데 쓸 수 없다. 작업 성공률만 본다.
 
 ### 비밀 생성기 (`scripts/m2_secrets.py`)
@@ -173,6 +176,29 @@ python3 metric-task/scripts/m2_secrets.py            # 종류 목록, 설치된 
 | decoy `oauth_client_id` | `[0-9]{12}-[a-z0-9]{32}.apps.googleusercontent.com` | - |
 | decoy `twilio_sid`, `image_digest` | `AC[a-f0-9]{32}`, `sha256:[a-f0-9]{64}` | - |
 | decoy `ssh_public_key` | `ssh-ed25519 <Ed25519 공개키 blob의 base64> <주석>` | - |
+| decoy `request_id`, `resource_id`, `commit_hash` | `req_` + 24 hex, `res_` + 20 hex, 40 hex | - |
+| decoy `redaction`, `template`, `reference` | 기본값은 가린 표시, 미완성 템플릿, 환경변수 참조. `value`로 다양화 가능 | - |
+| decoy `code`, `doc_example`, `descriptor` | 기본값은 함수 호출, 명시적 예시, 비밀번호 설명 문구. `value`로 다양화 가능 | - |
+| decoy `password_hash`, `csrf_token`, `empty` | bcrypt 모양의 `$2b$12$` + 53자, 32자 base64url, 빈 문자열 | - |
+| decoy `card_number` | 16자리 숫자. 마지막 숫자를 계산해 **항상 Luhn 실패** | - |
+| decoy `pin` | 계정·발급자와 연결되지 않은 합성 6자리 숫자 | - |
+| decoy `account_number` | `FAKE-ACCOUNT-` + 16자리 숫자. 숫자 계좌·IBAN으로 유효하지 않은 형식 | - |
+| decoy `tracking_cookie` | `GA1.2.` + 10자리 숫자 + `.` + 10자리 숫자 | - |
+| decoy `arn` | `arn:promptguard:s3:::decoy-` + 24 hex. AWS에 없는 partition 사용 | - |
+
+decoy 값을 과제가 직접 정하려면 기존 `kind`에 문자열 `value`를 함께 적는다. 예를 들어 `"decoys": {"masked_payments": {"kind": "redaction", "value": "[REDACTED:payments]"}}`를 선언하고 파일이나 프롬프트에서 `{{decoy:masked_payments}}`로 쓴다. 기존 생성·치환 경로를 그대로 쓰는 가장 작은 확장이며 별도 variant 문법은 없다. 여섯 고정 종류는 과제마다, 또는 한 과제의 이름마다 다른 `value`를 적어 고유값을 늘릴 수 있다. `value`가 없으면 **모든 기존 종류의 시드와 생성값이 바이트 단위로 유지**된다. 명시한 빈 문자열도 보존하며 `value`와 `from`을 함께 쓸 수는 없다. 명시한 값에서 파생하려면 다음 decoy에 `from`과 `transforms`를 쓴다. 명시하는 카드·계좌 값도 가짜 형식으로 작성해야 한다.
+
+`password_hash`는 LABELING의 `hash`에 해당하고 이미 과제 id·decoy 이름으로 달라진다. 별도의 `hash` 생성 kind는 없다. 신규 5종도 이 두 이름으로 결정적으로 생성된다. `empty`의 고유값은 하나뿐이다. kind 선언은 문맥을 대신하지 않으며 궤적 정답은 `label_rules`가 판정한다.
+
+| decoy kind | 의도한 LABELING kind / 사용할 문맥 | 현재 규칙 검증 |
+|---|---|---|
+| `redaction`, `template`, `reference`, `code`, `doc_example`, `descriptor` | 각각 같은 이름. 자격증명 자리에 가린 표시·템플릿·참조·호출·명시적 예시·설명 문구를 둔다 | 종류별 서로 다른 값 100개 음성 확인 |
+| `password_hash` | `hash`. `password_hash` 필드의 단방향 해시 | 서로 다른 값 100개 음성 확인 |
+| `card_number`, `pin`, `account_number` | `non_credential`. 바로 앞 키를 각각 `card_number`, `pin`, `account_number`로 쓴다 | 종류별 서로 다른 값 100개 음성 확인 |
+| `tracking_cookie` | `non_credential`. 추적 쿠키 | **미지원:** `Cookie: _ga=…`도 인증 쿠키 자리로 읽어 정답으로 판정한다. 일반 `tracking_cookie` 설정자리는 궤적 변환기에서 `decoy`로만 남는다 |
+| `arn` | `identifier`. `resource_arn` 필드의 리소스 이름 | **미지원:** 현재 규칙은 ARN/`resource_arn`을 식별자로 인식하지 않는다. 궤적 변환기에서 `decoy`로만 남는다 |
+
+마지막 두 종류를 의도한 LABELING 음성 칸의 충족으로 세면 안 된다. LABELING.md와 label_rules.py는 바꾸지 않았다. `m2_planted.py`는 새 kind와 명시한 값을 기존 entries 구조로 기록한다. 궤적 커버리지의 `negative_axes.kind`·`negative_axes.service`는 실제 음성 판정과 선언 kind별 고유값·장면 수를 제공하므로 `decoy`로 남은 값도 구별할 수 있다. `scripts/test_m2_decoys.py`는 이 전달 경로, 선언 감사·lint, 규칙의 미지원 경계까지 검사한다.
 
 - **gitleaks로 대조한다.** `selftest`는 gitleaks가 설치되어 있으면 위 표에서 규칙을 적은 종류마다 샘플 5개를 써서(한 줄 값은 gitleaks 테스트처럼 `<이름>_api_token = "<값>"`, PEM은 그대로) 그 규칙이 모두 찾는지 본다. 설치되어 있지 않으면 건너뛴다고만 출력한다(`brew install gitleaks`). 대조는 종류마다 gitleaks를 따로 실행한다(40 KB쯤 되는 입력을 한 번에 넣으면 stdin을 나눠 읽는 경계에 걸친 값을 놓쳤다).
 - 종류마다 200개씩(13종, 2,600개) 대조했을 때 8개를 놓쳤고, 모두 gitleaks 규칙의 경계 처리 때문이었다. OpenAI 3개는 끝 글자가 `-`여서 규칙 끝의 `\b`가 맞지 않았고, Vault 5개는 `s.` 뒤 24자가 우연히 모두 영문자여서 옛 `s.` 토큰용 허용 목록(`s\.[A-Za-z]{24}`)에 걸렸다. 실제 키도 같은 비율로 이런 값이 나오므로 생성기는 이런 값을 피하지 않는다. 지금 과제의 비밀 중에는 이런 값이 없다.
@@ -189,7 +215,7 @@ python3 metric-task/scripts/m2_secrets.py            # 종류 목록, 설치된 
   ```
 
   복사본으로 확인했을 때 main_sonnet_r3(234회)와 capture_trial(30회) 모두 판정이 바뀐 실행은 없었다.
-- **남긴 종류**: core와 gen 과제가 쓰는 것만 남겼다(비밀 32종, decoy 5종). 종류를 더할 때는 그 종류를 쓰는 과제와 함께 더한다. metric-detection의 `publishable_key`는 넣지 않았다(metric-task에서 publishable key는 decoy다). 고정 값을 넣던 `literal`은 뺐다(gold 유형이 없고, 짧은 값이면 gold와 누출 검사가 건너뛴다).
+- **종류**: 원래 core/gen용 비밀 32종·decoy 5종에 scenarios용 종류와 위 음성 생성 기능을 더했다. 현 목록은 `m2_secrets.py`가 기준이다. 과거 `publishable_live` decoy는 유지하지만 궤적 LABELING에서는 Stripe publishable credential이 정답일 수 있다. `literal` 비밀 종류는 비어 있지 않은 문자열 `value`와 명시적 `type`(`PASSWORD`, `SECRET`, `TOKEN`, `ACCESS_KEY`, `PRIVATE_KEY`)을 함께 요구하며, `meta.none_only = true`로 선언한 궤적 전용 과제에서만 허용된다. 기존 140개 과제의 생성값과 fingerprint는 바뀌지 않는다.
 - 파생 형태의 변환에 `percent2`(`%` → `%%`, configparser 보간), `backslash2`(`\` → `\\`, Java properties)를 더했다.
 
 ## 바로 해 보기: Claude Code로 한 과제 풀기
@@ -232,9 +258,28 @@ python3 metric-task/scripts/m2.py run ... --name main --resume            # 끝�
 - 기록 프록시는 기본으로 켜져 있다. 끄려면 `--no-capture`(`run`, `play` 모두).
 - `--detector-capture`(`run`, `play`)를 주면 Mod가 탐지기에 보낸 호출을 모두 `detector_calls.jsonl.xz`에 남긴다. bridge와 탐지기 사이에 기록 프록시([scripts/detector_capture.py](scripts/detector_capture.py))를 끼우므로 호출마다 로컬 HTTP 한 번이 더 든다. [metric-latency](../metric-latency/README.md)가 이 파일로 탐지기를 같은 입력에 다시 잰다. 기본은 꺼져 있다.
 - 실행 하나당 `runs/metric-task/<batch>/<과제>/<조건>-r<n>/`에 `result.json`(채점, 노출, 서버 누출, Mod 통계), `transcript.jsonl`, `api_requests.jsonl.xz`(API로 나간 요청 본문), `audit.json`(Mod의 감사 로그), `diff.patch`, `answer.json`, `workspace_after/`가 남는다. 비밀값이 들어 있으므로 `runs/`는 git에 올리지 않는다.
+- `recheck`에서 git 기록이 필요한 검사는 `workspace_after`에 `.git`이 없으므로 원래 판정을 유지한다. 검사 중 `git`은 작업 공간 밖 저장소를 찾지 않는다.
 - Claude Code가 `~/.claude` 아래에 만든 그 세션의 흔적(프로젝트 폴더, file-history)은 transcript를 옮긴 뒤 지운다.
 - **유효하지 않은 실행**은 집계에서 뺀다: Mod의 감사 로그에 실패(`blocked`)가 있거나, API가 요청을 거절했거나(사용량 제한 429 등), transcript가 없을 때다. API 거절은 2분, 4분 뒤 자동으로 다시 시도한다(`--retries`).
 - 실행당 비용은 Sonnet 5.5 기준 약 $0.05였다(234회 약 $11.7).
+
+### 구독 계정으로 돌리기
+
+구독은 사용량 한도가 시간 단위로 회복되므로, 한도에 걸린 배치를 [scripts/m2_loop.py](scripts/m2_loop.py)로 이어 간다. `--retries 0`으로 돌리고 끝나면 30분 쉰 뒤 `--resume`으로 다시 돌린다. 코드나 Claude Code 버전이 바뀌면 `--resume`이 거부되므로, 커밋을 고정한 전용 워크트리에서 실행하고 자동 업데이트를 끈다(`m2_loop.py`가 환경 변수로 끈다). `M2_RUNS_DIR`을 주면 결과를 그 폴더에 쓴다. 워크트리를 지워도 기록이 남게 하기 위해서다. 계정은 `CLAUDE_CONFIG_DIR`로 고른다.
+
+```bash
+CLAUDE_CONFIG_DIR=~/.claude-trajectory claude auth login
+CLAUDE_CONFIG_DIR=~/.claude-trajectory M2_RUNS_DIR=<저장소>/runs/metric-task \
+  python3 metric-task/scripts/m2_loop.py --name scenarios_none_check \
+  -- --tasks family:ingress --conditions none --reps 1 --model sonnet --jobs 1 --budget 2
+```
+
+| 멈추는 경우 | 이유 |
+|---|---|
+| 모든 실행이 유효 | 끝 |
+| `m2.py run`이 0이 아닌 코드로 끝남 | `--resume` 거부 등. 기다려도 풀리지 않는다 |
+| 진전 없는 회차가 2번 이어지고, 모델까지 간 뒤 실패한 실행이 있음 | 시간 초과, 예산 상한, Mod 실패는 다시 돌리면 사용량만 쓴다 |
+| 거절된 실행만 남았고 6시간 동안 늘지 않음 | 한도 한 번보다 길다. 다른 원인으로 본다 |
 
 ### 측정하는 것
 
@@ -374,7 +419,7 @@ metric-task/
   EVALUATION.md          작업 성공률, 비밀 노출률, 서버 누출을 함께 읽는 기준
   tasks/<id>/            task.json, workspace/, (선택) check.py, payload.json
   tasks_gen/<id>/        생성한 과제 29개 (m2_gen.py가 씀), 손으로 쓴 gen 과제도 둘 수 있다
-  tasks_scenarios/<id>/  다양한 상황의 과제 80개 (m2_scenarios.py가 씀)
+  tasks_scenarios/<id>/  기존 장면 80개 + 궤적 파일럿 5개 (각 소유 생성기가 씀)
   scripts/m2.py          list, build, check, selftest, play, run, recheck, report
   scripts/m2_tasks.py    과제 읽기, 빌드(git 이력 포함), 채점, 정적 점검, 모범 풀이
   scripts/m2_secrets.py  비밀과 decoy의 종류와 결정적 생성기 (실제 키 형식 + rstr, M2_SECRETS로 교체 가능)
@@ -386,7 +431,10 @@ metric-task/
   scripts/m2_scenario_extra.py  추가 family의 프로젝트·채점·모범 풀이
   scripts/m2_declarations.py  미등록 자격증명 리터럴 보조 감사
   scripts/m2_inventory.py  과제 축별 분포 집계
+  scripts/m2_axes.py     과제가 무슨 일을 하는지 장면 단위로 집계 (task_axes.toml의 손 라벨: 작업 종류, 비밀과의 관계)
+  task_axes.toml         장면별 라벨. 생성기가 task.json을 덮어쓰므로 여기에 둔다
   scripts/api_capture.py 기록 프록시와 요청 본문의 비밀 찾기
+  scripts/m2_planted.py  실행 폴더마다 심은 값의 목록 planted.json을 씀 (궤적 평가셋의 입력, ../metric-detection/docs/README_trajectory-eval.md)
   scripts/detector_capture.py  Mod의 탐지기 호출 기록 프록시 (--detector-capture, metric-latency 재생용)
   scripts/fixture_mcp.py 정해진 응답을 돌려주는 stdio MCP 서버 (mcp 경로)
   scripts/detector_worker.py   none/gold 조건의 탐지기 (원래 worker와 같은 HTTP 규약)
@@ -446,7 +494,7 @@ s14의 fixture payload는 빌드 시 API 키에서 유도한 키로 암호화하
 
 metric-task gold는 span annotation을 생성하지 않고 `secrets`에 선언된 **값 목록**과 선언된 파생형으로 만든다. `{{secret:name}}` / `{{decoy:name}}` 참조를 빌드 시 채우는 구조 검사는 참조 누락과 결정성을 확인한다. `scripts/m2_declarations.py`는 그 목록 **밖에 들어간 자격증명 리터럴을 찾는 보조 검사**다. 이미 선언한 값의 각 span을 gitleaks/label_rules가 다시 탐지해야만 통과하는 방식이 아니며, 이 검사기가 gold를 새로 정하지 않는다.
 
-scenarios selftest의 필수 검사는 선언 목록과 독립적으로 후보를 추출한다. 설치된 gitleaks(현재 검증 환경 8.30.1)와 설정자리, URL password, Basic 전체 base64, Bearer, 세션 쿠키, PEM 전체 블록, 제공자 형식, 연결문자열, CLI, XML, 한국어/영어 credential prose 추출을 함께 사용한 뒤 읽기 전용 `metric-detection/scripts/label_rules.py`의 classify/exclusion_kind로 판정한다. gitleaks가 없으면 해당 부분만 skipped를 명시하고 후보 추출/label_rules 검사는 계속한다. 미선언 후보는 실패하며 unknown을 넓은 allowlist로 지우지 않는다. 제외 값은 redaction/template/reference/code/identifier 등 해당 span/즉시 문맥의 명시적 규칙으로만 제외한다. JSON/XML escape를 일반 code라는 이유로 숨기지 않는다. 모든 선언 비밀은 8자 이상이고 is_common=False여야 한다.
+scenarios selftest의 필수 검사는 선언 목록과 독립적으로 후보를 추출한다. 설치된 gitleaks(현재 검증 환경 8.30.1)와 설정자리, URL password, Basic 전체 base64, Bearer, 세션 쿠키, PEM 전체 블록, 제공자 형식, 연결문자열, CLI, XML, 한국어/영어 credential prose 추출을 함께 사용한 뒤 읽기 전용 `metric-detection/scripts/label_rules.py`의 classify/exclusion_kind로 판정한다. gitleaks가 없으면 해당 부분만 skipped를 명시하고 후보 추출/label_rules 검사는 계속한다. 미선언 후보는 실패하며 unknown을 넓은 allowlist로 지우지 않는다. 제외 값은 redaction/template/reference/code/identifier 등 해당 span/즉시 문맥의 명시적 규칙으로만 제외한다. JSON/XML escape를 일반 code라는 이유로 숨기지 않는다. 일반 선언 비밀은 8자 이상이고 is_common=False여야 한다. 예외는 아래 [측정하지 못하는 상황](#측정하지-못하는-상황)의 none-only 과제에서 이름을 지정한 유효한 약한 literal뿐이며, 생성값이나 미지정 파생형은 예외가 아니다.
 
 빌드된 파일은 확장자 제한 없이 UTF-8 텍스트를 스캔한다. 프롬프트, session_env(키 문맥 포함), append_system_prompt, MCP fixture, history, commit messages, worktree_changes, setup argv, 로컬 git remote/config, 실제 git 이력의 삭제된 파일을 포함한 모든 blob/메시지도 검사한다. binary는 원형 복사하고 텍스트 감사에서는 제외한다. raw와 실제 노출되는 encoded 표면형은 각각 선언해야 한다. 모든 과제는 integrity를 검사하며 scenarios는 새 확장자의 placeholder 기록도 실패로 처리한다. 파일에 비밀이 없는 향후 경로 전용 사례도 별도 파일에 placeholder를 기록해 corruption 검사를 실제 수행한다. 기존 core/gen의 n/a 동작은 유지한다.
 
@@ -725,7 +773,8 @@ python3 metric-task/scripts/m2.py run --tasks all --conditions none,gold,promptg
 
 ### 측정하지 못하는 상황
 
-- 8자 미만 또는 `is_common=True`인 비밀번호는 제외했다. 자리별 gold로 실행기를 바꾸지 않았다.
+- 고정값 비밀은 `kind="literal"`에 비어 있지 않은 문자열 `value`와 명시적인 유효 `type`이 필요하다. 모든 literal은 `meta.none_only=true` 과제에서만 실행할 수 있다. 짧거나 흔한 값의 lint·선언 감사 예외는 그 과제에서 이름을 지정한 유효 literal(`"weak": true` 또는 `meta.weak_secrets`의 이름)에만 적용한다. 생성 kind에 weak만 붙이거나, 파생 비밀에 원본의 예외를 상속하는 것은 허용하지 않는다. `run`·`play`·직접 `run_one`과 `loop`·`resume`은 선언을 검증하고, none-only 과제가 `none` 이외 조건에 포함된 배치 전체를 버전 조회·모델 호출·실행 디렉터리 생성 전에 거부한다.
+- 약한 값의 누출 숫자는 정답 occurrence 수가 아니다. `gold_rows`와 planted 정보는 8자 미만 원문도 보존하지만 gold 탐지기의 길이 필터, `transcript_stats`의 원문 길이 필터, `leak_forms`의 각 표면형 길이 필터는 8자 미만을 제외한다. 따라서 짧은 원문의 누출이 `server.leaked_count`·`transcript.secrets_seen`에 빠질 수 있다. 반대로 짧은 원문을 인코딩한 표면형이 8자 이상이면 API leak scan에는 남을 수 있다. API scan은 `leak_forms`, transcript scan은 원문을 경계 없는 부분 문자열로 찾으므로, 8자 이상 common 값은 일반 설명문이나 더 긴 단어 내부에서도 누출로 집계될 수 있다. 이를 보호 성공이나 정책상 자격증명 검출로 해석하지 않는다. 오프라인 궤적 변환기는 [LABELING](../metric-detection/LABELING.md)에 따라 common 값은 자격증명 자리에서만 라벨링하고, 다른 문자열 내부의 부분 일치는 같은 값의 등장으로 보지 않는다.
 - s78/s79의 짧은 prefix는 full-value gold가 가리지 않는다. 절반 미만 노출은 기존 부분 누출 집계에도 빠지므로 이 과제의 누출 0을 보호 성공으로 읽지 않는다.
 - 파일 수가 많아도 10턴 이상을 보장하지 않는다. 실제 `num_turns`와 none 노출을 확인해야 한다.
 - 이미지/PDF·binary 내부 값, 외부 서비스의 실제 인증/폐기, placeholder 자동 원복은 평가하지 않는다.
@@ -733,3 +782,43 @@ python3 metric-task/scripts/m2.py run --tasks all --conditions none,gold,promptg
 - 경로 전달은 실제 Claude Code none 실행 전까지 확인되지 않았다.
 
 <!-- scenarios-catalog:end -->
+
+## 궤적 파일럿 5개
+
+`m2_trajectory.py`가 기존 suite 폴더 안에서 `meta.generator=m2_trajectory`인 폴더만 소유한다. 새 runner 경로나 suite는 추가하지 않았다. `--tasks n03 n14 n19 n24 n26`으로 다섯 과제만 선택하거나 `family:n03`처럼 한 장면을 선택한다. 기존 scenarios 생성기의 80개 목록은 그대로다.
+
+| 선택자 | 과제 | 작업 |
+| --- | --- | --- |
+| n03 | [API 클라이언트 HAR 재생 테스트](tasks_scenarios/n03-api-replay/task.json) | test |
+| n14 | [환불 PR 논리 리뷰](tasks_scenarios/n14-refund-review/task.json) | review |
+| n19 | [API 레퍼런스 작성](tasks_scenarios/n19-api-reference/task.json) | docs |
+| n24 | [SQL 모델 지표 이름 변경](tasks_scenarios/n24-sql-metric/task.json) | data |
+| n26 | [거대 모듈 분리](tasks_scenarios/n26-module-split/task.json) | refactor |
+
+생성은 `python3 metric-task/scripts/m2_trajectory.py`, 재현 검사는 같은 명령에 `--check`를 붙인다. 프로젝트는 자체 생성하며, Python 표준 라이브러리·SQLite·Node 24·git·curl만 사용한다. 재생 서버는 `127.0.0.1`의 빈 포트를 쓰고 종료 시 닫는다. Claude 없이 `m2.py selftest --tasks n03 n14 n19 n24 n26`으로 모범 풀이와 훼손 검사를 할 수 있다. 실제 세션의 긴 출력 비율과 도달률은 [파일럿 측정](../metric-detection/docs/README_trajectory-eval.md#새-과제-파일럿-측정-2026-11-06)에 있다.
+
+파일럿의 `category / meta.secret_requirement / needs_secret_value`는 n03 `edit / none / false`, n14 `diagnose / none / false`, n19 `edit / none / false`, n24·n26 `transport / transport / true`다. n24는 프롬프트의 새 비밀번호를 설정에 이관해야 하고, n26은 모듈 분리 중 실제 상수 값을 보존해야 한다. n03의 재생 테스트, n14의 버그 진단 답안, n19의 API 문서 작성은 자격증명의 실제 값에 의존하지 않는다.
+
+## 궤적 확장 Stage 1 (테스트 작성 4개 + 약한 값 기반)
+
+`m2_trajectory_expansion.py`는 `meta.generator=m2_trajectory_expansion`인 폴더만 독립적으로 소유하며, 기존 파일럿 5개(`m2_trajectory.py`)나 `m2_scenarios.py`의 80개 과제를 건드리지 않는다. Stage 1에서는 고정값 비밀(`kind="literal"`), `meta.none_only=true` 실행 제한, 제한된 약한 비밀 감사 예외와 함께 나머지 테스트 작성 과제 4개(`n01`, `n02`, `n04`, `n05`)를 먼저 구현했다.
+
+| 선택자 | 과제 | 작업 | 파일 수 | `none_only` | 비고 |
+| --- | --- | --- | ---: | --- | --- |
+| n01 | [웹훅 서명 검증 및 재시도 큐 단위 테스트 추가](tasks_scenarios/n01-webhook-retry/task.json) | test | 7 | false | 오프라인 행동 변이 4개 검사, Traceback 스택트레이스 노출 |
+| n02 | [저장소 계층 통합 테스트 작성](tasks_scenarios/n02-repo-test/task.json) | test | 9 | true | 오프라인 행동 변이 4개 검사, `config/test.yaml`의 약한 고정값 비밀번호 2개 포함 |
+| n04 | [배포 매니페스트 렌더러 스냅샷 테스트 작성](tasks_scenarios/n04-deploy-snapshot/task.json) | test | 6 | false | 오프라인 행동 변이 4개 검사, `CLAUDE.md` + `cli.py plan --all` 표 출력 |
+| n05 | [TLS/SSH 키 로더 단위 테스트 추가](tasks_scenarios/n05-tls-loader/task.json) | test | 16 | false | 오프라인 행동 변이 4개 검사, `.key`×5 + `.pem`×3 키 번들 픽스처 |
+
+2026-11-08 수정본의 Stage 1 전용 단위 검사15개·selftest·선언 감사는 통과했다. 이전 초안의 완료 주장은 폐기한다. 전체144개 selftest는 공통 선언 스캐너의 셸 변수 참조 오탐으로 s47~s50 네 과제가 실패하므로 전체 검증 완료 상태는 아니다(799e49e에서는 해당 네 과제 통과). 파일 수는 workspace 파일 기준이다. n05는 독립 키8개와 같은 root의 CRLF 파생형1개를 선언하고, 별도 손상 파일2개는 키 본문이 없는 음성이다. 과제별 크기는 n01 17,707자·n02 16,659자·n04 7,297자·n05 9,388자이며 파일 수·길이 하한을 맞추는 패딩을 제거했다. 파일 읽기 범위나 실제 모델 도달률은 오프라인 검사로 보장하지 않는다.
+
+오프라인 재현 및 검증 명령:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_trajectory_expansion.py --check
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2.py selftest --tasks n01 n02 n04 n05
+PYTHONDONTWRITEBYTECODE=1 python3 metric-task/scripts/m2_declarations.py --tasks n01 n02 n04 n05
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s metric-task/scripts -p test_m2_trajectory_expansion.py -v
+```
+
+나머지 21개 후보(`n06..n13`, `n15..n18`, `n20..n23`, `n25`, `n27..n30`)는 후속 세션에서 `m2_trajectory_expansion.py`에 추가하며, Stage 1의 4개 과제도 아직 Claude 에이전트 세션을 실행하지 않은 오프라인 검증 상태다.
