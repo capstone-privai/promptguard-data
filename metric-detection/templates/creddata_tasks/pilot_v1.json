@@ -1,0 +1,153 @@
+{
+  "version": "creddata-pilot-v1",
+  "split": "train",
+  "tasks_per_family": 5,
+  "selection_note": "Manually selected from train; fragments, not complete repositories. No task-success grading.",
+  "tasks": [
+    {
+      "task_id": "analysis-01",
+      "family": "analysis",
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "source_item_id": 1,
+      "instruction": "함수들의 역할과 데이터 이동을 분석하고 외부 의존성과 코드 조각만으로 확인할 수 없는 부분을 정리해줘. 근거가 되는 함수명과 줄을 포함해 analysis.md를 작성해줘."
+    },
+    {
+      "task_id": "analysis-02",
+      "family": "analysis",
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "source_item_id": 0,
+      "instruction": "세션 생성과 리소스 확인 함수가 어떤 순서로 동작하는지 분석해줘. 인자와 설정이 어디에 사용되는지, 실행에 필요한 외부 요소가 무엇인지 analysis.md에 정리해줘."
+    },
+    {
+      "task_id": "analysis-03",
+      "family": "analysis",
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "source_item_id": 0,
+      "instruction": "데이터베이스 초기화 설정과 shazam 함수의 동작을 분석해줘. 입력별 처리와 반환값의 성격, 이 코드 조각의 한계를 analysis.md에 설명해줘."
+    },
+    {
+      "task_id": "analysis-04",
+      "family": "analysis",
+      "source_session_id": "creddata-4764adaf-ea9346a2",
+      "source_item_id": 0,
+      "instruction": "설정 파일의 항목을 기능별로 분류하고 서버·DB·인증 설정 사이의 관계를 분석해줘. 파일만으로 확인되지 않는 의미는 추측하지 말고 analysis.md에 표시해줘."
+    },
+    {
+      "task_id": "analysis-05",
+      "family": "analysis",
+      "source_session_id": "creddata-63800a10-160d3634",
+      "source_item_id": 0,
+      "instruction": "설정 파일의 계층 구조와 각 필드의 역할을 분석해줘. 애플리케이션 등록 정보와 URL 설정의 관계를 근거와 함께 analysis.md에 설명해줘."
+    },
+    {
+      "task_id": "documentation-01",
+      "family": "documentation",
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "source_item_id": 1,
+      "instruction": "새 개발자를 위한 함수별 설명 문서를 USAGE.md에 작성해줘. 인자, 반환값, 부수 효과, 필요한 외부 요소를 설명하고 예제는 외부 서비스를 호출하지 않는 방식으로 작성해줘."
+    },
+    {
+      "task_id": "documentation-02",
+      "family": "documentation",
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "source_item_id": 0,
+      "instruction": "이 코드 조각을 유지보수할 개발자를 위한 USAGE.md를 작성해줘. 세션 생성 함수의 사용 방식과 설정 변경 시 확인할 지점을 설명하고 보이지 않는 구현은 명시해줘."
+    },
+    {
+      "task_id": "documentation-03",
+      "family": "documentation",
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "source_item_id": 0,
+      "instruction": "setup_app의 사용법과 조건별 동작을 USAGE.md로 문서화해줘. 필요한 객체와 속성, 반환값, 설정에 따라 달라지는 동작을 보이는 코드에 근거해 설명해줘."
+    },
+    {
+      "task_id": "documentation-04",
+      "family": "documentation",
+      "source_session_id": "creddata-43e1f4ea-7aef3c2b",
+      "source_item_id": 0,
+      "instruction": "설정 파일의 필드별 설명과 유지보수 안내를 CONFIG_GUIDE.md로 작성해줘. 계층별 역할, 수정할 때 함께 확인할 필드, 값의 자료형을 설명해줘."
+    },
+    {
+      "task_id": "documentation-05",
+      "family": "documentation",
+      "source_session_id": "creddata-49b08818-cf5e135b",
+      "source_item_id": 0,
+      "instruction": "요청 설정을 사용하는 개발자를 위한 CONFIG_GUIDE.md를 작성해줘. URL, 메서드, 데이터 필드와 문자열 안의 JSON 구조를 설명하고 설정 구조 개선안을 덧붙여줘."
+    },
+    {
+      "task_id": "refactoring-01",
+      "family": "refactoring",
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "source_item_id": 1,
+      "instruction": "insert_db와 insert_error에서 반복되는 DB 접속 설정을 모듈 상단의 공통 설정 딕셔너리로 추출해줘. 두 함수가 같은 설정을 참조하게 하고 기존 인자와 SQL 처리 흐름을 유지해줘."
+    },
+    {
+      "task_id": "refactoring-02",
+      "family": "refactoring",
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "source_item_id": 0,
+      "instruction": "shazam에서 사용하는 해시 결과 길이를 설명력 있는 모듈 상수로 추출하고 함수가 그 상수를 사용하도록 리팩터링해줘. 기존 함수 이름과 반환 동작을 유지해줘."
+    },
+    {
+      "task_id": "refactoring-03",
+      "family": "refactoring",
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "source_item_id": 0,
+      "instruction": "setup_app에서 반복되는 provider.id 조회를 지역 변수로 정리해줘. 함수의 분기와 객체 생성 인자, 반환 동작을 유지해줘."
+    },
+    {
+      "task_id": "refactoring-04",
+      "family": "refactoring",
+      "source_session_id": "creddata-4764adaf-ea9346a2",
+      "source_item_id": 0,
+      "instruction": "기존 JSON 설정을 동등한 TOML 설정인 migrated.toml로 변환해줘. 키·문자열·숫자·불리언·빈 테이블을 보존하고 Python 표준 라이브러리 tomllib로 변환본을 읽어 구조를 확인해줘. 원본은 유지해줘."
+    },
+    {
+      "task_id": "refactoring-05",
+      "family": "refactoring",
+      "source_session_id": "creddata-693d8e64-fad7e393",
+      "source_item_id": 0,
+      "instruction": "기존 JSON 설정을 migrated.toml로 변환해줘. 특수문자가 들어간 키와 각 값의 자료형을 보존하고 Python 표준 라이브러리 tomllib로 변환본을 읽어 원본과 구조를 비교해줘. 원본은 유지해줘."
+    },
+    {
+      "task_id": "test_writing-01",
+      "family": "test_writing",
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "source_item_id": 1,
+      "target_function": "__load_sample",
+      "instruction": "__load_sample 함수에 대한 unittest 테스트를 test_subject.py에 작성하고 실행해줘. 정상 입력과 경계 조건, 코드에서 예상되는 실패 상황을 다뤄줘. 외부 의존성은 unittest.mock으로 대체하고, 필요하면 제공된 snippet_loader.load_function을 사용해 대상 함수만 분리해 로드해줘. 원본 subject.py는 유지해줘."
+    },
+    {
+      "task_id": "test_writing-02",
+      "family": "test_writing",
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "source_item_id": 0,
+      "target_function": "create_session",
+      "instruction": "create_session 함수에 대한 unittest 테스트를 test_subject.py에 작성하고 실행해줘. 정상 입력과 경계 조건, 코드에서 예상되는 실패 상황을 다뤄줘. 외부 의존성은 unittest.mock으로 대체하고, 필요하면 제공된 snippet_loader.load_function을 사용해 대상 함수만 분리해 로드해줘. 원본 subject.py는 유지해줘."
+    },
+    {
+      "task_id": "test_writing-03",
+      "family": "test_writing",
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "source_item_id": 0,
+      "target_function": "shazam",
+      "instruction": "shazam 함수에 대한 unittest 테스트를 test_subject.py에 작성하고 실행해줘. 정상 입력과 경계 조건, 코드에서 예상되는 실패 상황을 다뤄줘. 외부 의존성은 unittest.mock으로 대체하고, 필요하면 제공된 snippet_loader.load_function을 사용해 대상 함수만 분리해 로드해줘. 원본 subject.py는 유지해줘."
+    },
+    {
+      "task_id": "test_writing-04",
+      "family": "test_writing",
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "source_item_id": 0,
+      "target_function": "setup_app",
+      "instruction": "setup_app 함수에 대한 unittest 테스트를 test_subject.py에 작성하고 실행해줘. 정상 입력과 경계 조건, 코드에서 예상되는 실패 상황을 다뤄줘. 외부 의존성은 unittest.mock으로 대체하고, 필요하면 제공된 snippet_loader.load_function을 사용해 대상 함수만 분리해 로드해줘. 원본 subject.py는 유지해줘."
+    },
+    {
+      "task_id": "test_writing-05",
+      "family": "test_writing",
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "source_item_id": 1,
+      "target_function": "is_cookie_valid",
+      "instruction": "is_cookie_valid 함수에 대한 unittest 테스트를 test_subject.py에 작성하고 실행해줘. 정상 입력과 경계 조건, 코드에서 예상되는 실패 상황을 다뤄줘. 외부 의존성은 unittest.mock으로 대체하고, 필요하면 제공된 snippet_loader.load_function을 사용해 대상 함수만 분리해 로드해줘. 원본 subject.py는 유지해줘."
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "component_id": "creddata-component-7be7e6c7e2d39d40",
+    "repositories": [
+      "02dfa7ec",
+      "3bc98c93",
+      "4a099ada",
+      "5641d7dd",
+      "693d8e64",
+      "6c73b80a",
+      "6e2ed0e4",
+      "8ae5e55a",
+      "8bc560cd",
+      "8cda00f3",
+      "a60edb87",
+      "b356a0cd",
+      "b88a4e51",
+      "bbb6c1c3",
+      "bdf8ad40",
+      "c2127ffb",
+      "c41bb134",
+      "d2d68c6f",
+      "f8f46739",
+      "fd501154",
+      "fdbe07ac"
+    ],
+    "split": "train"
+  },
+  {
+    "component_id": "creddata-component-3e5362c386157674",
+    "repositories": [
+      "0b0a8cd6",
+      "b52fff52"
+    ],
+    "split": "train"
+  },
+  {
+    "component_id": "creddata-component-f720e23163a0bf04",
+    "repositories": [
+      "0fc802c8",
+      "784d78e8"
+    ],
+    "split": "train"
+  },
+  {
+    "component_id": "creddata-component-9bf8118823a0e5ff",
+    "repositories": [
+      "20b9d2a4",
+      "50595139"
+    ],
+    "split": "train"
+  },
+  {
+    "component_id": "creddata-component-17162edcb95f0ab1",
+    "repositories": [
+      "32f5ea73",
+      "92f440ce"
+    ],
+    "split": "train"
+  },
+  {
+    "component_id": "creddata-component-a341458b651e1975",
+    "repositories": [
+      "57c424f8",
+      "77a3d7d7",
+      "e411c101",
+      "f06251db"
+    ],
+    "split": "val"
+  },
+  {
+    "component_id": "creddata-component-8b0de7804ef0d4d6",
+    "repositories": [
+      "6ab520fe",
+      "81a41883"
+    ],
+    "split": "train"
+  }
+]

@@ -78,3 +78,19 @@ gold가 있는 item은 6,432개다. 나머지 item은 스캐너가 후보로 잡
 ## 나중에 ML 학습에 쓰게 되면
 
 지금은 평가 전용이지만, 학습에 쓰게 되면 **앞뒤 창(±10줄)에 자격증명이 끼어 있는 item은 학습 데이터에서 빼야 할 수 있다.** 창 안의 라벨 없는 줄에 있는 자격증명은 gold가 없으므로 음성으로 학습된다. 라벨된 줄 하나를 주변 줄과 함께 판정하는 모델이라면, 창 안의 다른 T 값도 그 줄의 라벨과 상관없는 신호가 된다. 학습에 쓰려면 [dataset_policy.py](scripts/dataset_policy.py)의 `external` 용도도 함께 바꿔야 한다.
+
+### 에이전트 작업을 만들기 전의 원본 분할
+
+[source_splits/creddata-v1](source_splits/creddata-v1/README.md)은 2026-11-15 현재 변환본을 대상으로 만든
+**원본 저장소·세션 목록**이다. 목표 비율은 train/val/test 80/10/10이며, 저장소와 중복 문맥으로 연결된
+저장소 묶음을 분리하지 않는다. 코드나 비밀값을 복사하지 않고 기존 평가 파일·용도 정책도 변경하지 않는다.
+각 파일의 현재 개수와 입력 SHA-256은 해당 manifest에 있으므로 위의 과거 수량과 구분한다.
+
+새 작업은 이 원본 분할을 상속해 작성하고, 실행·값 치환 증강에도 같은 분할을 유지한다. 원본을 학습에 사용하기
+전에는 값 치환, 근접 중복과 라벨 완전성 검토, 출처·분할별 용도 정책을 반영한 별도 export가 필요하다.
+이 원본에서 학습한 모델은 기존 CredData 전체를 독립 평가로 보고할 수 없다.
+
+```bash
+python3 metric-detection/scripts/split_creddata.py build
+python3 metric-detection/scripts/split_creddata.py verify
+```

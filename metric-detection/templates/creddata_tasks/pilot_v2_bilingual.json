@@ -1,0 +1,427 @@
+{
+  "bilingual": {
+    "base_tasks": 20,
+    "instruction_version": "creddata-instructions-v2",
+    "languages": [
+      "ko",
+      "en"
+    ],
+    "note": "Sources and families preserved; old one-off instructions reissued with shared v2 templates."
+  },
+  "selection_note": "Korean/English variants share their source, split and task_pair_id. No LLM calls.",
+  "split": "train",
+  "tasks": [
+    {
+      "family": "analysis",
+      "instruction": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "analysis-01__ko",
+      "task_pair_id": "analysis-01"
+    },
+    {
+      "family": "analysis",
+      "instruction": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "analysis-01__en",
+      "task_pair_id": "analysis-01"
+    },
+    {
+      "family": "analysis",
+      "instruction": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "task_id": "analysis-02__ko",
+      "task_pair_id": "analysis-02"
+    },
+    {
+      "family": "analysis",
+      "instruction": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "task_id": "analysis-02__en",
+      "task_pair_id": "analysis-02"
+    },
+    {
+      "family": "analysis",
+      "instruction": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "task_id": "analysis-03__ko",
+      "task_pair_id": "analysis-03"
+    },
+    {
+      "family": "analysis",
+      "instruction": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "task_id": "analysis-03__en",
+      "task_pair_id": "analysis-03"
+    },
+    {
+      "family": "analysis",
+      "instruction": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-4764adaf-ea9346a2",
+      "task_id": "analysis-04__ko",
+      "task_pair_id": "analysis-04"
+    },
+    {
+      "family": "analysis",
+      "instruction": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-4764adaf-ea9346a2",
+      "task_id": "analysis-04__en",
+      "task_pair_id": "analysis-04"
+    },
+    {
+      "family": "analysis",
+      "instruction": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-63800a10-160d3634",
+      "task_id": "analysis-05__ko",
+      "task_pair_id": "analysis-05"
+    },
+    {
+      "family": "analysis",
+      "instruction": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}) and write analysis.md describing its purpose, main components, relationships between processing steps or settings, external dependencies, and notable concerns. Cite names and locations as evidence, and identify anything that cannot be established from the excerpt.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-63800a10-160d3634",
+      "task_id": "analysis-05__en",
+      "task_pair_id": "analysis-05"
+    },
+    {
+      "family": "documentation",
+      "instruction": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "documentation-01__ko",
+      "task_pair_id": "documentation-01"
+    },
+    {
+      "family": "documentation",
+      "instruction": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "instruction_language": "en",
+      "instruction_template": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "documentation-01__en",
+      "task_pair_id": "documentation-01"
+    },
+    {
+      "family": "documentation",
+      "instruction": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "task_id": "documentation-02__ko",
+      "task_pair_id": "documentation-02"
+    },
+    {
+      "family": "documentation",
+      "instruction": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "instruction_language": "en",
+      "instruction_template": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "task_id": "documentation-02__en",
+      "task_pair_id": "documentation-02"
+    },
+    {
+      "family": "documentation",
+      "instruction": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "task_id": "documentation-03__ko",
+      "task_pair_id": "documentation-03"
+    },
+    {
+      "family": "documentation",
+      "instruction": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "instruction_language": "en",
+      "instruction_template": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "task_id": "documentation-03__en",
+      "task_pair_id": "documentation-03"
+    },
+    {
+      "family": "documentation",
+      "instruction": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-43e1f4ea-7aef3c2b",
+      "task_id": "documentation-04__ko",
+      "task_pair_id": "documentation-04"
+    },
+    {
+      "family": "documentation",
+      "instruction": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "instruction_language": "en",
+      "instruction_template": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-43e1f4ea-7aef3c2b",
+      "task_id": "documentation-04__en",
+      "task_pair_id": "documentation-04"
+    },
+    {
+      "family": "documentation",
+      "instruction": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-49b08818-cf5e135b",
+      "task_id": "documentation-05__ko",
+      "task_pair_id": "documentation-05"
+    },
+    {
+      "family": "documentation",
+      "instruction": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "instruction_language": "en",
+      "instruction_template": "Write USAGE.md for a developer using {source_file} ({source_language}). For code, explain functions, inputs, outputs, side effects, and usage considerations. For configuration, explain fields, types, relationships, and considerations when changing them. Identify missing information instead of inventing unseen behavior.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-49b08818-cf5e135b",
+      "task_id": "documentation-05__en",
+      "task_pair_id": "documentation-05"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "refactoring-01__ko",
+      "task_pair_id": "refactoring-01"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "refactoring-01__en",
+      "task_pair_id": "refactoring-01"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "task_id": "refactoring-02__ko",
+      "task_pair_id": "refactoring-02"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "task_id": "refactoring-02__en",
+      "task_pair_id": "refactoring-02"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "task_id": "refactoring-03__ko",
+      "task_pair_id": "refactoring-03"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "task_id": "refactoring-03__en",
+      "task_pair_id": "refactoring-03"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-4764adaf-ea9346a2",
+      "task_id": "refactoring-04__ko",
+      "task_pair_id": "refactoring-04"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-4764adaf-ea9346a2",
+      "task_id": "refactoring-04__en",
+      "task_pair_id": "refactoring-04"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})를 읽고 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. 설정 파일이라면 값과 자료형을 보존하는 다른 구조나 형식으로 변환해도 돼. 이 경우 원본을 유지하고 변환본을 로컬 파서로 읽어 원본과 비교해줘.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-693d8e64-fad7e393",
+      "task_id": "refactoring-05__ko",
+      "task_pair_id": "refactoring-05"
+    },
+    {
+      "family": "refactoring",
+      "instruction": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "instruction_language": "en",
+      "instruction_template": "Read {source_file} ({source_language}), choose one meaningful small structural improvement supported by the visible excerpt, and apply it. Preserve public names and the meaning of inputs and outputs, and briefly explain the change. For a configuration file, you may convert it to another structure or format while preserving values and types. In that case, keep the original and use a local parser to read and compare the converted result.",
+      "source_item_id": 0,
+      "source_session_id": "creddata-693d8e64-fad7e393",
+      "task_id": "refactoring-05__en",
+      "task_pair_id": "refactoring-05"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "legacy_target_function": "__load_sample",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "test_writing-01__ko",
+      "task_pair_id": "test_writing-01"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "instruction_language": "en",
+      "instruction_template": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "legacy_target_function": "__load_sample",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "test_writing-01__en",
+      "task_pair_id": "test_writing-01"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "legacy_target_function": "create_session",
+      "source_item_id": 0,
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "task_id": "test_writing-02__ko",
+      "task_pair_id": "test_writing-02"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "instruction_language": "en",
+      "instruction_template": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "legacy_target_function": "create_session",
+      "source_item_id": 0,
+      "source_session_id": "creddata-2df212a2-969f3aa8",
+      "task_id": "test_writing-02__en",
+      "task_pair_id": "test_writing-02"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "legacy_target_function": "shazam",
+      "source_item_id": 0,
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "task_id": "test_writing-03__ko",
+      "task_pair_id": "test_writing-03"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "instruction_language": "en",
+      "instruction_template": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "legacy_target_function": "shazam",
+      "source_item_id": 0,
+      "source_session_id": "creddata-9d90ba70-a690a485",
+      "task_id": "test_writing-03__en",
+      "task_pair_id": "test_writing-03"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "legacy_target_function": "setup_app",
+      "source_item_id": 0,
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "task_id": "test_writing-04__ko",
+      "task_pair_id": "test_writing-04"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "instruction_language": "en",
+      "instruction_template": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "legacy_target_function": "setup_app",
+      "source_item_id": 0,
+      "source_session_id": "creddata-d94d550a-71b15ad9",
+      "task_id": "test_writing-04__en",
+      "task_pair_id": "test_writing-04"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "instruction_language": "ko",
+      "instruction_template": "{source_file} ({source_language})에서 단위 테스트할 수 있는 함수를 하나 골라 해당 언어의 로컬 테스트 도구로 테스트를 작성하고 실행해줘. 외부 의존성은 목으로 대체하고 제공된 함수 로더가 있으면 활용해줘. 설정 파일이라면 읽기·주요 키·자료형을 검증하는 테스트를 작성해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 파일은 수정하지 말아줘.",
+      "legacy_target_function": "is_cookie_valid",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "test_writing-05__ko",
+      "task_pair_id": "test_writing-05"
+    },
+    {
+      "family": "test_writing",
+      "instruction": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "instruction_language": "en",
+      "instruction_template": "Choose a function in {source_file} ({source_language}) that can be unit tested, write tests using locally available tools for that language, and run them. Mock external dependencies and use a provided function loader if useful. For configuration, write tests for loading, important keys, and types. Test structure and expected boundary cases instead of copying every value as an expected snapshot. Do not modify the original file.",
+      "legacy_target_function": "is_cookie_valid",
+      "source_item_id": 1,
+      "source_session_id": "creddata-0b0a8cd6-29890666",
+      "task_id": "test_writing-05__en",
+      "task_pair_id": "test_writing-05"
+    }
+  ],
+  "tasks_per_family": 10,
+  "version": "creddata-pilot-v1-bilingual-v2"
+}
