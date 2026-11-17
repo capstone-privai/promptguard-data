@@ -84,7 +84,11 @@ class PlaceholderTypeTest(unittest.TestCase):
 
 class CatalogTest(unittest.TestCase):
     def test_every_grouped_dataset_has_names(self):
-        self.assertEqual(set(taxonomy.GROUPS), set(catalog.DATASETS))
+        self.assertLessEqual(set(taxonomy.GROUPS), set(catalog.DATASETS))
+        # display-only entries (registered evaluations' datasets) group by meta, not by a GROUPS entry
+        for stem in set(catalog.DATASETS) - set(taxonomy.GROUPS):
+            self.assertTrue(stem.startswith("sessions_mleval_"), stem)
+            self.assertEqual(taxonomy.group_of(stem)({"scenario": "password_reuse"}), "password_reuse")
         names = catalog.as_json()
         self.assertEqual(set(names["types"]), set(taxonomy.TYPES))
         self.assertEqual(set(names["channels"]), set(taxonomy.CHANNELS))
