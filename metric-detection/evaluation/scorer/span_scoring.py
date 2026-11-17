@@ -46,15 +46,23 @@ class ItemScore:
     channel: str
     gold_results: list[GoldResult]
     edit_results: list[EditResult]
+    # Character counts for character-level precision, in original-text coordinates. A blocked item is one edit
+    # over the whole text, so every character of it counts as masked.
+    masked_chars: int = 0  # |union of the characters the edits replaced|
+    masked_gold_chars: int = 0  # |masked characters that lie in some gold span|
 
 
 def _union(edits: Sequence[Edit]) -> list[tuple[int, int]]:
+    return _merge((edit.start, edit.end) for edit in edits)
+
+
+def _merge(ranges) -> list[tuple[int, int]]:
     merged: list[tuple[int, int]] = []
-    for edit in edits:  # sorted by start
-        if merged and edit.start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], edit.end))
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
         else:
-            merged.append((edit.start, edit.end))
+            merged.append((start, end))
     return merged
 
 
@@ -98,4 +106,6 @@ def score_item(
                    any(span.start <= edit.start and edit.end <= span.end for span in gold))
         for edit in ordered
     ]
-    return ItemScore(session_id, item_id, channel, gold_results, edit_results)
+    masked_chars = sum(end - start for start, end in merged)
+    masked_gold_chars = sum(_covered(start, end, merged) for start, end in _merge((s.start, s.end) for s in gold))
+    return ItemScore(session_id, item_id, channel, gold_results, edit_results, masked_chars, masked_gold_chars)

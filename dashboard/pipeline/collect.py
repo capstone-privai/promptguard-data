@@ -1,9 +1,11 @@
 """Turn evaluated items into the dashboard's counts and example rows.
 
 A cell counts, for one (sub-group, channel, type), the gold spans by outcome and the edits by class (catalog.STATUSES,
-then catalog.EDIT_CLASSES). A gold span has its own type. An edit takes the type of the gold span it overlaps most, or,
+then catalog.EDIT_CLASSES). A gold span has its own type. An items row counts, for one (sub-group, channel), the items, the
+clean items, the lines and the characters for character precision (masked, and masked inside gold). An edit takes the type of the gold span it overlaps most, or,
 touching none, the type its placeholder names (catalog.placeholder_type). All cells summed give exactly the counts of
-evaluation.report.aggregate over the same items; merge() checks that.
+evaluation.report.aggregate over the same items (cells for the span and edit counts, items rows for the
+character counts); merge() checks that.
 
 Examples are picked per bucket, a (sub-group, channel, type, outcome), in the order of a hash of the item's id, so the
 choice does not depend on how a dataset was split into shards. An example keeps a window of the item text around the
@@ -29,6 +31,9 @@ PAD = 200  # characters shown on each side of the spans an example was picked fo
 MAX_WINDOW = 1000  # spans further apart than this get separate windows
 SNAP = 80  # a window edge this close to a line break moves to it
 COUNT_KEYS = ("exact", "over", "partial", "missed", "edits_tp", "edits_over", "edits_fp")  # aggregate()["counts"]
+# Per item, not per type: summed over the items rows (items, clean items, lines, masked chars, masked gold chars).
+CHAR_KEYS = ("masked_chars", "masked_gold_chars")
+ITEM_FIELDS = 3 + len(CHAR_KEYS)
 
 Bucket = tuple[str, ...]  # ("gold", group, channel, type, status) | ("fp", group, channel, type) | ("clean", group, channel)
 
@@ -98,7 +103,8 @@ class Collector:
         self.group_of = group_of
         self.per_bucket = per_bucket
         self.cells: dict[tuple[str, str, str], list[int]] = defaultdict(lambda: [0] * (len(STATUSES) + len(EDIT_CLASSES)))
-        self.items: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0, 0])  # items, clean items, lines
+        # items, clean items, lines, masked chars, masked gold chars
+        self.items: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0] * ITEM_FIELDS)
         self.picks: dict[Bucket, list[tuple[str, tuple[str, int], tuple[int, int]]]] = {}  # rank, item key, focus
         self.sources: dict[tuple[str, int], dict[str, Any]] = {}
 
@@ -118,6 +124,8 @@ class Collector:
         totals[0] += 1
         totals[1] += int(not gold and not edits)
         totals[2] += count_lines(item.text)
+        totals[3] += score.masked_chars
+        totals[4] += score.masked_gold_chars
 
         focus: dict[Bucket, tuple[int, int]] = {}
         for span in gold:
@@ -187,8 +195,8 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
     """Shard payloads (with "counts" from aggregate) → one dataset: summed cells and item totals, the best picks per
     bucket, their examples, and one example per (channel, type, outcome) for the all-datasets view."""
     cells: dict[tuple[str, ...], list[int]] = defaultdict(lambda: [0] * (len(STATUSES) + len(EDIT_CLASSES)))
-    items: dict[tuple[str, ...], list[int]] = defaultdict(lambda: [0, 0, 0])
-    counts = dict.fromkeys(COUNT_KEYS, 0)
+    items: dict[tuple[str, ...], list[int]] = defaultdict(lambda: [0] * ITEM_FIELDS)
+    counts = dict.fromkeys(COUNT_KEYS + CHAR_KEYS, 0)
     lines_total = 0
     picks: dict[Bucket, list[tuple[str, tuple[str, int], tuple[int, int]]]] = defaultdict(list)
     sources: dict[tuple[str, int], Mapping[str, Any]] = {}
@@ -201,7 +209,7 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
             target = items[tuple(row[:2])]
             for index, value in enumerate(row[2:]):
                 target[index] += value
-        for key in COUNT_KEYS:
+        for key in COUNT_KEYS + CHAR_KEYS:
             counts[key] += payload["counts"][key]
         lines_total += payload["lines_total"]
         for bucket, rank, key, focus in payload["picks"]:
@@ -210,8 +218,11 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
             sources[(session, item)] = source
 
     summed = [sum(values[index] for values in cells.values()) for index in range(len(COUNT_KEYS))]
-    if summed != [counts[key] for key in COUNT_KEYS] or sum(row[2] for row in items.values()) != lines_total:
-        raise MergeError(f"cell sums {dict(zip(COUNT_KEYS, summed))} differ from the scorer's counts {counts}")
+    chars = [sum(values[3 + index] for values in items.values()) for index in range(len(CHAR_KEYS))]
+    if (summed != [counts[key] for key in COUNT_KEYS] or sum(row[2] for row in items.values()) != lines_total
+            or chars != [counts[key] for key in CHAR_KEYS]):
+        raise MergeError(f"cell sums {dict(zip(COUNT_KEYS + CHAR_KEYS, summed + chars))} differ from the scorer's "
+                         f"counts {counts}")
 
     best = {bucket: sorted(kept)[:per_bucket] for bucket, kept in picks.items()}
     groups = _fold_groups(items)
@@ -249,7 +260,7 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
 
 def _fold_groups(items: Mapping[tuple[str, ...], list[int]]) -> dict[str, str]:
     sizes: dict[str, int] = defaultdict(int)
-    for (group, _channel), (count, _clean, _lines) in items.items():
+    for (group, _channel), (count, *_rest) in items.items():
         sizes[group] += count
     if len(sizes) <= MAX_GROUPS:
         return {group: group for group in sizes}

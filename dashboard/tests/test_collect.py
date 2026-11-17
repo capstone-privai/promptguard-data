@@ -108,10 +108,13 @@ class CountsTest(unittest.TestCase):
     def check(self, adapter):
         payload, metrics = payload_for(self.sessions, adapter)
         merged = collect.merge([payload])  # raises MergeError when the cells disagree with the scorer
-        self.assertEqual(merged["counts"], {key: metrics["counts"][key] for key in collect.COUNT_KEYS})
+        self.assertEqual(merged["counts"],
+                         {key: metrics["counts"][key] for key in collect.COUNT_KEYS + collect.CHAR_KEYS})
         result = prf(merged["counts"])
-        self.assertEqual(result["recall"], metrics["recall"])
-        self.assertEqual(result["precision"], metrics["precision"])
+        for key in ("recall", "precision", "f2", "exact_recall", "edit_precision", "exact_f2"):
+            self.assertEqual(result[key], metrics[key], key)
+        for index, key in enumerate(collect.CHAR_KEYS):
+            self.assertEqual(sum(row[5 + index] for row in merged["items"]), metrics["counts"][key], key)
         return merged
 
     def test_oracle_identity_and_every_outcome(self):
@@ -121,8 +124,10 @@ class CountsTest(unittest.TestCase):
         self.assertIsNone(prf(identity["counts"])["precision"])
         scripted = self.check(ScriptedAdapter())
         counts = scripted["counts"]
-        for key in ("exact", "over", "partial", "missed", "edits_tp", "edits_over", "edits_fp"):
+        for key in ("exact", "over", "partial", "missed", "edits_tp", "edits_over", "edits_fp", "masked_chars",
+                    "masked_gold_chars"):
             self.assertGreater(counts[key], 0, key)
+        self.assertLess(counts["masked_gold_chars"], counts["masked_chars"])
 
     def test_false_positives_take_their_placeholder_type(self):
         merged = self.check(ScriptedAdapter())
@@ -156,6 +161,10 @@ class CountsTest(unittest.TestCase):
     def test_mismatch_is_refused(self):
         payload, _ = payload_for(self.sessions, OracleAdapter())
         payload["counts"] = {**payload["counts"], "exact": payload["counts"]["exact"] + 1}
+        with self.assertRaises(collect.MergeError):
+            collect.merge([payload])
+        payload, _ = payload_for(self.sessions, OracleAdapter())
+        payload["counts"] = {**payload["counts"], "masked_chars": payload["counts"]["masked_chars"] + 1}
         with self.assertRaises(collect.MergeError):
             collect.merge([payload])
 
@@ -212,7 +221,7 @@ class ExamplesTest(unittest.TestCase):
         self.assertLessEqual(spans[0][0], 1000 - collect.PAD + collect.SNAP)
 
     def test_many_groups_fold_into_other(self):
-        items = {(f"g{index:02d}", "tool_output"): [index + 1, 0, 1] for index in range(MAX_GROUPS + 5)}
+        items = {(f"g{index:02d}", "tool_output"): [index + 1, 0, 1, 0, 0] for index in range(MAX_GROUPS + 5)}
         groups = collect._fold_groups(items)
         self.assertEqual(len(set(groups.values())), MAX_GROUPS)
         self.assertEqual(groups["g00"], OTHER_GROUP)  # the smallest

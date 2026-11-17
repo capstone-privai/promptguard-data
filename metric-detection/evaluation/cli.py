@@ -76,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
 def summary_line(metrics: dict[str, Any]) -> str:
     return (
         f"recall={fmt(metrics['recall'])} precision={fmt(metrics['precision'])} f2={fmt(metrics['f2'])} "
+        f"exact_recall={fmt(metrics['exact_recall'])} edit_precision={fmt(metrics['edit_precision'])} "
         f"fp_per_1k_lines={fmt(metrics['fp_per_1k_lines'], 2)} gold={metrics['counts']['gold_total']} "
         f"density_per_1k_lines={fmt(metrics['density_per_1k_lines'], 2)}"
     )

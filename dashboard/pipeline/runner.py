@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.catalog import CHANNEL_LABELS, TYPE_LABELS, dataset_info, dataset_order
-from pipeline.collect import merge
+from pipeline.collect import CHAR_KEYS, COUNT_KEYS, ITEM_FIELDS, merge
 from pipeline.paths import DASHBOARD_ROOT, METRIC_DETECTION
 from pipeline.taxonomy import CHANNELS, EDIT_CLASSES, STATUSES, TYPES
 
@@ -40,7 +40,9 @@ SCORING_CODE = [*sorted((METRIC_DETECTION / "evaluation").rglob("*.py")),
                 *(DASHBOARD_ROOT / "pipeline" / name
                   for name in ("__init__.py", "paths.py", "runner.py", "taxonomy.py", "collect.py", "shard.py",
                               "gitleaks_cache.py"))]
-SUMMARY_VERSION = 2  # earlier results did not pin the evaluated inputs to their key
+# 2: results pin the evaluated inputs to their key. 3: items rows and counts carry masked_chars and masked_gold_chars;
+# the headline is covered recall and character precision (exact recall and edit precision kept beside them).
+SUMMARY_VERSION = 3
 
 
 class EvaluationError(Exception):
@@ -235,8 +237,9 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
         return (isinstance(payload, dict) and payload.get("sessions") == shard.high - shard.low
                 and all(key in payload for key in ("cells", "items", "picks", "sources", "counts", "system",
                                                    "lines_total", "item_count", "seconds"))
-                and isinstance(payload["items"], list)
-                and all(isinstance(row, list) and len(row) >= 3 and type(row[2]) is int and row[2] >= 0
+                and isinstance(payload["items"], list) and isinstance(payload["counts"], dict)
+                and all(key in payload["counts"] for key in CHAR_KEYS)
+                and all(isinstance(row, list) and len(row) == 2 + ITEM_FIELDS and type(row[2]) is int and row[2] >= 0
                         for row in payload["items"])
                 and sum(row[2] for row in payload["items"]) == shard.weight)
 
@@ -309,16 +312,26 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
                 checkpoint(shard)
 
 
+def _f(beta: float, precision: float | None, recall: float | None) -> float | None:
+    if precision is None or recall is None:
+        return None
+    weight = beta * beta
+    return 0.0 if precision + recall == 0 else (1 + weight) * precision * recall / (weight * precision + recall)
+
+
 def prf(counts: dict[str, int]) -> dict[str, float | None]:
+    """recall: gold spans an edit masks fully (exact or over) / gold spans. precision: masked characters inside gold /
+    masked characters (a blocked item masks all of its text). exact_recall and edit_precision are the earlier ones:
+    exactly masked spans / gold spans, and edits inside one gold span / edits."""
     gold = counts["exact"] + counts["over"] + counts["partial"] + counts["missed"]
     edits = counts["edits_tp"] + counts["edits_over"] + counts["edits_fp"]
-    recall = counts["exact"] / gold if gold else None
-    precision = counts["edits_tp"] / edits if edits else None
-    if precision is None or recall is None:
-        f1 = None
-    else:
-        f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
-    return {"precision": precision, "recall": recall, "f1": f1}
+    recall = (counts["exact"] + counts["over"]) / gold if gold else None
+    precision = counts["masked_gold_chars"] / counts["masked_chars"] if counts["masked_chars"] else None
+    exact_recall = counts["exact"] / gold if gold else None
+    edit_precision = counts["edits_tp"] / edits if edits else None
+    return {"precision": precision, "recall": recall, "f1": _f(1, precision, recall), "f2": _f(2, precision, recall),
+            "exact_recall": exact_recall, "edit_precision": edit_precision,
+            "exact_f2": _f(2, edit_precision, exact_recall)}
 
 
 def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, python: str, jobs: int,
@@ -380,7 +393,7 @@ def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, d
     channel_index = {channel: index for index, channel in enumerate(CHANNELS)}
     type_index = {type_: index for index, type_ in enumerate(TYPES)}
     cells, items, facts, overview, by_dataset = [], [], [], [], {}
-    totals = dict.fromkeys(("exact", "over", "partial", "missed", "edits_tp", "edits_over", "edits_fp"), 0)
+    totals = dict.fromkeys(COUNT_KEYS + CHAR_KEYS, 0)
     for d, dataset in enumerate(datasets):
         result = merged[dataset.stem]
         info = dataset_info(dataset.stem)

@@ -289,9 +289,10 @@ class PromptGuardAdapter:
         rows = []
         for adapter, findings in ballots.items():
             for raw in findings:
+                score = getattr(raw, "score", None)  # RawFinding has no score before the ML adapters (424df6a)
                 rows.append({"adapter": str(adapter), "rule_id": str(raw.rule_id), "type": str(raw.type),
                              "start": int(raw.start), "end": int(raw.end), "confidence": str(raw.confidence),
-                             "score": None if raw.score is None else float(raw.score)})
+                             "score": None if score is None else float(score)})
         record["findings"] = sorted(rows, key=lambda row: (row["start"], row["end"], row["adapter"], row["rule_id"]))
         return record
 

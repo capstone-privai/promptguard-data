@@ -83,5 +83,49 @@ class SpanScoringTests(unittest.TestCase):
             score_item("s", 0, "tool_output", "key=abc", "key=abc", [Edit(4, 7, "[K]")], [GoldSpan(0, 0, 4, 7, "SECRET")])
 
 
+class MaskedCharTests(unittest.TestCase):
+    """masked_chars and masked_gold_chars, the inputs of character precision, for each kind of outcome."""
+
+    TEXT = "user=alice key=SECRETVALUE123 log=debug-output-line"  # gold [15, 29)
+
+    def chars(self, edits: list[Edit], gold: list[tuple[int, int]], text: str | None = None) -> tuple[int, int]:
+        score = _score(self.TEXT if text is None else text, edits, gold)
+        return score.masked_chars, score.masked_gold_chars
+
+    def test_exact(self) -> None:
+        self.assertEqual(self.TEXT[15:29], "SECRETVALUE123")
+        self.assertEqual(self.chars([Edit(15, 29, "[K]")], [(15, 29)]), (14, 14))
+
+    def test_over_counts_the_spill_as_masked_non_secret(self) -> None:
+        self.assertEqual(self.chars([Edit(11, 29, "[K]")], [(15, 29)]), (18, 14))
+
+    def test_partial(self) -> None:
+        self.assertEqual(self.chars([Edit(15, 22, "[K]")], [(15, 29)]), (7, 7))
+
+    def test_missed_with_an_edit_elsewhere(self) -> None:
+        self.assertEqual(self.chars([Edit(5, 10, "[U]")], [(15, 29)]), (5, 0))
+
+    def test_nothing_masked(self) -> None:
+        self.assertEqual(self.chars([], [(15, 29)]), (0, 0))
+
+    def test_adjacent_edits_and_split_spans_count_each_character_once(self) -> None:
+        # Edits may touch but not overlap (verify() rejects overlapping edits); gold spans may overlap.
+        edits = [Edit(11, 20, "[A]"), Edit(20, 29, "[B]"), Edit(29, 33, "[C]")]
+        self.assertEqual(self.chars(edits, [(15, 29), (18, 25)]), (22, 14))
+
+    def test_one_edit_over_two_gold_spans(self) -> None:
+        self.assertEqual(self.chars([Edit(5, 29, "[X]")], [(5, 10), (15, 29)]), (24, 19))
+
+    def test_blocked_item_masks_every_character(self) -> None:
+        # Fail-closed: the adapter reports one edit over the whole text.
+        blocked = [Edit(0, len(self.TEXT), "[PROMPTGUARD_BLOCKED]")]
+        self.assertEqual(self.chars(blocked, [(15, 29)]), (len(self.TEXT), 14))
+        self.assertEqual(self.chars(blocked, []), (len(self.TEXT), 0))
+
+    def test_item_without_gold(self) -> None:
+        self.assertEqual(self.chars([Edit(34, 39, "[L]")], []), (5, 0))
+        self.assertEqual(self.chars([], []), (0, 0))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -65,8 +65,9 @@ def _per_edit(result: RunResult) -> list[dict[str, Any]]:
 
 def _channel_row(metrics: dict[str, Any], name: str) -> str:
     if name in SCORED_CHANNELS:
-        return f"| {name} | {metrics['composition']['by_channel'][name]} | {fmt(metrics['recall_by_channel'][name])} |"
-    return f"| {name} | {metrics['excluded_by_channel'][name]['gold']} (not scored) | not scored |"
+        return (f"| {name} | {metrics['composition']['by_channel'][name]} | {fmt(metrics['recall_by_channel'][name])} | "
+                f"{fmt(metrics['exact_recall_by_channel'][name])} |")
+    return f"| {name} | {metrics['excluded_by_channel'][name]['gold']} (not scored) | not scored | not scored |"
 
 
 def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
@@ -75,12 +76,18 @@ def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
     lines = [
         f"{level} Primary metrics", "",
         "| Metric | Value |", "|---|---|",
-        f"| Recall (exact masking) | {fmt(metrics['recall'])} ({counts['exact']}/{counts['gold_total']}) |",
-        f"| Precision | {fmt(metrics['precision'])} ({counts['edits_tp']}/{counts['edits_total']}) |",
+        f"| Recall (gold spans fully masked: exact + over) | {fmt(metrics['recall'])} "
+        f"({counts['exact'] + counts['over']}/{counts['gold_total']}) |",
+        f"| Precision (masked characters that are secret) | {fmt(metrics['precision'])} "
+        f"({counts['masked_gold_chars']}/{counts['masked_chars']} chars) |",
+        f"| F2 | {fmt(metrics['f2'])} |",
         "",
         f"{level} Secondary metrics", "",
         "| Metric | Value |", "|---|---|",
-        f"| F2 | {fmt(metrics['f2'])} |",
+        f"| Exact recall (exactly masked spans) | {fmt(metrics['exact_recall'])} ({counts['exact']}/{counts['gold_total']}) |",
+        f"| Edit precision (edits inside one gold span) | {fmt(metrics['edit_precision'])} "
+        f"({counts['edits_tp']}/{counts['edits_total']}) |",
+        f"| Exact F2 (exact recall, edit precision) | {fmt(metrics['exact_f2'])} |",
         f"| Over-masking per 1,000 lines | {fmt(metrics['fp_per_1k_lines'], 2)} ({counts['edits_fp']} edits outside gold) |",
         f"| Character recall | {fmt(metrics['char_recall'])} |",
         f"| Over-wide masking rate | {fmt(metrics['over_rate'])} ({counts['over']} spans, {counts['edits_over']} edits) |",
@@ -90,12 +97,12 @@ def _metric_sections(metrics: dict[str, Any], level: str) -> list[str]:
         f"{fmt(latency['max'], 2)} (n={latency['n']}) |",
         "",
         f"{level} Composition and recall by type", "",
-        "| Type | Gold spans | Recall |", "|---|---|---|",
-        *[f"| {kind} | {metrics['composition']['by_type'][kind]} | {fmt(metrics['recall_by_type'][kind])} |"
-          for kind in GOLD_TYPES],
+        "| Type | Gold spans | Recall | Exact recall |", "|---|---|---|---|",
+        *[f"| {kind} | {metrics['composition']['by_type'][kind]} | {fmt(metrics['recall_by_type'][kind])} | "
+          f"{fmt(metrics['exact_recall_by_type'][kind])} |" for kind in GOLD_TYPES],
         "",
         f"{level} Composition and recall by channel", "",
-        "| Channel | Gold spans | Recall |", "|---|---|---|",
+        "| Channel | Gold spans | Recall | Exact recall |", "|---|---|---|---|",
         *[_channel_row(metrics, name) for name in CHANNELS],
         "",
     ]
