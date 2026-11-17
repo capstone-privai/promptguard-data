@@ -112,7 +112,10 @@ def main():
     if T.ROOT / "runs" not in args.out.resolve().parents:
         parser.error("--out must be under the ignored runs/ tree")
     pack, stats, dropped, scrubbed = args.catalog / "templates", Counter(), Counter(), Counter()
-    catalog = json.loads((args.catalog / "tasks.json").read_text())["version"]
+    config = json.loads((args.catalog / "tasks.json").read_text())
+    catalog, split = config["version"], config["split"]
+    if split != "train" and args.variants:
+        parser.error("value-substituted variants are for training data; pass --variants 0 for a val/test catalog")
     sessions, gold_rows, label_rows = [], [], []
 
     def keep(session, gold, labels):
@@ -181,18 +184,18 @@ def main():
             keep(variant, new_gold, new_labels)
 
     groups = {s["meta"]["group_id"] for s in sessions}
-    manifest = {"catalog": catalog, "instances": str(args.instances), "split": "train", "variants_per_session": args.variants,
+    manifest = {"catalog": catalog, "instances": str(args.instances), "split": split, "variants_per_session": args.variants,
                 "augmentation_seed": args.seed, "sessions": len(sessions), "gold_spans": len(gold_rows),
                 "components": len(groups), "source_files": len({s["meta"]["source_session_id"] for s in sessions}),
                 "counts": dict(sorted(stats.items())), "variants_dropped": dict(sorted(dropped.items())),
                 "scrubbed_replacements": dict(sorted(scrubbed.items())),
                 "success_grading": None,
                 "scope": "Known injected values only; completeness of annotation is not certified. All sources are "
-                         "from the CredData train partition (creddata-v1): keep group_id (component) together and do "
+                         "from the CredData " + split + " partition (creddata-v1): keep group_id (component) together and do "
                          "not re-split at random. Augmented sessions repeat their recorded session with other values, "
                          "so a recorded session and its variants must stay in one fold."}
     args.out.mkdir(parents=True, exist_ok=True)
-    for name, rows in (("sessions_train.jsonl", sessions), ("gold_train.jsonl", gold_rows), ("labels_train.jsonl", label_rows)):
+    for name, rows in ((f"sessions_{split}.jsonl", sessions), (f"gold_{split}.jsonl", gold_rows), (f"labels_{split}.jsonl", label_rows)):
         with (args.out / name).open("w", encoding="utf-8") as stream:
             for row in rows:
                 stream.write(json.dumps(row, ensure_ascii=False) + "\n")

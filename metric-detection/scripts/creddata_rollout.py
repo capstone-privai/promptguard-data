@@ -328,7 +328,7 @@ def label_items(task: dict, registry: dict, items: list[C.Item], session_id: str
         stats["review_candidates"] += len(review) + sum(C.needs_review(row) for row in excluded)
     session = {"session_id": session_id, "items": item_rows, "meta": {
         "source": "creddata-derived-agent-pilot", "dataset_version": "creddata-pilot-v1", "origin": "recorded",
-        "split": task["split"], "allowed_use": ["ml_train"], "task": task["task_id"], "family": task["family"],
+        "split": task["split"], "allowed_use": ["ml_train"] if task["split"] == "train" else ["rule_eval", "ml_eval"], "task": task["task_id"], "family": task["family"],
         "group_id": task["component_id"], "source_repo_id": task["source_repo_id"],
         "source_session_id": task["source_session_id"], "source_item_id": task["source_item_id"],
         "source_origin": "external", "source_license": task["source_license"],

@@ -210,7 +210,8 @@ def audit_candidates(root: Path, seed: str) -> dict:
     import creddata_fullfile as F
     import creddata_category_formats as formats
     candidates = list(T.rows(root / "eligibility.jsonl"))
-    sessions, gold, _ = F.load_sources(F.FULLFILE, {c["source_session_id"] for c in candidates})
+    split = json.loads((root / "tasks.json").read_text())["split"]
+    sessions, gold, _ = F.load_sources(F.FULLFILE, {c["source_session_id"] for c in candidates}, split)
     draws, rejections, results, failures, conformance = Counter(), Counter(), Counter(), [], Counter()
     for candidate in candidates:
         session = sessions[candidate["source_session_id"]]
@@ -219,7 +220,7 @@ def audit_candidates(root: Path, seed: str) -> dict:
         mode = F.syntax_mode(text, language, parsed)
         template, slots, occurrences = F.make_template(text, gold[session["session_id"]], language, mode,
                                                        f"{session['session_id']}:0")
-        task = {"task_id": candidate["source_session_id"], "family": "analysis", "split": "train",
+        task = {"task_id": candidate["source_session_id"], "family": "analysis", "split": split,
                 "language": language, "syntax_mode": mode, "source_scope": "whole_file", "slots": slots,
                 "occurrences": occurrences, "component_id": candidate["component_id"],
                 "source_repo_id": candidate["source_repo_id"], "source_session_id": session["session_id"],
@@ -279,13 +280,14 @@ def audit_whole_file(root: Path, instances: Path, split_dir: Path = T.DEFAULT_SP
     config = json.loads((root / "tasks.json").read_text())
     specs = {t["task_id"]: t for t in config["tasks"]}
     pack = root / "templates"
-    F.check_manifest(F.FULLFILE)
-    train = set((split_dir / "train.txt").read_text().splitlines())
+    split = config["split"]
+    F.check_manifest(F.FULLFILE, split)
+    train = set((split_dir / f"{split}.txt").read_text().splitlines())
     repos = {r["group_id"]: r for r in T.rows(split_dir / "repositories.jsonl")}
     wanted = {t["source_session_id"] for t in specs.values()}
-    sessions, gold, _ = F.load_sources(F.FULLFILE, wanted)
+    sessions, gold, _ = F.load_sources(F.FULLFILE, wanted, split)
     dropped = defaultdict(set)
-    for row in T.rows(F.input_paths()["gold_category"]):
+    for row in T.rows(F.input_paths(F.FULLFILE, split)["gold_category"]):
         if row["session_id"] in wanted and "dropped" in row:
             dropped[row["session_id"]].add((row["start"], row["end"]))
 
@@ -311,8 +313,8 @@ def audit_whole_file(root: Path, instances: Path, split_dir: Path = T.DEFAULT_SP
         session = sessions[task["source_session_id"]]
         source_text = session["items"][0]["text"]
         repo = repos[session["meta"]["group_id"]]
-        check(task["split"] == "train" and task["source_session_id"] in train and repo["split"] == "train",
-              task_id, "train_membership")
+        check(task["split"] == split and task["source_session_id"] in train and repo["split"] == split,
+              task_id, f"{split}_membership")
         check(task["component_id"] == repo["component_id"] and task["source_repo_id"] == repo["repo_id"],
               task_id, "component_and_repository_inherited")
         check(task["source_item_sha256"] == T.sha(source_text.encode()), task_id, "source_file_unchanged")
@@ -340,7 +342,7 @@ def audit_whole_file(root: Path, instances: Path, split_dir: Path = T.DEFAULT_SP
         korean = bool(HANGUL.search(request + workspace["README.md"]))
         check(korean == (task["instruction_language"] == "ko"), task_id, "request_language_matches")
         check(all(s["type"] and s["coarse_type"] in {"PASSWORD", "TOKEN", "SECRET", "ACCESS_KEY", "PRIVATE_KEY"}
-                  and s["category_source"] in {"creddata", "same_value", "opus"} for s in task["slots"].values()),
+                  and s["category_source"] in {"creddata", "same_value", "opus", "model"} for s in task["slots"].values()),
               task_id, "slots_carry_category_coarse_type_and_source")
         annotations = registry["source_annotations"]
         values = registry["values"]

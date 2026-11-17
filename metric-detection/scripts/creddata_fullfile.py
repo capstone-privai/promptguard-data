@@ -46,12 +46,13 @@ import value_gen
 warnings.filterwarnings("ignore", message=r".*invalid escape sequence", category=SyntaxWarning)
 FULLFILE = T.ROOT / "runs/creddata-source-fullfile"
 MANIFEST = "manifest_fullfile.json"
+SPLITS = ("train", "val", "test")
 DEFAULT_OUT = T.ROOT / "runs/creddata-auto-v3-fullfile"
 VERSION = "creddata-auto-v3-fullfile"
 INPUTS = {"sessions": "data_test/sessions_from_CredData.jsonl", "labels": "labels_from_CredData.jsonl",
-          "gold": "data_answer/gold_from_CredData.jsonl", "gold_category": "gold_category_train.jsonl",
-          "category_uncategorized": "category_llm/uncategorized_train.jsonl",
-          "category_assigned": "category_llm/assigned_train.jsonl"}
+          "gold": "data_answer/gold_from_CredData.jsonl", "gold_category": "gold_category_{split}.jsonl",
+          "category_uncategorized": "category_llm/uncategorized_{split}.jsonl",
+          "category_assigned": "category_llm/assigned_{split}.jsonl"}
 COMMANDS = {"conversion": "python3 metric-detection/scripts/convert_creddata.py --creddata ../CredData "
                           "--context-lines 100000000 --out runs/creddata-source-fullfile",
             "gold_category": "python3 -B metric-detection/scripts/creddata_gold_categories.py"}
@@ -110,34 +111,41 @@ class Ineligible(ValueError):
 
 # ---- inputs --------------------------------------------------------------------------------------------------------
 
-def input_paths(fullfile: Path = FULLFILE) -> dict[str, Path]:
-    return {name: fullfile / relative for name, relative in INPUTS.items()}
+def manifest_name(split: str = "train") -> str:
+    return MANIFEST if split == "train" else f"manifest_fullfile_{split}.json"
 
 
-def manifest_document(fullfile: Path = FULLFILE) -> dict:
-    sessions = input_paths(fullfile)["sessions"]
+def input_paths(fullfile: Path = FULLFILE, split: str = "train") -> dict[str, Path]:
+    if split not in SPLITS:
+        raise ValueError(f"unknown split: {split}")
+    return {name: fullfile / relative.format(split=split) for name, relative in INPUTS.items()}
+
+
+def manifest_document(fullfile: Path = FULLFILE, split: str = "train") -> dict:
+    sessions = input_paths(fullfile, split)["sessions"]
     with sessions.open(encoding="utf-8") as stream:
         meta = json.loads(stream.readline())["meta"]
     return {"schema_version": 1, "purpose": "whole-file CredData inputs of the v3 task catalog",
             "creddata_commit": meta["creddata_commit"], "context_lines": meta["context_lines"],
-            "commands": COMMANDS,
+            "commands": COMMANDS if split == "train" else
+            {**COMMANDS, "gold_category": COMMANDS["gold_category"] + f" --split {split}"},
             "inputs": {name: {"path": str(path.relative_to(T.ROOT)), "sha256": T.sha(path.read_bytes()),
-                              "bytes": path.stat().st_size} for name, path in input_paths(fullfile).items()},
+                              "bytes": path.stat().st_size} for name, path in input_paths(fullfile, split).items()},
             "note": "category_llm/*.jsonl are stored model assignments (inputs, not regenerated). "
                     "Split, repository and component come from metric-detection/source_splits/creddata-v1."}
 
 
-def check_manifest(fullfile: Path = FULLFILE) -> dict:
-    stored = json.loads((fullfile / MANIFEST).read_text())
+def check_manifest(fullfile: Path = FULLFILE, split: str = "train") -> dict:
+    stored = json.loads((fullfile / manifest_name(split)).read_text())
     for name, record in stored["inputs"].items():
         if T.sha((T.ROOT / record["path"]).read_bytes()) != record["sha256"]:
             raise ValueError(f"whole-file input changed after the catalog manifest was recorded: {name}")
     return stored
 
 
-def load_sources(fullfile: Path, wanted: set[str] | None = None):
-    """(sessions by id, non-dropped gold rows by session id, dropped counts) of the whole-file train inputs."""
-    paths = input_paths(fullfile)
+def load_sources(fullfile: Path, wanted: set[str] | None = None, split: str = "train"):
+    """(sessions by id, non-dropped gold rows by session id, dropped counts) of the whole-file inputs of a split."""
+    paths = input_paths(fullfile, split)
     gold, dropped = defaultdict(list), Counter()
     for row in T.rows(paths["gold_category"]):
         if wanted is not None and row["session_id"] not in wanted:
@@ -795,22 +803,22 @@ def span_reasons(session: dict, spans: list[dict]) -> list[tuple[str, str, str]]
     return out
 
 
-def discover(split_dir: Path, fullfile: Path, exclude: set[str]):
-    check_manifest(fullfile)
-    train = set((split_dir / "train.txt").read_text().splitlines())
+def discover(split_dir: Path, fullfile: Path, exclude: set[str], split: str = "train"):
+    check_manifest(fullfile, split)
+    train = set((split_dir / f"{split}.txt").read_text().splitlines())
     repos = {r["group_id"]: r for r in T.rows(split_dir / "repositories.jsonl")}
-    sessions, gold, dropped = load_sources(fullfile)
+    sessions, gold, dropped = load_sources(fullfile, split=split)
     candidates, file_reasons, span_counts = [], Counter(), Counter()
     funnel = Counter()
-    all_gold_files = {r["session_id"] for r in T.rows(input_paths(fullfile)["gold_category"])}
-    funnel["train_files_with_gold_rows"] = len(all_gold_files & train)
+    all_gold_files = {r["session_id"] for r in T.rows(input_paths(fullfile, split)["gold_category"])}
+    funnel["files_with_gold_rows"] = len(all_gold_files & train)
     for session_id in sorted(gold):
         if session_id not in train:
-            raise ValueError("gold_category_train.jsonl lists a non-train session")
+            raise ValueError(f"gold_category_{split}.jsonl lists a session of another split")
         session, spans = sessions[session_id], gold[session_id]
-        funnel["train_files_with_non_dropped_gold"] += 1
+        funnel["files_with_non_dropped_gold"] += 1
         repo = repos[session["meta"]["group_id"]]
-        if repo["split"] != "train":
+        if repo["split"] != split:
             raise ValueError("session/repository split mismatch")
         try:
             if session_id in exclude:
@@ -835,9 +843,9 @@ def discover(split_dir: Path, fullfile: Path, exclude: set[str]):
         by_position[position][reason] += n
         by_source[source][reason] += n
     profile = {
-        "funnel": {"train_files_with_gold_rows": funnel["train_files_with_gold_rows"],
+        "funnel": {f"{split}_files_with_gold_rows": funnel["files_with_gold_rows"],
                    "files_with_only_dropped_gold": files_all_dropped,
-                   "train_files_with_non_dropped_gold": funnel["train_files_with_non_dropped_gold"],
+                   f"{split}_files_with_non_dropped_gold": funnel["files_with_non_dropped_gold"],
                    "within_limits": funnel["within_limits"], "eligible_files": len(candidates)},
         "limits": LIMITS, "dropped_gold_spans": dict(sorted(dropped.items())),
         "excluded_files": dict(sorted(file_reasons.items())),
@@ -874,14 +882,13 @@ def build_pack(config_path: Path, split_dir: Path = T.DEFAULT_SPLIT, fullfile: P
     if dict(count) != {f: config["tasks_per_family"] for f in T.FAMILIES} or \
             len({t["task_id"] for t in definitions}) != len(definitions):
         raise ValueError("task families must have equal declared counts and unique task IDs")
-    if config["split"] != "train":
-        raise ValueError("only train sources are accepted")
-    check_manifest(fullfile)
-    members = set((split_dir / "train.txt").read_text().splitlines())
+    split = config["split"]
+    check_manifest(fullfile, split)
+    members = set((split_dir / f"{split}.txt").read_text().splitlines())
     requested = {t["source_session_id"] for t in definitions}
     if not requested <= members:
-        raise ValueError("task source is outside the frozen train partition")
-    sessions, gold, _ = load_sources(fullfile, requested)
+        raise ValueError(f"task source is outside the frozen {split} partition")
+    sessions, gold, _ = load_sources(fullfile, requested, split)
     repository = {r["group_id"]: r for r in T.rows(split_dir / "repositories.jsonl")}
     files, summaries = {}, []
     for spec in definitions:
@@ -896,7 +903,7 @@ def build_pack(config_path: Path, split_dir: Path = T.DEFAULT_SPLIT, fullfile: P
         instruction = spec["instruction_template"].format(source_file=filename, source_language=label)
         prompt = (COMMON_EN if spec["instruction_language"] == "en" else COMMON) + "\n" + instruction + "\n"
         lines = text.count("\n") + (0 if text.endswith("\n") or not text else 1)
-        task = {**spec, "split": "train", "source_scope": "whole_file", "language": language,
+        task = {**spec, "split": split, "source_scope": "whole_file", "language": language,
                 "source_language": language, "source_language_label": label, "syntax_mode": mode,
                 "source_filename": filename, "source_repo_id": group["repo_id"], "component_id": group["component_id"],
                 "source_file": session["meta"]["creddata_file"], "source_line_range": [1, lines],
@@ -919,11 +926,11 @@ def build_pack(config_path: Path, split_dir: Path = T.DEFAULT_SPLIT, fullfile: P
                           "source_item_id": 0, "source_repo_id": group["repo_id"], "slots": len(slots),
                           "source_gold_occurrences": len(occurrences),
                           "instruction_language": spec["instruction_language"], "task_pair_id": spec["task_pair_id"]})
-    manifest = {"version": config["version"], "split": "train", "source_scope": "whole_file", "counts": count,
+    manifest = {"version": config["version"], "split": split, "source_scope": "whole_file", "counts": count,
                 "source_sessions": len(requested), "source_repositories": len({r["source_repo_id"] for r in summaries}),
                 "config_sha256": T.sha(config_path.read_bytes()),
                 "split_manifest_sha256": T.sha((split_dir / "manifest.json").read_bytes()),
-                "fullfile_manifest_sha256": T.sha((fullfile / MANIFEST).read_bytes()),
+                "fullfile_manifest_sha256": T.sha((fullfile / manifest_name(split)).read_bytes()),
                 "instruction_languages": dict(Counter(t["instruction_language"] for t in definitions)),
                 "task_pairs": len({t["task_pair_id"] for t in definitions}),
                 "tasks": summaries, "success_grading": None, "ready_for_training_export": False}
@@ -932,14 +939,14 @@ def build_pack(config_path: Path, split_dir: Path = T.DEFAULT_SPLIT, fullfile: P
 
 
 def generate(split_dir: Path, fullfile: Path, instruction_path: Path, per_family: int, seed: str,
-             max_per_repo: int, exclude_path: Path | None):
+             max_per_repo: int, exclude_path: Path | None, split: str = "train"):
     exclude = set(exclude_path.read_text().split()) if exclude_path else set()
     instruction_config = json.loads(instruction_path.read_text())
-    candidates, profile = discover(split_dir, fullfile, exclude)
+    candidates, profile = discover(split_dir, fullfile, exclude, split)
     base_tasks = A.select_tasks(candidates, per_family, seed, max_per_repo, instruction_config["instructions"]["ko"],
                                 True, "parser_rules_v3_fullfile")
     tasks = pair_tasks(base_tasks, instruction_config["instructions"])
-    config = {"version": VERSION, "split": "train", "source_scope": "whole_file", "tasks_per_family": per_family * 2,
+    config = {"version": VERSION, "split": split, "source_scope": "whole_file", "tasks_per_family": per_family * 2,
               "selection_note": "Whole CredData files with category gold. Structural eligibility plus deterministic "
                                 "sampling; four shared instruction templates in each of two instruction languages. "
                                 "No LLM generation.",
@@ -948,7 +955,7 @@ def generate(split_dir: Path, fullfile: Path, instruction_path: Path, per_family
                                        "instruction_version": instruction_config["version"],
                                        "instruction_sha256": T.sha(instruction_path.read_bytes()),
                                        "split_manifest_sha256": T.sha((split_dir / "manifest.json").read_bytes()),
-                                       "fullfile_manifest_sha256": T.sha((fullfile / MANIFEST).read_bytes()),
+                                       "fullfile_manifest_sha256": T.sha((fullfile / manifest_name(split)).read_bytes()),
                                        "exclusion_list": None if exclude_path is None else
                                        {"sha256": T.sha(exclude_path.read_bytes()), "session_ids": len(exclude)}},
               "bilingual": {"languages": ["ko", "en"], "base_tasks": len(base_tasks),
@@ -971,7 +978,7 @@ def generate(split_dir: Path, fullfile: Path, instruction_path: Path, per_family
              "selected_files_gold_spans_by_category": dict(sorted(category_spans.items(), key=lambda kv: (-kv[1], kv[0]))),
              "selected_files_gold_spans_by_position": dict(sorted(positions.items())),
              "distinct_instruction_count": len({t["instruction"] for t in tasks}), "llm_calls": 0,
-             "checks": {"all_train_sources": True, "same_count_per_family": True,
+             "checks": {f"all_{split}_sources": True, "same_count_per_family": True,
                         "one_instruction_template_per_family_and_language": True,
                         "no_duplicate_base_file_or_context_within_family": True,
                         "paired_languages_share_source_and_split": True},
@@ -985,18 +992,18 @@ def generate(split_dir: Path, fullfile: Path, instruction_path: Path, per_family
 
 
 def readme(config: dict, stats: dict) -> str:
-    f = stats["funnel"]
+    f, split = stats["funnel"], config["split"]
     return ("# CredData 원본 파일 전체 기반 작업 (한국어·영어 쌍, v3)\n\n"
             f"작업군별 {config['tasks_per_family']}개, 총 {len(config['tasks'])}개다. 기본 작업 "
             f"{config['bilingual']['base_tasks']}개를 한국어·영어 지시문 쌍으로 발급했다. 지시문은 공통 템플릿 8개다. "
             "분류·지시문 작성용 LLM 호출은 없다.\n\n"
-            "원본은 ±10줄 조각이 아니라 CredData 파일 하나 전체다(1,000줄·100KB·gold 30개 이하, train만). "
+            f"원본은 ±10줄 조각이 아니라 CredData 파일 하나 전체다(1,000줄·100KB·gold 30개 이하, {split}만). "
             "gold 유형은 CredData Category이고, 제외(dropped)된 span은 정답이 아니어서 원문 그대로 둔다. "
             "placeholder는 문자열 리터럴 전체·일부, 주석·따옴표 없는 값, 파싱하지 않는 형식의 본문, 여러 줄 PEM, "
             "JWK 조각에 둘 수 있고, 처리할 수 없는 gold가 하나라도 있으면 그 파일을 사유와 함께 제외한다.\n\n"
-            f"train에서 gold가 있는 파일 {f['train_files_with_non_dropped_gold']}개 중 제한 이내 {f['within_limits']}개, "
+            f"{split}에서 gold가 있는 파일 {f[split + '_files_with_non_dropped_gold']}개 중 제한 이내 {f['within_limits']}개, "
             f"후보 {f['eligible_files']}개다. 선택한 원본 파일은 {stats['selected_source_files']}개, "
-            f"저장소는 {stats['selected_repositories']}개다. 모든 원본은 고정 train 분할이다.\n\n"
+            f"저장소는 {stats['selected_repositories']}개다. 모든 원본은 고정 {split} 분할이다.\n\n"
             "tasks.json은 지시문과 원본 매핑, eligibility.jsonl은 후보별 판정, selection.json은 후보·제외·선택 통계다. "
             "templates/에는 placeholder 환경이 있다. 생성값은 instances/에서 seed로 만든다.\n\n"
             "원본 애플리케이션의 단위 테스트가 아니다. 구조 규칙만으로 의미상 좋은 과제나 라벨 완전성을 보장하지 않는다.\n")
@@ -1020,6 +1027,7 @@ def main():
     manifest = sub.add_parser("manifest", help="record (or --check) the whole-file input hashes")
     manifest.add_argument("--fullfile", type=Path, default=FULLFILE)
     manifest.add_argument("--check", action="store_true")
+    manifest.add_argument("--split", default="train", choices=SPLITS)
     build = sub.add_parser("build")
     build.add_argument("--split-dir", type=Path, default=T.DEFAULT_SPLIT)
     build.add_argument("--fullfile", type=Path, default=FULLFILE)
@@ -1030,10 +1038,11 @@ def main():
     build.add_argument("--exclude", type=Path, help="session ids to exclude, one per line")
     build.add_argument("--out", type=Path, default=DEFAULT_OUT)
     build.add_argument("--version", default=VERSION, help="catalog version name; a reissue gets its own")
+    build.add_argument("--split", default="train", choices=SPLITS, help="source partition of the catalog")
     args = parser.parse_args()
     if args.command == "manifest":
-        path = args.fullfile / MANIFEST
-        document = T.jb(manifest_document(args.fullfile))
+        path = args.fullfile / manifest_name(args.split)
+        document = T.jb(manifest_document(args.fullfile, args.split))
         if args.check or path.exists():
             same = path.exists() and path.read_bytes() == document
             print(json.dumps({"manifest": str(path), "matches_inputs": same}))
@@ -1044,7 +1053,7 @@ def main():
         print(json.dumps({"manifest": str(path), "written": True}))
         return
     config, candidates, stats = generate(args.split_dir, args.fullfile, args.instructions, args.per_family, args.seed,
-                                         args.max_per_repo, args.exclude)
+                                         args.max_per_repo, args.exclude, args.split)
     config["version"] = args.version
     write_expansion(args.out, config, candidates, stats, args.split_dir, args.fullfile)
     print(json.dumps({"out": str(args.out), **{k: stats[k] for k in ("funnel", "excluded_files", "eligible_by_family",
