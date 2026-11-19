@@ -52,6 +52,11 @@ class Session:
     items: list[Item]
     gold: list[GoldSpan]
     meta: dict[str, Any] = field(default_factory=dict)
+    # Gold-file rows marked `excluded`: text that is neither gold nor a false positive (span_scoring.score_item).
+    excluded: list[GoldSpan] = field(default_factory=list)
 
     def gold_for(self, item_id: int) -> list[GoldSpan]:
         return sorted((span for span in self.gold if span.item_id == item_id), key=lambda span: (span.start, span.end))
+
+    def excluded_for(self, item_id: int) -> list[GoldSpan]:
+        return sorted((span for span in self.excluded if span.item_id == item_id), key=lambda span: (span.start, span.end))

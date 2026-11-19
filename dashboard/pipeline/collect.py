@@ -7,6 +7,14 @@ touching none, the type its placeholder names (catalog.placeholder_type). All ce
 evaluation.report.aggregate over the same items (cells for the span and edit counts, items rows for the
 character counts); merge() checks that.
 
+Gold values: the same secret can be a gold span many times (an agent reading one file again), so a payload also counts,
+per distinct gold text (by sha256, never the text itself), its spans and its spans not found (partial or missed). merge()
+reports how many distinct values there are and how many of them have a span not found.
+
+Excluded spans (gold-file rows marked `excluded`, see span_scoring.score_item) are in no cell and no items count: the
+scorer already left their characters out of masked_chars and their edits out of the edit results. A payload only
+counts them (spans per distinct text, characters, masked characters), and merge() reports the totals with the values.
+
 Examples are picked per bucket, a (sub-group, channel, type, outcome), in the order of a hash of the item's id, so the
 choice does not depend on how a dataset was split into shards. An example keeps a window of the item text around the
 spans it was picked for. The text is the dataset's own, secrets included.
@@ -38,8 +46,15 @@ ITEM_FIELDS = 3 + len(CHAR_KEYS)
 Bucket = tuple[str, ...]  # ("gold", group, channel, type, status) | ("fp", group, channel, type) | ("clean", group, channel)
 
 
+UNFOUND = ("partial", "missed")
+
+
 class MergeError(Exception):
     pass
+
+
+def value_key(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def rank_of(dataset: str, session_id: str, item_id: int) -> str:
@@ -107,6 +122,9 @@ class Collector:
         self.items: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0] * ITEM_FIELDS)
         self.picks: dict[Bucket, list[tuple[str, tuple[str, int], tuple[int, int]]]] = {}  # rank, item key, focus
         self.sources: dict[tuple[str, int], dict[str, Any]] = {}
+        self.values: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # gold text hash -> spans, spans not found
+        self.excluded: dict[str, int] = defaultdict(int)  # excluded text hash -> spans
+        self.excluded_chars = [0, 0]  # characters of excluded spans, and those of them that were masked
 
     def add(self, session: Session, item: Item, score: ItemScore, output: ItemOutput) -> None:
         if item.channel not in CHANNELS:  # tool_input is never scored
@@ -118,6 +136,9 @@ class Collector:
                  for edit in score.edit_results]
         for span in gold:
             self.cells[(group, item.channel, span.type)][STATUSES.index(span.status.value)] += 1
+            counted = self.values[value_key(item.text[span.start:span.end])]
+            counted[0] += 1
+            counted[1] += int(span.status.value in UNFOUND)
         for _edit, kind, type_ in edits:
             self.cells[(group, item.channel, type_)][len(STATUSES) + EDIT_CLASSES.index(kind)] += 1
         totals = self.items[(group, item.channel)]
@@ -126,6 +147,10 @@ class Collector:
         totals[2] += count_lines(item.text)
         totals[3] += score.masked_chars
         totals[4] += score.masked_gold_chars
+        for span in session.excluded_for(item.item_id):
+            self.excluded[value_key(item.text[span.start:span.end])] += 1
+            self.excluded_chars[0] += span.end - span.start
+        self.excluded_chars[1] += score.excluded_masked_chars
 
         focus: dict[Bucket, tuple[int, int]] = {}
         for span in gold:
@@ -163,6 +188,9 @@ class Collector:
             "picks": [[list(bucket), rank, list(key), list(focus)]
                       for bucket, kept in sorted(self.picks.items()) for rank, key, focus in kept],
             "sources": [[*key, self.sources[key]] for key in sorted(keys)],
+            "values": [[value, *counted] for value, counted in sorted(self.values.items())],
+            "excluded": {"values": [[value, spans] for value, spans in sorted(self.excluded.items())],
+                         "chars": self.excluded_chars[0], "masked_chars": self.excluded_chars[1]},
         }
 
 
@@ -200,6 +228,9 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
     lines_total = 0
     picks: dict[Bucket, list[tuple[str, tuple[str, int], tuple[int, int]]]] = defaultdict(list)
     sources: dict[tuple[str, int], Mapping[str, Any]] = {}
+    values: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    excluded: dict[str, int] = defaultdict(int)
+    excluded_chars = [0, 0]
     for payload in payloads:
         for row in payload["cells"]:
             target = cells[tuple(row[:3])]
@@ -216,6 +247,14 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
             picks[tuple(bucket)].append((rank, tuple(key), tuple(focus)))
         for session, item, source in payload["sources"]:
             sources[(session, item)] = source
+        for value, spans, unfound in payload["values"]:
+            values[value][0] += spans
+            values[value][1] += unfound
+        left_out = payload.get("excluded") or {}  # a payload written before excluded spans existed has none
+        for value, spans in left_out.get("values", []):
+            excluded[value] += spans
+        excluded_chars[0] += left_out.get("chars", 0)
+        excluded_chars[1] += left_out.get("masked_chars", 0)
 
     summed = [sum(values[index] for values in cells.values()) for index in range(len(COUNT_KEYS))]
     chars = [sum(values[3 + index] for values in items.values()) for index in range(len(CHAR_KEYS))]
@@ -223,6 +262,10 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
             or chars != [counts[key] for key in CHAR_KEYS]):
         raise MergeError(f"cell sums {dict(zip(COUNT_KEYS + CHAR_KEYS, summed + chars))} differ from the scorer's "
                          f"counts {counts}")
+    unfound = counts["partial"] + counts["missed"]
+    if (sum(spans for spans, _ in values.values()) != unfound + counts["exact"] + counts["over"]
+            or sum(left for _, left in values.values()) != unfound):
+        raise MergeError(f"gold value counts differ from the scorer's counts {counts}")
 
     best = {bucket: sorted(kept)[:per_bucket] for bucket, kept in picks.items()}
     groups = _fold_groups(items)
@@ -252,6 +295,10 @@ def merge(payloads: Iterable[Mapping[str, Any]], per_bucket: int = PER_BUCKET) -
         "cells": _fold_rows(cells, groups),
         "items": _fold_rows(items, groups),
         "counts": counts,
+        "values": {"gold_values": len(values), "unfound": unfound,
+                   "unfound_values": sum(1 for _, left in values.values() if left),
+                   "excluded_spans": sum(excluded.values()), "excluded_values": len(excluded),
+                   "excluded_chars": excluded_chars[0], "excluded_masked_chars": excluded_chars[1]},
         "lines_total": lines_total,
         "examples": folded,
         "overview": sorted({example_id for _rank, example_id in overview.values()}),

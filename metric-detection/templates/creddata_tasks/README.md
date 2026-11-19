@@ -384,6 +384,21 @@ PEM·JWK 값은 도구 출력에서 줄 번호, `cat -A`의 줄 끝 `$`, JSON es
 출력: `sessions_train.jsonl`, `gold_train.jsonl`, `labels_train.jsonl`, `manifest.json`. `--out`은 `runs/` 아래여야
 한다(라이선스가 있는 원본 텍스트와 생성한 비밀값이 들어 있다).
 
+`--source-gold`에 현재의 `gold_category_<split>.jsonl`을 주면, 원본 span이 하나도 gold로 남지 않은 slot은 라벨하지
+않는다. 과제 목록을 고정한 뒤 라벨 규칙이 바뀐 경우(URL의 포트, 번역 파일의 화면 문구)에 쓴다. 기록된 텍스트에는
+그 slot의 생성 값이 그대로 남고 gold만 빠진다. 원본 span이 하나라도 gold인 slot은 그대로 두고, 등장마다 규칙이
+판정한다. 뺀 slot은 manifest의 `slots_no_longer_gold`에 남는다.
+
+뺀 slot의 값은 우리가 주입해서 거기 있는 것이므로 탐지기가 가려도 오탐으로 세지 않는다. export는 그 값의 모든 등장을
+`excluded_<split>.jsonl`에 쓴다(`session_id`, `item_id`, `channel`, `start`, `end`, `type`(CredData Category), `entry`,
+`how`, `value_sha256`, `reason: slot_no_longer_gold`). 등장은 라벨러가 아는 값을 찾는 방식 그대로 찾는다: 값의 표기
+형태마다(`exact`, URL 인코딩, base64, JSON·코드 문자열) `label_rules.occurrences`의 낱말 경계로, 모든 채널에서, 줄 번호가
+붙은 도구 출력은 번호를 떼고. 규칙 판정은 하지 않는다(슬롯 자리뿐 아니라 그 세션의 모든 등장). 다른 slot으로 여전히
+gold인 등장은 빼지 않고 manifest의 `excluded_but_still_gold`에 적는다. `creddata_eval_set.py`는 이 행들을 채점기 정답
+파일 끝에 `"excluded": "slot_no_longer_gold"` 행으로 붙이고(`span_id`는 그 item의 gold 다음 번호), 채점기는 그 자리를
+정답으로도 오탐으로도 세지 않는다([evaluation README](../../evaluation/README.md#데이터-형식)). test-v1(2026-11-19): 58개 slot,
+150곳(채점 채널 127곳, 고유 값 19개, 6,142글자), 여전히 gold인 등장 0.
+
 2026-11-16 `runs/creddata-trajectory-handoff/v1`:
 
 | | 궤적 | gold span |

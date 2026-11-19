@@ -210,6 +210,140 @@ class Exclusions(unittest.TestCase):
         self.assertEqual(exclusion_kind("self.password = password", *at("self.password = password", "password", 1)), "code")
 
 
+class UrlAuthority(unittest.TestCase):
+    """A sentence's "password" does not reach into a URL: the port after @host: is not a value (CredData 11527421)."""
+
+    def test_port_is_not_prose(self):
+        for text, value in [("| `mysql://user:password@host:port/database` | Yes", "port/database"),
+                            ("array( 'http://Ozh:Password@example.com:1337/' ),", "1337/"),
+                            ("'http://username:password@example.com:8042/over/there/index.dtb?type=animal'",
+                             "8042/over/there/index.dtb?type=animal"),
+                            ("connect to user:password@db.local:5432 first", "5432")]:
+            self.assertNotEqual(classify(text, *at(text, value))[0], "slot", text)
+
+    def test_userinfo_and_prose_stay(self):
+        text = "mysql://user:hunter2@host:3306/db"
+        self.assertEqual(classify(text, *at(text, "hunter2")), ("slot", "url_userinfo"))
+        for text, value in [("The password is Zq9xxT", "Zq9xxT"), ("the password for admin@example.com is Zq9xxT", "Zq9xxT"),
+                            ("password: Zq9xxT", "Zq9xxT")]:
+            self.assertEqual(classify(text, *at(text, value))[0], "slot", text)
+
+
+class AssignmentTarget(unittest.TestCase):
+    """The name on the left of an assignment is not another occurrence of the value (CredData d35008d1.cs)."""
+
+    def test_left_side_is_an_identifier(self):
+        text = 'new Client {\n                ClientId = "ClientId",\n                ClientSecret = "ClientSecret",\n'
+        self.assertEqual(judge_occurrence(text, *at(text, "ClientSecret"), common=False),
+                         (False, "identifier", "assign_target"))
+        self.assertEqual(judge_occurrence(text, *at(text, "ClientSecret", 1), common=False)[:2], (True, "slot"))
+        text = '21\t                ec1dd1bfb43cd919c0cd3f5e675a31dd = "ec1dd1bfb43cd919c0cd3f5e675a31dd",'
+        value = "ec1dd1bfb43cd919c0cd3f5e675a31dd"
+        self.assertEqual(judge_occurrence(text, *at(text, value), common=False)[1], "identifier")
+        self.assertTrue(judge_occurrence(text, *at(text, value, 1), common=False)[0])
+        text = f'3c3\n<                 {value} = "{value}",\n---\n>                 {value} = ValidSecret,'  # diff output
+        for nth in (0, 2):
+            self.assertEqual(judge_occurrence(text, *at(text, value, nth), common=False)[1], "identifier", nth)
+        self.assertTrue(judge_occurrence(text, *at(text, value, 1), common=False)[0])
+
+    def test_values_stay(self):
+        for text, value, nth in [("x := Zq9xxT\nZq9xxT == other", "Zq9xxT", 1),  # a comparison
+                                 ("echo Zq9xxT\n1fd2c0e9 = 3", "1fd2c0e9", 0),  # not an identifier
+                                 ("token: Zq9xxT\n  check Zq9xxT = done", "Zq9xxT", 1)]:
+            self.assertTrue(judge_occurrence(text, *at(text, value, nth), common=False)[0], text)
+
+
+class TranslationFiles(unittest.TestCase):
+    """A screen string of a translation file is a descriptor in any language (CredData 110329, 11528730)."""
+
+    TABLE = ('{\n  "LABEL_EMAIL": "E-post",\n  "BTN_LOGIN": "Logg inn",\n  "REMOVE_TWO_FACTOR_AUTH": "%s",\n'
+             '  "TITLE_SEARCH": "Søk etter produkter",\n  "NAV_BASKET": "Din handlekurv",\n'
+             '  "CONFIRM_X": "Er du sikker på dette?"\n}\n')
+
+    def test_screen_strings(self):
+        for value in ("Fjern 2FA fra kontoen", "Eliminar la autenticación de dos factores de su cuenta",
+                      "アカウントから2FAを削除する", "ลบ 2FA ออกจากแอคเคาท์", "Vigane e-posti aadress või salasõna."):
+            text = self.TABLE % value
+            self.assertEqual(exclusion_kind(text, *at(text, value)), "descriptor", value)
+
+    def test_word_inside_a_screen_string_is_not_propagated(self):
+        text = self.TABLE % "Vale kasutajanimi või parool"
+        self.assertEqual(judge_occurrence(text, *at(text, "parool"), common=False), (False, "descriptor", None))
+
+    def test_values_stay(self):
+        text = self.TABLE % "Pa55w0rd!xY"  # not words
+        self.assertIsNone(exclusion_kind(text, *at(text, "Pa55w0rd!xY")))
+        # a config file's values are not sentences: an obfuscated passphrase with spaces stays a value
+        config = '{\n  "DB_HOST": "localhost",\n  "DB_USER": "app",\n  "DB_PASSWORD": "omq amqltypznj",\n  "PORT": "5432"\n}\n'
+        self.assertIsNone(exclusion_kind(config, *at(config, "omq amqltypznj")))
+        yaml = "users:\n  - email: a@b.c\n    password: 'omq amqltypznj'\n"
+        self.assertIsNone(exclusion_kind(yaml, *at(yaml, "omq amqltypznj")))
+
+
+class NotTheSecretItself(unittest.TestCase):
+    """Values in a credential key's place that name, describe or point at the secret (label-fix-1119b audit):
+    a path's scheme, a bcrypt hash, a switch, a form field's kind, a type, a Kubernetes Secret's name."""
+
+    def judge(self, text, value, nth=0):
+        from convert_creddata import judge
+        return judge("SECRET", text, *at(text, value, nth))
+
+    def test_path_scheme(self):  # CredData 16005, 16014
+        text = "        $privateKey = 'file://' . __DIR__ . '/Stubs/private.key';\n"
+        self.assertEqual(self.judge(text, "file://")[:2], (False, "reference"))
+        self.assertEqual(self.judge("$privateKey = 'Zq9xxTk2';", "Zq9xxTk2")[:2], (True, "credential_slot"))
+        text = "api_key = 'https://hooks.example/abc'"  # more than a scheme: the earlier rules decide, as before
+        self.assertNotEqual(exclusion_kind(text, *at(text, "https://hooks.example/abc")), "reference")
+
+    def test_bcrypt_with_bangs(self):  # CredData 1238220
+        value = "!2a!08!T1ptMlBSxu7g3odpbUXgd.9wbKvg8k7cJt.HbwSqUNrlLPudWnf/6"
+        text = f"\t'phpass'  => 'phpass:{value}', // password: 'x'\n"
+        self.assertEqual(self.judge(text, value)[:2], (False, "hash"))
+        text = "-passin pass:Zq9xxTk2"
+        self.assertEqual(self.judge(text, "Zq9xxTk2")[:2], (True, "credential_slot"))
+
+    def test_setting_flag(self):  # CredData 130720
+        for text in ("      MYSQL_ALLOW_EMPTY_PASSWORD: yes\n", '      MYSQL_RANDOM_ROOT_PASSWORD: "yes"\n',
+                     "ALLOW_EMPTY_PASSWORD=1\n"):
+            value = "1" if text.startswith("ALLOW") else "yes"
+            self.assertEqual(classify(text, *at(text, value)), ("negative", "setting_flag"), text)
+            self.assertFalse(self.judge(text, value)[0], text)
+        for text, value in [("      MYSQL_ALLOW_EMPTY_PASSWORD: ueohjjxvy\n", "ueohjjxvy"),  # not a switch's value
+                            ("      MYSQL_ROOT_PASSWORD: yes\n", "yes"), ("  password: no\n", "no")]:
+            self.assertTrue(self.judge(text, value)[0], text)
+
+    def test_form_field_type(self):  # c8c48c5e/c51662be.js
+        text = ('      credentials: {\n        password: { label: "Password", type: "password" },\n      },\n'
+                '      async authorize(credentials, req) {\n        if (credentials.password === "password") {\n')
+        self.assertEqual(judge_occurrence(text, *at(text, "password", 1), common=True), (False, "code", None))
+        self.assertTrue(judge_occurrence(text, *at(text, "password", 3), common=True)[0])  # the compared literal stays
+        text = "<input class='text' name='password' type='password' value='Zq9xxT'>"
+        self.assertEqual(exclusion_kind(text, *at(text, "password", 1)), "code")
+        self.assertIsNone(exclusion_kind(text, *at(text, "Zq9xxT")))
+        text = '{"token_type": "bearer", "access_token": "Zq9xxTk2"}'
+        self.assertIsNone(exclusion_kind(text, *at(text, "bearer")))  # token_type is not type
+
+    def test_type_annotation(self):  # CredData 75174, 75195, 7412
+        for text in ("  public async verify(opts: {\n    token: string;\n    secret: SecretKey;\n  }): Promise<boolean> {\n",
+                     "    issuer: string,\n    secret: SecretKey\n  ): Promise<string> {\n",
+                     "  public verify(opts: { token: string; secret: SecretKey }): boolean {\n",
+                     "    secret: SecretKey | string,\n"):
+            self.assertEqual(self.judge(text, "SecretKey")[:2], (False, "code"), text)
+        text = "    @JoinColumn()\n    access_token: AccessToken;\n\n}\n"
+        self.assertEqual(self.judge(text, "AccessToken")[:2], (False, "code"))
+        for text, value in [("weave_password: VbsmoJqoccberKsoa\n\nssl_ca_dirs: |-\n", "VbsmoJqoccberKsoa"),  # a YAML value
+                            ("  password: CorrectHorse\n  user: admin\n", "CorrectHorse"),
+                            ("{ password: 'SecretKey' }", "SecretKey")]:  # quoted: a literal
+            self.assertTrue(self.judge(text, value)[0], text)
+
+    def test_kubernetes_secret_name(self):  # CredData 101124
+        text = "```yaml\nagent:\n  tlsSecret: kiam-agent-tls\n\nserver:\n  tlsSecret: kiam-server-tls\n```\n"
+        for value in ("kiam-agent-tls", "kiam-server-tls"):
+            self.assertEqual(self.judge(text, value)[:2], (False, "reference"), value)
+        for text, value in [("  clientSecret: kiam-agent-tls9Q\n", "kiam-agent-tls9Q"), ("  appSecret: Zq9xxTk2\n", "Zq9xxTk2")]:
+            self.assertTrue(self.judge(text, value)[0], text)
+
+
 class Literals(unittest.TestCase):
     def test_code_is_not_a_literal(self):
         for text, value in [("token = Token::SAR;", "Token::SAR"), ("password: string;", "string"),

@@ -2,6 +2,8 @@
 
   data_test/sessions*.jsonl   one session per line: session_id, items, meta (no gold)
   data_answer/gold*.jsonl     one gold span per line: session_id, item_id, span_id, span
+                              a row with a true `excluded` is not gold: its span is left out of scoring
+                              (neither a miss when unmasked nor a false positive when masked)
 """
 
 from __future__ import annotations
@@ -39,11 +41,19 @@ def gold_from_record(record: dict[str, Any]) -> tuple[str, GoldSpan]:
     return record["session_id"], GoldSpan(record["item_id"], record["span_id"], span["start"], span["end"], span["type"])
 
 
-def load_sessions(sessions_path: str | Path, gold_path: str | Path) -> list[Session]:
+def load_gold(gold_path: str | Path) -> tuple[dict[str, list[GoldSpan]], dict[str, list[GoldSpan]]]:
+    """(gold spans, excluded spans) of a gold file, each by session_id."""
     gold: dict[str, list[GoldSpan]] = {}
+    excluded: dict[str, list[GoldSpan]] = {}
     for _number, line in iter_records(gold_path):
-        session_id, span = gold_from_record(json.loads(line))
-        gold.setdefault(session_id, []).append(span)
+        record = json.loads(line)
+        session_id, span = gold_from_record(record)
+        (excluded if record.get("excluded") else gold).setdefault(session_id, []).append(span)
+    return gold, excluded
+
+
+def load_sessions(sessions_path: str | Path, gold_path: str | Path) -> list[Session]:
+    gold, excluded = load_gold(gold_path)
     sessions = []
     for _number, line in iter_records(sessions_path):
         record = json.loads(line)
@@ -52,6 +62,7 @@ def load_sessions(sessions_path: str | Path, gold_path: str | Path) -> list[Sess
             items=[Item(item["item_id"], item["turn_id"], item["channel"], item["text"]) for item in record["items"]],
             gold=gold.get(record["session_id"], []),
             meta=dict(record.get("meta") or {}),
+            excluded=excluded.get(record["session_id"], []),
         ))
     return sessions
 

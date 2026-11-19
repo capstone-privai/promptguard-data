@@ -5,6 +5,10 @@ instance's own labeled/ folder is left as it was), then --variants copies are ma
 injected value is replaced by a freshly drawn value of the same slot, in the same written form. A variant is kept
 only if labeling it from scratch with the new values gives exactly the replaced spans; otherwise it is dropped and
 counted. Sessions without gold are kept once, as negatives. Everything inherits the source split and component.
+With --source-gold (the current gold_category_<split>.jsonl), a slot none of whose source spans is gold any more is
+not labeled: the recorded text keeps its value, but it is not gold (label rules that changed after the catalog froze).
+Every occurrence of such a value is written to excluded_<split>.jsonl: the value is there only because the catalog
+planted it, so a scorer counts it neither as gold nor, when a detector masks it, as a false positive.
 The output holds licensed source text and generated secrets: write it under the ignored runs/ tree only.
 """
 from __future__ import annotations
@@ -101,6 +105,58 @@ def label(task: dict, registry: dict, items: list[dict], session_id: str):
     return R.label_items(task, registry, [C.Item(i["turn_id"], i["channel"], i["text"]) for i in items], session_id)
 
 
+def source_gold_spans(path: Path) -> set[tuple[str, int, int]]:
+    """(session_id, start, end) of the source spans that are gold in a gold_category_<split>.jsonl (dropped rows are not)."""
+    with path.open(encoding="utf-8") as stream:
+        return {(r["session_id"], r["start"], r["end"]) for r in map(json.loads, stream) if not r.get("dropped")}
+
+
+def without_rejected_slots(task: dict, registry: dict, gold: set[tuple[str, int, int]]) -> tuple[dict, list[str]]:
+    """The registry without the slots none of whose source spans is gold any more: the label rules changed after the
+    catalog was frozen (the port of user:password@host:port, a translated screen string). The recorded text keeps the
+    value; only its gold goes. A slot with a gold source span stays, and the rules decide each occurrence as usual."""
+    rejected = sorted(name for name in registry["values"]
+                      if not any((task["source_session_id"], o["source_start"], o["source_end"]) in gold
+                                 for o in task["occurrences"] if o["secret_id"] == name))
+    return {**registry, "values": {k: v for k, v in registry["values"].items() if k not in rejected}}, rejected
+
+
+def excluded_occurrences(task: dict, registry: dict, rejected: list[str], items: list, gold: list[dict]):
+    """(rows, still_gold): every occurrence of a rejected slot's value in the session, in the item's own coordinates.
+
+    An occurrence is found as the labeler finds a known value: each written form of the value (whole_file_entries)
+    at the token boundaries of label_rules.occurrences, in every channel, line numbers of a tool output stripped
+    first. Unlike the labeler, no rule judges it: the value was planted, so every occurrence is left out of scoring.
+    An occurrence that touches a gold span (the same text is still gold through another slot) stays gold: it is not
+    a row, and it is returned in still_gold. A rejected key block is not supported (none exists)."""
+    entries = R.whole_file_entries(task, {**registry, "values": {name: registry["values"][name] for name in rejected}})
+    if any(entry.get("structured") for entry in entries):
+        raise Unsupported("rejected_structured_slot")
+    taken: dict[int, list[dict]] = {}
+    for row in gold:
+        taken.setdefault(row["item_id"], []).append(row["span"])
+    rows, still_gold = [], []
+    for item_id, item in enumerate(items):
+        plain, offsets = R.strip_line_numbers(item.text)
+        found = {}
+        for entry in entries:
+            for form in entry["forms"]:
+                for m in C.occurrences(plain, form["text"]):
+                    start, end = (m.start(), m.end()) if offsets is None else (offsets[m.start()], offsets[m.end() - 1] + 1)
+                    found.setdefault((start, end), {"item_id": item_id, "channel": item.channel, "start": start, "end": end,
+                                                    "type": entry["type"], "entry": entry["name"], "how": form["how"],
+                                                    "value_sha256": C.digest(entry["value"]),
+                                                    "reason": "slot_no_longer_gold"})
+        cursor = 0
+        for (start, end), row in sorted(found.items()):
+            if C.overlaps(start, end, taken.get(item_id, [])):
+                still_gold.append(row)
+            elif start >= cursor:  # two forms of one value at one place: the first (longest at that start) is kept
+                rows.append(row)
+                cursor = end
+    return rows, still_gold
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", type=Path, required=True)
@@ -108,7 +164,11 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--variants", type=int, default=2)
     parser.add_argument("--seed", default="augment-01")
+    parser.add_argument("--source-gold", type=Path,
+                        help="current gold_category_<split>.jsonl: slots whose source spans are no longer gold are not gold")
     args = parser.parse_args()
+    source_gold = source_gold_spans(args.source_gold) if args.source_gold else None
+    rejected_slots = []
     if T.ROOT / "runs" not in args.out.resolve().parents:
         parser.error("--out must be under the ignored runs/ tree")
     pack, stats, dropped, scrubbed = args.catalog / "templates", Counter(), Counter(), Counter()
@@ -116,7 +176,7 @@ def main():
     catalog, split = config["version"], config["split"]
     if split != "train" and args.variants:
         parser.error("value-substituted variants are for training data; pass --variants 0 for a val/test catalog")
-    sessions, gold_rows, label_rows = [], [], []
+    sessions, gold_rows, label_rows, excluded_rows, still_gold_rows = [], [], [], [], []
 
     def keep(session, gold, labels):
         sessions.append(session)
@@ -143,7 +203,11 @@ def main():
         if run["status"] != "finished":
             continue
         task = json.loads((instance / "task.json").read_text())
-        registry = json.loads((instance / "private/registry.json").read_text())
+        registry = planted = json.loads((instance / "private/registry.json").read_text())
+        rejected = []
+        if source_gold is not None:
+            registry, rejected = without_rejected_slots(task, registry, source_gold)
+            rejected_slots += [f"{task['task_id']}/{name}" for name in rejected]
         items = C.session_items(C.read_requests(instance / "capture/api_requests.jsonl.xz"))
         if any(OUTSIDE.search(i.text) for i in items):
             stats["runs_dropped/agent_left_the_workspace"] += 1
@@ -161,6 +225,12 @@ def main():
                  "value_seed": registry["seed"]}
         session["meta"].update(extra)
         keep(session, gold, labels)
+        if rejected:
+            left_out, still_gold = excluded_occurrences(task, planted, rejected, items, gold)
+            excluded_rows += [{"session_id": session_id, **row} for row in left_out]
+            still_gold_rows += [{"session_id": session_id, **row} for row in still_gold]
+            for row in left_out:
+                stats["excluded_spans/channel/" + row["channel"]] += 1
         if not gold:
             stats["recorded_sessions_without_gold"] += 1
             continue
@@ -194,8 +264,18 @@ def main():
                          "from the CredData " + split + " partition (creddata-v1): keep group_id (component) together and do "
                          "not re-split at random. Augmented sessions repeat their recorded session with other values, "
                          "so a recorded session and its variants must stay in one fold."}
+    if source_gold is not None:
+        manifest.update(source_gold=str(args.source_gold), source_gold_sha256=T.sha(args.source_gold.read_bytes()),
+                        slots_no_longer_gold=rejected_slots, excluded_spans=len(excluded_rows),
+                        excluded_values=len({row["value_sha256"] for row in excluded_rows}),
+                        # occurrences of a rejected slot's value that are gold through another slot: kept gold
+                        excluded_but_still_gold=[{k: row[k] for k in ("session_id", "item_id", "start", "end", "entry")}
+                                                 for row in still_gold_rows])
     args.out.mkdir(parents=True, exist_ok=True)
-    for name, rows in ((f"sessions_{split}.jsonl", sessions), (f"gold_{split}.jsonl", gold_rows), (f"labels_{split}.jsonl", label_rows)):
+    files = [(f"sessions_{split}.jsonl", sessions), (f"gold_{split}.jsonl", gold_rows), (f"labels_{split}.jsonl", label_rows)]
+    if source_gold is not None:
+        files.append((f"excluded_{split}.jsonl", excluded_rows))
+    for name, rows in files:
         with (args.out / name).open("w", encoding="utf-8") as stream:
             for row in rows:
                 stream.write(json.dumps(row, ensure_ascii=False) + "\n")

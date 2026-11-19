@@ -244,7 +244,7 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
 
     def valid(shard, payload):
         return (isinstance(payload, dict) and payload.get("sessions") == shard.high - shard.low
-                and all(key in payload for key in ("cells", "items", "picks", "sources", "counts", "system",
+                and all(key in payload for key in ("cells", "items", "picks", "sources", "values", "counts", "system",
                                                    "lines_total", "item_count", "seconds"))
                 and isinstance(payload["items"], list) and isinstance(payload["counts"], dict)
                 and all(key in payload["counts"] for key in CHAR_KEYS)
@@ -428,6 +428,8 @@ def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, d
             "key": dataset.stem, "label": info.label, "about": info.about, "group_label": info.group_label,
             "groups": groups, **result["facts"],
             "gold": counts["exact"] + counts["over"] + counts["partial"] + counts["missed"],
+            # distinct gold texts, gold spans not found (partial or missed) and the distinct texts among those
+            **result["values"],
             "edits": counts["edits_tp"] + counts["edits_over"] + counts["edits_fp"],
             "lines": result["lines_total"],
             "sessions_sha256": dataset.sessions_sha256, "gold_sha256": dataset.gold_sha256,

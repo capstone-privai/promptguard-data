@@ -56,7 +56,8 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(metrics["counts"], {
             "gold_total": 4, "exact": 1, "over": 1, "partial": 1, "missed": 1, "edits_total": 5, "edits_tp": 2,
             "edits_over": 1, "edits_fp": 2, "gold_chars_total": 30, "exposed_chars_total": 9, "masked_chars": 29,
-            "masked_gold_chars": 21, "gold_excluded": 1,
+            "masked_gold_chars": 21, "excluded_spans": 0, "excluded_chars": 0, "excluded_masked_chars": 0,
+            "gold_excluded": 1,
             "edits_excluded": 1,
         })
         self.assertEqual(metrics["scored_channels"], ["prompt", "instructions", "tool_output"])

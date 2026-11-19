@@ -121,6 +121,7 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 - 세션 파일: 한 줄에 세션 하나(`session_id`, `items`, `meta`). `session_id`는 파일 안에서 유일하고, `item_id`는 세션 안에서만 유일한 0 이상의 정수다. item은 시간 순서다.
 - `channel`은 `prompt`, `instructions`, `tool_input`, `tool_output` 중 하나.
 - 정답 파일: 한 줄에 span 하나(`session_id`, `item_id`, `span_id`, `span: {start, end, type}`). span이 없는 item과 세션은 정답 파일에 나오지 않는다.
+- 정답 파일의 행에 `"excluded": "<이유>"`(빈 값이 아닌 것)가 있으면 정답이 아니라 **채점에서 빼는 span**이다. 데이터 세트가 심은 값이 정답이 아닌 자리에 남은 경우에 쓴다. 가리지 않아도 놓친 것이 아니고(정답 수에 들지 않는다), 가려도 오탐이 아니다: 그 글자는 `counts.masked_chars`에 넣지 않고, 뺀 span 안에만 있는 edit는 edit 수와 `edits_fp`에 넣지 않는다. 뺀 span과 다른 텍스트를 함께 가린 edit는 전과 같이 판정하고 다른 글자는 그대로 센다. 형식 규칙은 정답 span과 같다(`span_id`는 item 안에서 유일, 정답 span과 겹치면 안 된다). `counts.excluded_spans`, `counts.excluded_chars`, `counts.excluded_masked_chars`에 채점 채널의 수가 남는다.
 - `type`은 `PASSWORD`, `TOKEN`, `ACCESS_KEY`, `PRIVATE_KEY`, `SECRET` 중 하나. 유형은 분석용일 뿐 성공 판정에 쓰지 않는다. PromptGuard의 placeholder 유형(`API_KEY`, `AWS_KEY`, `JWT` 등)과는 따로 정한 것이다.
 - 위치는 item `text`의 Python 문자열(코드 포인트) 인덱스이며 `start`는 포함, `end`는 포함하지 않는다. 비어 있으면 안 된다. 한 item 안의 정답 span은 겹치면 안 되고, 맞닿는 것은 괜찮다.
 - `meta`는 `run_meta.json`에 요약되어 남으므로 비밀값을 넣지 않는다.
@@ -139,7 +140,7 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 | 키 | 정의 |
 |---|---|
 | `recall` | 다 가려진 정답 span / 전체 정답 span. 정답 span의 글자가 모두 edit로 가려졌으면(`exact`, `over`) 찾은 것이고, 일부만 가려졌거나(`partial`) 하나도 안 가려졌으면(`missed`) 못 찾은 것이다. 정답, edit, 글자, 줄은 모두 채점 채널의 것만 센다 |
-| `precision` | 가린 글자 가운데 정답 글자의 비율(글자 단위). item마다 원문 좌표에서 가린 글자(edit가 바꾼 글자의 합집합)와 그 가운데 정답 span 안에 있는 글자를 세고, 모든 item을 더해 `Σ 가린 정답 글자 / Σ 가린 글자`로 계산한다. fail-closed로 차단된 item은 edit 하나가 item 전체를 바꾸므로 item의 모든 글자를 가린 것으로 센다. 정답보다 넓게 가리면 넘친 글자만큼 낮아진다 |
+| `precision` | 가린 글자 가운데 정답 글자의 비율(글자 단위). item마다 원문 좌표에서 가린 글자(edit가 바꾼 글자의 합집합)와 그 가운데 정답 span 안에 있는 글자를 세고, 모든 item을 더해 `Σ 가린 정답 글자 / Σ 가린 글자`로 계산한다. fail-closed로 차단된 item은 edit 하나가 item 전체를 바꾸므로 item의 모든 글자를 가린 것으로 센다. 정답보다 넓게 가리면 넘친 글자만큼 낮아진다. 채점에서 빼는 span(`excluded`)의 글자는 가린 글자에 넣지 않는다 |
 | `f2` | `5PR / (4P + R)`, 위의 `precision`과 `recall`로 계산한다. 둘 다 0이면 `0.0`, 하나라도 `None`이면 `None` |
 | `exact_recall` | 예전 recall. 정확히 가린(`exact`) 정답 span / 전체 정답 span |
 | `edit_precision` | 예전 precision. 정답 span 하나 안에 들어간 edit / 전체 edit. 정답 밖으로 넘친 edit는 참양성이 아니다 |

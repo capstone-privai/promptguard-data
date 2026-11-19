@@ -234,9 +234,34 @@ def prototype_row() -> dict | None:
             "exact_recall": metrics["exact_recall"], "edit_precision": metrics["edit_precision"],
             "exact_f2": metrics["exact_f2"],
             **{k: counts.get(k) for k in ("exact", "over", "partial", "missed", "edits_fp", "masked_chars",
-                                          "masked_gold_chars")},
-            "gold": counts.get("gold_total"), "edits": counts.get("edits_total"), "items": metrics.get("items"),
+                                          "masked_gold_chars", "excluded_spans", "excluded_chars",
+                                          "excluded_masked_chars")},
+            "gold": counts.get("gold_total"), **prototype_values(runs[-1].parent / "per_span.jsonl"),
+            "edits": counts.get("edits_total"), "items": metrics.get("items"),
             "result": str(runs[-1].parent.relative_to(WORK))}
+
+
+def prototype_values(per_span: Path) -> dict:
+    """gold_values, unfound and unfound_values of an evaluate.py run, as the pipeline's collect.merge counts them."""
+    from pipeline.collect import UNFOUND, value_key
+    texts = {}
+    with (DATA / f"{STEM}.jsonl").open(encoding="utf-8") as stream:
+        for line in stream:
+            session = json.loads(line)
+            for item in session["items"]:
+                texts[(session["session_id"], item["item_id"])] = item["text"]
+    values: dict[str, bool] = {}
+    unfound = 0
+    with per_span.open(encoding="utf-8") as stream:
+        for line in stream:
+            span = json.loads(line)
+            if not span.get("scored", True):
+                continue
+            key = value_key(texts[(span["session_id"], span["item_id"])][span["start"]:span["end"]])
+            missed = span["status"] in UNFOUND
+            unfound += missed
+            values[key] = values.get(key, False) or missed
+    return {"gold_values": len(values), "unfound": unfound, "unfound_values": sum(values.values())}
 
 
 def report(found: list[dict]):
@@ -264,7 +289,9 @@ def report(found: list[dict]):
                          "exact_f2": f2(head["edit_precision"], head["exact_recall"]),
                          **{k: counts.get(k) for k in ("exact", "over", "partial", "missed", "edits_fp", "masked_chars",
                                                        "masked_gold_chars")},
-                         **{k: fact.get(k) for k in ("gold", "edits", "items", "blocked", "failed_open", "seconds")},
+                         **{k: fact.get(k) for k in ("gold", "gold_values", "unfound", "unfound_values", "edits",
+                                                     "items", "blocked", "failed_open", "seconds", "excluded_spans",
+                                                     "excluded_values", "excluded_chars", "excluded_masked_chars")},
                          "result": str(meta_path.parent.relative_to(WORK))})
     OUT.mkdir(parents=True, exist_ok=True)
     if not rows:
@@ -277,13 +304,19 @@ def report(found: list[dict]):
         writer.writerows(rows)
     labels = [("prototype", "", "프로토타입: CredSweeper만, ML 꺼짐")] + [
         (c["sha"][:7], c["date"], c["subject"].split(" from ")[0].replace("Merge pull request ", "")) for c in found]
+    for row in rows:
+        if row.get("unfound") is not None:
+            row["unfound_spans_values"] = f"{row['unfound']} / {row['unfound_values']}"
+    values = next((r for r in rows if r.get("gold_values") is not None), None)
     lines = ["# CredData-trajectory test: 시스템 커밋 × ML 모델", "",
              "지표 정의 (채점 채널 prompt, instructions, tool_output만 센다):", "",
              "- **recall** = 다 가려진 정답 span / 정답 span. 정답 span의 글자가 모두 가려졌으면 찾은 것으로 센다"
-             "(채점기의 exact와 over). 일부만 가려졌거나(partial) 하나도 안 가려졌으면(missed) 못 찾은 것이다.",
+             "(채점기의 exact와 over). 안 가려진 글자가 공백과 줄바꿈뿐이면(줄마다 가린 PEM 본문의 \\n) 노출된 것이 없으므로 "
+             "다 가려진 것으로 센다. 일부만 가려졌거나(partial) 하나도 안 가려졌으면(missed) 못 찾은 것이다.",
              "- **precision** = 가린 글자 가운데 정답 글자의 비율. item마다 원문 좌표에서 "
              "가린 글자 = edit가 바꾼 글자의 합집합, 가린 정답 글자 = 그 가운데 정답 span 안에 있는 글자를 세고, "
-             "Σ 가린 정답 글자 / Σ 가린 글자로 계산한다. fail-closed로 차단된 item은 item 글자 전체를 가린 것으로 센다.",
+             "Σ 가린 정답 글자 / Σ 가린 글자로 계산한다. fail-closed로 차단된 item은 item 글자 전체를 가린 것으로 센다. "
+             "채점에서 뺀 자리(아래)의 글자는 가린 글자에 넣지 않는다.",
              "- **F2** = 5PR / (4P + R). recall에 precision보다 4배 무게를 둔다.",
              "- 예전 지표는 summary.csv에 남겼다: exact_recall = 정확히 가린 정답 / 정답, edit_precision = 정답 span "
              "하나 안에 든 edit / 전체 edit, exact_f2 = 그 둘의 F2.", "",
@@ -291,8 +324,21 @@ def report(found: list[dict]):
              "실행)로 채점했다. 그래서 커밋마다 가리는 방식과 detector 실패 처리(그냥 보내기 또는 차단)가 다르다.", "",
              "`base`는 ML 어댑터를 끈 커밋 그대로다. `-`는 그 조합이 행렬에 없거나 결과가 없다는 뜻이다. "
              "조건은 RUN_NOTES.md.", ""]
-    for metric, fmt in (("f2", "{:.3f}"), ("recall", "{:.3f}"), ("precision", "{:.3f}"), ("blocked", "{}")):
-        title = metric if metric != "blocked" else "blocked (fail-closed로 item 전체를 가린 수)"
+    if values:
+        lines += [f"정답 span은 {values['gold']}개이고 고유 값(정답 글자열의 종류)은 {values['gold_values']}개다. 에이전트가 같은 "
+                  "파일을 여러 번 읽으면 같은 값이 span 여러 개가 된다. recall과 precision은 span 기준이다.", ""]
+    left_out = next((r for r in rows if r.get("excluded_values") is not None), None)
+    if left_out and left_out["excluded_spans"]:
+        lines += [f"채점에서 뺀 자리는 span {left_out['excluded_spans']}개, 고유 값 {left_out['excluded_values']}개, "
+                  f"{left_out['excluded_chars']}글자다(채점 채널 기준). 카탈로그를 만든 뒤 라벨 규칙이 바뀌어 정답이 아니게 된 "
+                  "슬롯에 주입했던 값이 세션 텍스트에 남은 자리이며, 정답도 오탐도 아니다: 가리지 않아도 놓친 것이 아니고, "
+                  "가려도 그 글자는 precision의 가린 글자에 넣지 않는다(같은 edit가 가린 다른 글자는 그대로 센다). "
+                  "칸마다 가린 제외 글자 수는 summary.csv의 excluded_masked_chars.", ""]
+    titles = {"blocked": "blocked (fail-closed로 item 전체를 가린 수)",
+              "unfound_spans_values": "못 찾은 정답: span 수 / 고유 값 수 (partial과 missed)"}
+    for metric, fmt in (("f2", "{:.3f}"), ("recall", "{:.3f}"), ("precision", "{:.3f}"), ("unfound_spans_values", "{}"),
+                        ("blocked", "{}")):
+        title = titles.get(metric, metric)
         lines += [f"## {title}", "", "| 시스템 | 날짜 | " + " | ".join(models) + " |", "|---|---|" + "---:|" * len(models)]
         for key, date, name in labels:
             cells = {r["model"]: r.get(metric) for r in rows if r["commit"] == key}
