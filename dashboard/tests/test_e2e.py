@@ -110,7 +110,7 @@ class E2ETest(unittest.TestCase):
                                "--gold", str(FIXTURES / "gold.jsonl"), "--lines", "0:1",
                                "--dataset", "sessions", "--system-root", "unused", "--out", str(out)])
         self.assertEqual(code, 0)
-        adapter.assert_called_once_with("worker")
+        adapter.assert_called_once_with("worker", detections_out=None)
         result = json.loads(out.read_text())
         self.assertEqual(result["sessions"], 1)
         self.assertGreater(sum(result["counts"][key] for key in ("exact", "over", "partial", "missed")), 0)

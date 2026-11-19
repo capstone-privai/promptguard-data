@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import argparse
 import inspect
-import json
-import shutil
-import subprocess
 import sys
 import unittest
 from pathlib import Path
 from typing import Any
 
-from evaluation.adapters.promptguard_adapter import CHANNEL_MAP, ModFailure, ModSession
+from evaluation.adapters.node_mod import NodeMod
+from evaluation.adapters.promptguard_adapter import CHANNEL_MAP
 from evaluation.adapters.system_root import MOD, load_worker
 from evaluation.dataset.io import load_sessions
 from evaluation.dataset.schema import CHANNELS, GOLD_TYPES, SCORED_CHANNELS, TRAINING_SPLITS, USES
-from evaluation.tests.support import (CREDSWEEPER_REASON, GOLD, HAS_CREDSWEEPER, HAS_PROMPTGUARD, SESSIONS,
-                                      SYSTEM_ROOT, finding, found)
+from evaluation.tests.mod_port import ModFailure, ModSession
+from evaluation.tests.support import (CREDSWEEPER_REASON, GOLD, HAS_CREDSWEEPER, HAS_NODE, HAS_PROMPTGUARD,
+                                      NODE_REASON, SESSIONS, SYSTEM_ROOT, finding, found, mod_at)
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 
@@ -28,34 +27,6 @@ def _script(name: str):
         return __import__(name)
     finally:
         sys.path.remove(str(SCRIPTS))
-NODE = shutil.which("node")
-
-# Loads a fresh copy of register.mjs per session (its placeholder ledger is module state) and runs each text
-# through its prompt.submit hook, with the detector call answered by the given worker result.
-NODE_DRIVER = """
-import { pathToFileURL } from 'node:url'
-let raw = ''
-for await (const chunk of process.stdin) raw += chunk
-const { mod, sessions } = JSON.parse(raw)
-const out = []
-for (const [index, steps] of sessions.entries()) {
-  const handlers = {}
-  ;(await import(pathToFileURL(mod).href + '?session=' + index)).register((name, ...rest) => { handlers[name] = rest.at(-1); return { catch() {} } })
-  const texts = []
-  for (const { text, result } of steps) {
-    const $ = {
-      env: { get: async () => undefined },
-      fs: { write: async () => {} },
-      mcp: { call: async (_server, _tool, { items }) => ({ isError: false, content: [{ type: 'text',
-        text: JSON.stringify({ ok: Boolean(result.ok), items: items.map(item => ({ id: item.id, ...result })) }) }] }) },
-    }
-    const answer = (await handlers['prompt.submit']($, { text }, async e => e)).text
-    texts.push(answer === '[PROMPTGUARD_BLOCKED: detector failure]' ? null : answer)
-  }
-  out.push(texts)
-}
-process.stdout.write(JSON.stringify(out))
-"""
 
 
 class DataContractTests(unittest.TestCase):
@@ -106,14 +77,27 @@ class DataContractTests(unittest.TestCase):
                 "allowed_use": dataset_policy.ALLOWED_USE["injected"]}}], "ml_eval")
 
 
-def _python_texts(steps: list[dict[str, Any]]) -> list[str | None]:
-    mod, texts = ModSession(), []
+Step = tuple[str | None, list[tuple[int, int, str]]]  # output text (None: blocked or failed) and its edits
+
+
+def _port_steps(steps: list[dict[str, Any]]) -> list[Step]:
+    mod, out = ModSession(), []
     for step in steps:
         try:
-            texts.append(mod.redact(step["text"], step["result"])[0])
+            text, edits = mod.redact(step["text"], step["result"])
+            out.append((text, sorted((e.start, e.end, e.replacement) for e in edits)))
         except ModFailure:
-            texts.append(None)
-    return texts
+            out.append((None, []))
+    return out
+
+
+def _node_steps(mod: NodeMod, steps: list[dict[str, Any]]) -> list[Step]:
+    session, out = mod.session(), []
+    for step in steps:
+        output = session.process(step["text"], step["result"])
+        ok = output.status == "ok"
+        out.append((output.text if ok else None, sorted((e.start, e.end, e.replacement) for e in output.edits) if ok else []))
+    return out
 
 
 def _scripted_sessions() -> list[list[dict[str, Any]]]:
@@ -157,6 +141,20 @@ def _worker_sessions() -> list[list[dict[str, Any]]]:
     return sessions + [[{"text": text, "result": detector.scan(text, "tool_result")} for text in extra]]
 
 
+# The Mod generations of the scored commits. The port (tests/mod_port.py) has the rules of cca44c4 .. e9089c2; 668c2c1
+# differs only by a public-prefix option that is off unless PG_PLACEHOLDER_PUBLIC_PREFIX=on.
+PORT_GENERATION = ("cca44c4", "9e80dc4", "e9089c2", "668c2c1")
+FAIL_CLOSED = {"424df6a": False, "d7072b4": False, "ca858be": True, "ff87b4c": True, "f07bbfb": True,
+               "cca44c4": True, "9e80dc4": True, "e9089c2": True, "668c2c1": True}
+
+
+def _mod(commit: str) -> NodeMod:
+    path = mod_at(commit)
+    if path is None:
+        raise unittest.SkipTest(f"no {commit} in the checkout's history")
+    return NodeMod(path)
+
+
 @unittest.skipIf(SYSTEM_ROOT is None, "no promptguard-claude-demoV0 checkout")
 class ModContractTests(unittest.TestCase):
     def test_channel_map_uses_the_mods_sources(self) -> None:
@@ -165,16 +163,50 @@ class ModContractTests(unittest.TestCase):
         for source in CHANNEL_MAP.values():
             self.assertIn(f"'{source}'", mod)
 
-    @unittest.skipIf(NODE is None, "node is not installed")
-    def test_redaction_matches_register_mjs(self) -> None:
+    @unittest.skipUnless(HAS_NODE, NODE_REASON)
+    def test_node_path_matches_the_port_for_its_generation(self) -> None:
+        """Text and edits from register.mjs under Node equal the port's, for every Mod with the port's rules."""
         sessions = _scripted_sessions() + (_worker_sessions() if HAS_PROMPTGUARD else [])
-        done = subprocess.run([NODE, "--input-type=module", "-e", NODE_DRIVER], capture_output=True, text=True,
-                              input=json.dumps({"mod": str(SYSTEM_ROOT / MOD), "sessions": sessions}), timeout=60)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        expected = json.loads(done.stdout)
-        self.assertEqual([_python_texts(steps) for steps in sessions], expected)
-        self.assertNotIn(None, expected[1])  # valid findings were substituted
-        self.assertIn(None, expected[2])  # the failure cases did fail
+        expected = [_port_steps(steps) for steps in sessions]
+        self.assertNotIn(None, [text for text, _ in expected[1]])  # valid findings were substituted
+        self.assertIn(None, [text for text, _ in expected[2]])  # the failure cases did fail
+        for commit in PORT_GENERATION:
+            with self.subTest(commit=commit):
+                mod = _mod(commit)
+                self.assertEqual([_node_steps(mod, steps) for steps in sessions], expected)
+                mod.close()
+
+    @unittest.skipUnless(HAS_NODE, NODE_REASON)
+    def test_checkout_mod_matches_the_port(self) -> None:
+        mod = NodeMod(SYSTEM_ROOT / MOD)
+        self.assertEqual([_node_steps(mod, steps) for steps in _scripted_sessions()],
+                         [_port_steps(steps) for steps in _scripted_sessions()])
+
+    @unittest.skipUnless(HAS_NODE, NODE_REASON)
+    def test_each_generation_drives(self) -> None:
+        """Every scored commit's Mod runs under the driver, with its own failure handling and remask passes."""
+        repeated, again = "A_PASSWORD=Qw3rTy9uIo\n", "echo Qw3rTy9uIo\n"
+        part_text = "P=Qw3rTy9uIo7Hg2Lk5Z S=password-of-mine\n"
+        cut = "cut: uIo7Hg2Lk5, word password-of\n"
+        steps = [{"text": repeated, "result": found(finding(repeated, "Qw3rTy9uIo"))},
+                 {"text": again, "result": found()},
+                 {"text": part_text, "result": found(finding(part_text, "Qw3rTy9uIo7Hg2Lk5Z"),
+                                                     finding(part_text, "password-of-mine"))},
+                 {"text": cut, "result": found()},
+                 {"text": repeated, "result": {"ok": False, "findings": [], "errors": ["ADAPTER_FAILURE:x"]}}]
+        for commit, closed in FAIL_CLOSED.items():
+            with self.subTest(commit=commit):
+                mod = _mod(commit)
+                self.assertEqual(mod.fail_closed, closed)
+                session = mod.session()
+                outputs = [session.process(step["text"], step["result"]) for step in steps]
+                self.assertEqual(outputs[1].text, "echo [PASSWORD_1]\n")  # remaskText: every generation
+                partial = commit not in ("424df6a", "d7072b4", "ca858be")  # remaskPartial since ff87b4c
+                self.assertEqual("uIo7Hg2Lk5" not in outputs[3].text, partial)
+                # cca44c4: a run of a value that is only words is not masked as a part
+                self.assertEqual("password-of" in outputs[3].text, commit not in ("ff87b4c", "f07bbfb") or not partial)
+                self.assertEqual(outputs[4].status, "blocked" if closed else "failed_open")
+                mod.close()
 
 
 if __name__ == "__main__":

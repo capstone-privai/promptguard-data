@@ -8,8 +8,11 @@ ROOT = Path(__file__).resolve().parents[2]  # metric-detection
 EVALUATION = ROOT / "evaluation"
 
 # Only these load the system under evaluation (promptguard-claude-demoV0) from its checkout.
-SYSTEM_MODULES = ("evaluation.adapters.system_root", "evaluation.adapters.promptguard_adapter")
+SYSTEM_MODULES = ("evaluation.adapters.system_root", "evaluation.adapters.promptguard_adapter",
+                  "evaluation.adapters.node_mod")
 FORBIDDEN_EVERYWHERE = ("subprocess", "socket", "urllib", "http")
+# The Mod is JavaScript: node_mod.py alone starts a process, `node` running the checkout's register.mjs.
+ALLOWED = {Path("adapters", "node_mod.py"): {"subprocess"}}
 
 
 def _is_module(base: Path, dotted: str) -> bool:
@@ -59,8 +62,9 @@ class DependencyRuleTests(unittest.TestCase):
 
     def test_no_subprocess_or_network(self) -> None:
         for path in source_files(EVALUATION):
+            allowed = ALLOWED.get(path.relative_to(EVALUATION), set())
             offending = [name for name in imported_modules(path, ROOT)
-                         if any(_top(name, bad) for bad in FORBIDDEN_EVERYWHERE)]
+                         if any(_top(name, bad) for bad in FORBIDDEN_EVERYWHERE) and name not in allowed]
             self.assertEqual(offending, [], str(path))
 
 

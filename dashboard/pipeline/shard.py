@@ -2,6 +2,7 @@
 
   validate  check a sessions/gold pair with the scorer's validator and report each session's scored item count
   run       evaluate a range of sessions with a PromptGuard checkout and write the dashboard's counts for it
+            (--detections-out also saves the detector results; --replay-detections scores saved ones, no detector)
 
 Each shard is its own process: a process can import one checkout's detector package only
 (evaluation.adapters.system_root.load_worker), and the shards of a big dataset run side by side. The output file is
@@ -87,11 +88,16 @@ def evaluate_range(args: argparse.Namespace) -> int:
     started = time.perf_counter()
     low, high = (int(part) for part in args.lines.split(":"))
     sessions = load_range(Path(args.sessions), Path(args.gold), low, high)
+    partial = Path(args.detections_out + ".partial") if args.detections_out else None
     try:
+        from evaluation.adapters.node_mod import ModDriverError
         from evaluation.adapters.promptguard_adapter import PromptGuardAdapter
 
-        adapter = PromptGuardAdapter(load_worker(args.system_root))
-    except (SystemRootError, ValueError) as exc:
+        if args.replay_detections:
+            adapter = PromptGuardAdapter.replaying(args.replay_detections, args.system_root)
+        else:
+            adapter = PromptGuardAdapter(load_worker(args.system_root), detections_out=partial)
+    except (SystemRootError, ValueError, FileNotFoundError, ModDriverError) as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return EXIT_CONFIG
     try:
@@ -99,6 +105,11 @@ def evaluate_range(args: argparse.Namespace) -> int:
     except ScoringError as exc:
         print(f"scoring failed: {exc}", file=sys.stderr)
         return EXIT_SCORING
+    finally:
+        if callable(close := getattr(adapter, "close", None)):  # a test double may have none
+            close()
+    if partial is not None:
+        os.replace(partial, args.detections_out)
 
     collector = Collector(args.dataset, group_of(args.dataset))
     lookup = {(session.session_id, item.item_id): (session, item) for session in sessions for item in session.items}
@@ -126,6 +137,10 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--lines", required=True, help="session range low:high in file order")
     run.add_argument("--system-root", required=True, help="PromptGuard checkout (src/detector, the mod's register.mjs)")
     run.add_argument("--gitleaks-cache", help="SQLite file caching gitleaks runs across shards and commits")
+    saved = run.add_mutually_exclusive_group()
+    saved.add_argument("--detections-out", help="write every scanned item's detector result here (.jsonl.gz)")
+    saved.add_argument("--replay-detections", help="score saved detections (a folder of .jsonl.gz) instead of "
+                                                   "running the detector; the Mod still comes from --system-root")
     args = parser.parse_args(argv)
     return cmd_validate(args) if args.command == "validate" else cmd_run(args)
 

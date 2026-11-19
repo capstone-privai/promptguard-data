@@ -14,8 +14,17 @@ looked up under $MATRIX_BUNDLES (default runs/creddata-traj-eval/bundles).
   python3 metric-detection/scripts/creddata_matrix.py plan
   python3 metric-detection/scripts/creddata_matrix.py run --jobs 3 [--models base v10] [--commits e9089c2] [--device cuda]
   python3 metric-detection/scripts/creddata_matrix.py report
+  python3 metric-detection/scripts/creddata_matrix.py rescore --from-detections [--models base] [--commits 668c2c1]
 
-Work files and results are under runs/creddata-traj-eval (git-ignored); report writes
+`run` also saves every scanned item's detector result (the ensemble's final findings, or its failure) under
+runs/creddata-traj-eval/detections/<sha7>/<model>/<shard>.jsonl.gz, with cell.json (the cell's identity). `rescore
+--from-detections` scores those again with each commit's own Mod and the current scorer, without running any
+detector (no GPU, no model weights): a Mod or metric change needs no new detection run. It replaces the cell's result.
+
+Each commit is scored with its own detector and its own Native Mod (register.mjs under Node, see
+metric-detection/evaluation/adapters/node_mod.py), so placeholder, remask and fail-closed rules are the commit's.
+
+Work files, detections and results are under runs/creddata-traj-eval (git-ignored); report writes
 metric-detection/results/creddata-trajectory/summary.{csv,md}, with the CredSweeper-only prototype
 (`evaluate.py run --system credsweeper --ml off --out runs/creddata-traj-eval/results/credsweeper-mloff`) as first row.
 """
@@ -39,6 +48,7 @@ WORK = ROOT / "runs/creddata-traj-eval"
 SYSTEM_REPO = ROOT.parent / "promptguard-claude-demoV0"
 MODEL_REPO = ROOT.parent / "promptguard-model"
 BUNDLES = Path(os.environ.get("MATRIX_BUNDLES") or WORK / "bundles")
+DETECTIONS = WORK / "detections"
 STEM = "sessions_from_CredData-trajectory"
 DATA = ROOT / "metric-detection/data_test"
 OUT = ROOT / "metric-detection/results/creddata-trajectory"
@@ -163,6 +173,10 @@ def result_dir(commit: dict, model: str) -> Path:
     return WORK / "results" / commit["sha"][:7] / model
 
 
+def detections_dir(commit: dict, model: str) -> Path:
+    return DETECTIONS / commit["sha"][:7] / model
+
+
 def run_one(commit: dict, model: str, jobs: int, datasets, bench, device: str | None) -> dict:
     from pipeline import runner
     out = result_dir(commit, model)
@@ -178,12 +192,29 @@ def run_one(commit: dict, model: str, jobs: int, datasets, bench, device: str | 
     identity = {"model": "base"} if model == "base" else {**model_identity(model), "adapter": info["ml"]}
     config_hash = digest(root / "src/detector/detector.json")
     fingerprint = f"{commit['sha'][:12]}:{model}:{config_hash[:12]}:{identity.get('weights_sha256', '')[:12]}"
+    cell = {"sha": commit["sha"], "date": commit["date"], "subject": commit["subject"], "config": model,
+            "detector_json_sha256": config_hash, "detector_adapters": info["adapters"], **identity}
+    saved = detections_dir(commit, model)
+    saved.mkdir(parents=True, exist_ok=True)
+    (saved / "cell.json").write_text(json.dumps({"commit": cell, "system_fingerprint": fingerprint}, indent=2) + "\n")
     return runner.evaluate(
-        root, datasets, out, python=str(PYTHON), jobs=jobs, cache_dir=WORK / "validated",
-        commit={"sha": commit["sha"], "date": commit["date"], "subject": commit["subject"], "config": model,
-                "detector_json_sha256": config_hash, "detector_adapters": info["adapters"], **identity},
+        root, datasets, out, python=str(PYTHON), jobs=jobs, cache_dir=WORK / "validated", commit=cell,
         system_fingerprint=fingerprint, bench=bench, resume_dir=WORK / "resume" / commit["sha"][:7] / model,
-        gitleaks_cache=WORK / "gitleaks-cache.sqlite")
+        gitleaks_cache=WORK / "gitleaks-cache.sqlite", detections_dir=saved)
+
+
+def rescore_one(commit: dict, model: str, jobs: int, datasets, bench, results: Path) -> dict:
+    """Score a cell's saved detections again with the commit's own Mod; writes results/<sha7>/<model>."""
+    from pipeline import runner
+    saved = detections_dir(commit, model)
+    cell = json.loads((saved / "cell.json").read_text())
+    if not list(saved.glob("*.jsonl.gz")):
+        raise FileNotFoundError(f"no saved detections in {saved}")
+    root, _ = checkout(commit, "base", None)  # the Mod is the commit's, whatever model the detections came from
+    return runner.evaluate(
+        root, datasets, results / commit["sha"][:7] / model, python=str(PYTHON), jobs=jobs,
+        cache_dir=WORK / "validated", commit={**cell["commit"], "replayed_from": str(saved.relative_to(WORK))},
+        system_fingerprint=cell["system_fingerprint"] + ":replay", bench=bench, replay_detections=saved)
 
 
 def f2(precision, recall):
@@ -256,6 +287,8 @@ def report(found: list[dict]):
              "- **F2** = 5PR / (4P + R). recall에 precision보다 4배 무게를 둔다.",
              "- 예전 지표는 summary.csv에 남겼다: exact_recall = 정확히 가린 정답 / 정답, edit_precision = 정답 span "
              "하나 안에 든 edit / 전체 edit, exact_f2 = 그 둘의 F2.", "",
+             "각 커밋은 그 커밋의 detector와 그 커밋의 Native Mod(`src/native-mod/hooks/register.mjs`, Node v22.23.1에서 "
+             "실행)로 채점했다. 그래서 커밋마다 가리는 방식과 detector 실패 처리(그냥 보내기 또는 차단)가 다르다.", "",
              "`base`는 ML 어댑터를 끈 커밋 그대로다. `-`는 그 조합이 행렬에 없거나 결과가 없다는 뜻이다. "
              "조건은 RUN_NOTES.md.", ""]
     for metric, fmt in (("f2", "{:.3f}"), ("recall", "{:.3f}"), ("precision", "{:.3f}"), ("blocked", "{}")):
@@ -274,7 +307,11 @@ def report(found: list[dict]):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=("plan", "run", "report"))
+    parser.add_argument("command", choices=("plan", "run", "report", "rescore"))
+    parser.add_argument("--from-detections", action="store_true",
+                        help="rescore: score the saved detections (the only source rescore has; required)")
+    parser.add_argument("--results", type=Path, default=WORK / "results",
+                        help="rescore: results root to write <sha7>/<model> into (default %(default)s)")
     parser.add_argument("--models", nargs="*", help="only these configurations of the matrix")
     parser.add_argument("--commits", nargs="*", help="only these commits of the matrix (sha prefixes)")
     parser.add_argument("--device", help="device of the enabled ML adapter (e.g. cuda); default the commit's own")
@@ -303,20 +340,29 @@ def main():
     WORK.mkdir(parents=True, exist_ok=True)
     GitleaksCache(WORK / "gitleaks-cache.sqlite").close()  # switch the file to WAL before shards open it
     log = (WORK / "matrix.log").open("a", encoding="utf-8")
+    if args.command == "rescore" and not args.from_detections:
+        parser.error("rescore needs --from-detections")
     for model in ["base", *MODELS]:  # model by model, so the first pass over the commits fills the gitleaks cache
         for commit in [c for c in found if model in c["run"]]:
+            if args.command == "rescore" and not (detections_dir(commit, model) / "cell.json").is_file():
+                continue
             started = time.time()
             record = {"at": time.strftime("%FT%TZ", time.gmtime()), "commit": commit["sha"][:7], "model": model,
                       "device": args.device}
+            if args.command == "rescore":
+                record["replay"] = True
             try:
-                headline = run_one(commit, model, args.jobs, datasets, bench, args.device)
+                headline = (rescore_one(commit, model, args.jobs, datasets, bench, args.results)
+                            if args.command == "rescore" else
+                            run_one(commit, model, args.jobs, datasets, bench, args.device))
                 record.update(status="ok", seconds=round(time.time() - started), **headline["datasets"][STEM])
             except Exception as error:  # one failed combination must not stop the rest; it is listed in the log
                 record.update(status="failed", error=f"{type(error).__name__}: {error}"[:500])
             log.write(json.dumps(record) + "\n")
             log.flush()
             print(json.dumps(record), flush=True)
-    report(commits())
+    if args.command == "run" or args.results == WORK / "results":
+        report(commits())
 
 
 if __name__ == "__main__":

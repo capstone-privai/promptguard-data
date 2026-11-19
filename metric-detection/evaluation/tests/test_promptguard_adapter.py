@@ -6,14 +6,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from evaluation.adapters.promptguard_adapter import BLOCKED, CHANNEL_MAP, PromptGuardAdapter
+from evaluation.adapters.promptguard_adapter import CHANNEL_MAP, PromptGuardAdapter
 from evaluation.dataset.io import load_sessions
 from evaluation.dataset.schema import GoldSpan, Item, Session
 from evaluation.run import evaluate, evaluate_sessions
 from evaluation.scorer.edits import verify
 from evaluation.scorer.span_scoring import SpanStatus, score_item
-from evaluation.tests.support import (GOLD, HAS_PROMPTGUARD, SESSIONS, SKIP_REASON, TOOL_INPUT_ITEM, ScriptedWorker,
-                                      finding, found, write_tool_input_fixture)
+from evaluation.tests.support import (BLOCKED_TEXT, GOLD, HAS_NODE, HAS_PROMPTGUARD, NODE_REASON, SESSIONS, SKIP_REASON,
+                                      TOOL_INPUT_ITEM, ScriptedWorker, finding, found, mod_at, write_tool_input_fixture)
 
 
 def _session(*texts: str, channel: str = "tool_output") -> Session:
@@ -88,22 +88,30 @@ class PromptGuardAdapterTests(unittest.TestCase):
         self.assertEqual(described["processed_channels"], ["prompt", "instructions", "tool_output"])
         self.assertEqual(described["channel_map"], CHANNEL_MAP)
         self.assertEqual(described["failed_open_items"], 0)
+        self.assertEqual((described["on_detector_failure"], described["mod"]["fail_closed"]), ("block", True))
+        self.assertTrue(described["mod"]["node"].startswith("v"))
         self.assertEqual(described["detector"], self.adapter.detector.describe())
         self.assertIn("credsweeper", [adapter["name"] for adapter in described["detector"]["adapters"]])
 
 
+OLD_MOD = mod_at("424df6a")  # the Mod before fail-closed (ca858be): a failed scan made its hook throw
+
+
+@unittest.skipUnless(HAS_NODE and OLD_MOD, NODE_REASON if not HAS_NODE else "no 424df6a in the checkout's history")
 class FailOpenTests(unittest.TestCase):
-    """on_failure="pass" (legacy launcher): when the mod's hook throws, Claude Code skips it and the model gets
+    """A Mod without fail-closed (424df6a, d7072b4): when its hook throws, Claude Code skips it and the model gets
     the text unchanged."""
 
     TEXT = "DB_PASSWORD=mysecret123\n"
 
     def _assert_failed_open(self, result) -> None:
-        adapter = PromptGuardAdapter(ScriptedWorker({self.TEXT: result}), on_failure="pass")
+        adapter = PromptGuardAdapter(ScriptedWorker({self.TEXT: result}), mod=OLD_MOD)
         output = adapter.run_session(_session(self.TEXT))[0]
         self.assertEqual((output.text, output.edits), (self.TEXT, []))
         self.assertIsInstance(output.elapsed_ms, float)
-        self.assertEqual((adapter.describe()["failed_open_items"], adapter.describe()["blocked_items"]), (1, 0))
+        described = adapter.describe()
+        self.assertEqual((described["failed_open_items"], described["blocked_items"], described["on_detector_failure"]),
+                         (1, 0, "pass"))
 
     def test_unsafe_result(self) -> None:
         self._assert_failed_open({"ok": False, "findings": [], "errors": ["SPAN_TOO_LARGE"]})
@@ -116,15 +124,22 @@ class FailOpenTests(unittest.TestCase):
             with self.subTest(override=override):
                 self._assert_failed_open(found(finding(self.TEXT, "mysecret123", **override)))
 
-    def test_a_failed_result_takes_no_numbers(self) -> None:
+    def test_a_failed_result_takes_a_number_in_the_old_mod_only(self) -> None:
         first, second = "key=abcdefgh\n", "other=zzzzzzzz\n"
-        # The two findings overlap. The mod checks every span before numbering any, so the ledger stays empty.
+        # The two findings overlap. 424df6a numbers a finding before it reaches the bad one, so the failed text
+        # takes [PASSWORD_1]; later Mods check every span before numbering any.
         worker = ScriptedWorker({first: found(finding(first, "abcdef", value_hash="a"), finding(first, "efgh")),
                                  second: found(finding(second, "zzzzzzzz"))})
-        outputs = PromptGuardAdapter(worker, on_failure="pass").run_session(_session(first, second))
+        outputs = PromptGuardAdapter(worker, mod=OLD_MOD).run_session(_session(first, second))
         self.assertEqual(outputs[0].text, first)
+        self.assertEqual(outputs[1].text, "other=[PASSWORD_2]\n")
+        outputs = PromptGuardAdapter(worker).run_session(_session(first, second))
+        self.assertEqual(outputs[0].text, BLOCKED_TEXT)
         self.assertEqual(outputs[1].text, "other=[PASSWORD_1]\n")
 
+
+@unittest.skipUnless(HAS_NODE, NODE_REASON)
+class RemaskTests(unittest.TestCase):
     def test_known_values_are_remasked_with_edits(self) -> None:
         first, second = "A_PASSWORD=Qw3rTy9uIo\n", "🔐 echo Qw3rTy9uIo B_PASSWORD=Zx8cVb7nMm Qw3rTy9uIo\n"
         worker = ScriptedWorker({first: found(finding(first, "Qw3rTy9uIo")),
@@ -140,6 +155,7 @@ class FailOpenTests(unittest.TestCase):
         worker = ScriptedWorker({text: found(finding(text, "Qw3rTy9uIo"), finding(text, "A", "api key"))})
         output = PromptGuardAdapter(worker).run_session(_session(text))[0]
         self.assertEqual(output.text, "[[API_KEY_1]PI_KEY_1]=[P[API_KEY_1]SSWORD_1]\n")
+        self.assertEqual([(edit.start, edit.end) for edit in output.edits], [(0, 1), (2, 12)])
         self.assertEqual(verify(text, output.text, output.edits), output.edits)
 
     def test_fault_injection_mode_is_refused(self) -> None:
@@ -147,13 +163,10 @@ class FailOpenTests(unittest.TestCase):
             PromptGuardAdapter(ScriptedWorker({}))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
+@unittest.skipUnless(HAS_NODE, NODE_REASON)
 class BlockOnFailureTests(unittest.TestCase):
-    """The default, Runtime V1: the Final Guard blocks a request whose detector call fails, so the item reaches
-    the model as nothing; scored as one edit over the whole text."""
+    """A fail-closed Mod (ca858be and later; the checkout's): a scan that fails sends the blocked marker instead of the
+    text, so the item reaches the model as nothing; scored as one edit over the whole text."""
 
     TEXT = "DB_PASSWORD=mysecret123\n"
 
@@ -163,11 +176,17 @@ class BlockOnFailureTests(unittest.TestCase):
 
     def test_failure_masks_the_whole_item(self) -> None:
         adapter, output = self._run(RuntimeError("ml-v9 timed out"))
-        self.assertEqual(output.text, BLOCKED)
+        self.assertEqual(output.text, BLOCKED_TEXT)
         self.assertEqual(verify(self.TEXT, output.text, output.edits), output.edits)
         described = adapter.describe()
         self.assertEqual((described["on_detector_failure"], described["blocked_items"],
                           described["failed_open_items"]), ("block", 1, 0))
+
+    def test_bad_findings_block(self) -> None:
+        for override in ({"offset_unit": "code_points"}, {"end": 99}, {"start": None}):
+            with self.subTest(override=override):
+                _adapter, output = self._run(found(finding(self.TEXT, "mysecret123", **override)))
+                self.assertEqual(output.text, BLOCKED_TEXT)
 
     def test_gold_in_a_blocked_item_is_over_masked_not_exposed(self) -> None:
         _adapter, output = self._run({"ok": False, "findings": [], "errors": ["ADAPTER_FAILURE:ml-v9"]})
@@ -176,9 +195,16 @@ class BlockOnFailureTests(unittest.TestCase):
         score = score_item("x", 0, "tool_output", self.TEXT, output.text, output.edits, gold)
         self.assertEqual([result.status for result in score.gold_results], [SpanStatus.OVER])
 
-    def test_unknown_mode(self) -> None:
-        with self.assertRaises(ValueError):
-            PromptGuardAdapter(ScriptedWorker({}), on_failure="ignore")
+    def test_old_mod_is_not_fail_closed_but_ca858be_is(self) -> None:
+        for commit, expected in (("424df6a", "pass"), ("d7072b4", "pass"), ("ca858be", "block")):
+            mod = mod_at(commit)
+            if mod is None:
+                self.skipTest(f"no {commit} in the checkout's history")
+            with self.subTest(commit=commit):
+                adapter = PromptGuardAdapter(ScriptedWorker({self.TEXT: RuntimeError("x")}), mod=mod)
+                output = adapter.run_session(_session(self.TEXT))[0]
+                self.assertEqual(adapter.describe()["on_detector_failure"], expected)
+                self.assertEqual(output.text, self.TEXT if expected == "pass" else BLOCKED_TEXT)
 
 
 class RequiredAdaptersTests(unittest.TestCase):
@@ -206,3 +232,7 @@ class RequiredAdaptersTests(unittest.TestCase):
             PromptGuardAdapter(worker, required_adapters=["ml-v9"])
         with self.assertRaisesRegex(ValueError, r"ml-qwen \(not configured\)"):
             PromptGuardAdapter(worker, required_adapters=["ml-qwen"])
+
+
+if __name__ == "__main__":
+    unittest.main()

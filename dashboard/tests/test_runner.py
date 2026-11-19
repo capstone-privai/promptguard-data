@@ -145,7 +145,7 @@ class EvaluateSnapshotTest(unittest.TestCase):
                 return weights
 
             def fake_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, *, shard_script,
-                            gitleaks_cache, checkpoint_dir):
+                            gitleaks_cache, checkpoint_dir, detections_dir=None, replay_detections=None):
                 self.assertNotEqual(shard_script, runner.SHARD_SCRIPT)
                 for shard in shards:
                     self.assertEqual(shard.dataset.sessions.read_bytes(), original)

@@ -36,13 +36,14 @@ from evaluation.dataset.io import file_sha256, gold_path_for
 SHARD_SCRIPT = DASHBOARD_ROOT / "pipeline" / "shard.py"
 # Code whose change changes the numbers: the scorer, and the parts of this pipeline that count and pick examples.
 # Display names (catalog.py) are not here: index.json carries the current ones.
-SCORING_CODE = [*sorted((METRIC_DETECTION / "evaluation").rglob("*.py")),
+SCORING_CODE = [*sorted([*(METRIC_DETECTION / "evaluation").rglob("*.py"), *(METRIC_DETECTION / "evaluation").rglob("*.mjs")]),
                 *(DASHBOARD_ROOT / "pipeline" / name
                   for name in ("__init__.py", "paths.py", "runner.py", "taxonomy.py", "collect.py", "shard.py",
                               "gitleaks_cache.py"))]
 # 2: results pin the evaluated inputs to their key. 3: items rows and counts carry masked_chars and masked_gold_chars;
 # the headline is covered recall and character precision (exact recall and edit precision kept beside them).
-SUMMARY_VERSION = 3
+# 4: each commit's own Mod (register.mjs under Node) does the substitution, instead of a Python port of one Mod.
+SUMMARY_VERSION = 4
 
 
 class EvaluationError(Exception):
@@ -222,8 +223,16 @@ def plan(datasets: Sequence[Dataset], weights: dict[str, list[int]], jobs: int) 
 def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, python: str, jobs: int,
                progress: Callable[[int, int], None], cancelled: Callable[[], bool], *,
                shard_script: Path = SHARD_SCRIPT, gitleaks_cache: Path | None = None,
-               checkpoint_dir: Path | None = None) -> None:
+               checkpoint_dir: Path | None = None, detections_dir: Path | None = None,
+               replay_detections: Path | None = None) -> None:
     cache_args = ["--gitleaks-cache", str(gitleaks_cache)] if gitleaks_cache else []
+    if replay_detections is not None:
+        cache_args += ["--replay-detections", str(replay_detections)]
+
+    def detections_args(shard):
+        if detections_dir is None:
+            return []
+        return ["--detections-out", str(detections_dir / f"{shard.name}.jsonl.gz")]
     total = sum(shard.weight for shard in shards)
     done = 0
     pending = list(shards)
@@ -261,6 +270,8 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
                 saved = json.loads((checkpoint_dir / f"{shard.name}.json").read_text(encoding="utf-8"))
                 if saved.get("identity") != identity(shard) or not valid(shard, saved.get("payload")):
                     continue
+                if detections_dir is not None and not (detections_dir / f"{shard.name}.jsonl.gz").is_file():
+                    continue  # its saved detections are gone: run it again
             except (OSError, ValueError, TypeError, KeyError, IndexError):
                 continue
             write_json(work_dir / "shards" / f"{shard.name}.json", saved["payload"])
@@ -278,7 +289,7 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
                     [python, str(shard_script), "run", "--dataset", shard.dataset.stem,
                      "--sessions", str(shard.dataset.sessions), "--gold", str(shard.dataset.gold),
                      "--lines", f"{shard.low}:{shard.high}", "--system-root", str(system_root),
-                     "--out", str(work_dir / "shards" / f"{shard.name}.json"), *cache_args],
+                     "--out", str(work_dir / "shards" / f"{shard.name}.json"), *cache_args, *detections_args(shard)],
                     stdout=log, stderr=subprocess.STDOUT, env=child_env())
                 running.append((shard, process, log))
             time.sleep(0.5)
@@ -338,9 +349,12 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
              cache_dir: Path, commit: dict[str, Any], system_fingerprint: str, bench: dict[str, Any],
              progress: Callable[[int, int], None] = lambda done, total: None,
              cancelled: Callable[[], bool] = lambda: False, gitleaks_cache: Path | None = None,
-             resume_dir: Path | None = None) -> dict[str, Any]:
+             resume_dir: Path | None = None, detections_dir: Path | None = None,
+             replay_detections: Path | None = None) -> dict[str, Any]:
     """Evaluate, merge and write out_dir; return the headline numbers (overall and per dataset).
 
+    detections_dir: save each shard's detector results there (<shard>.jsonl.gz). replay_detections: a folder of such
+    files to score instead of running the detector (the checkout's Mod still runs).
     gitleaks_cache: SQLite file the shards share for gitleaks runs (gitleaks_cache.py); None runs gitleaks per text."""
     started = time.perf_counter()
     out_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -356,8 +370,11 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
             namespace = hashlib.sha256(f'{system_fingerprint}|{bench["fingerprint"]}'.encode()).hexdigest()
             checkpoint_dir = resume_dir / namespace
         try:
+            if detections_dir is not None:
+                detections_dir.mkdir(parents=True, exist_ok=True)
             run_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, shard_script=shard_script,
-                       gitleaks_cache=gitleaks_cache, checkpoint_dir=checkpoint_dir)
+                       gitleaks_cache=gitleaks_cache, checkpoint_dir=checkpoint_dir, detections_dir=detections_dir,
+                       replay_detections=replay_detections)
         except (EvaluationError, KeyboardInterrupt, SystemExit):
             shutil.copytree(work_dir / "logs", out_dir.with_name(out_dir.name + ".failed-logs"), dirs_exist_ok=True)
             raise

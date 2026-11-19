@@ -63,10 +63,6 @@ def build_parser() -> argparse.ArgumentParser:
                                         "whatever is scanned")
     run.add_argument("--require-adapters", help="comma-separated PromptGuard detector adapters that must be running, "
                                                 "e.g. ml-v9; stops if the system skipped one (promptguard only)")
-    run.add_argument("--on-detector-failure", choices=("block", "pass"),
-                     help="an item whose detector call fails: block (Runtime V1's Final Guard blocks the request; "
-                          "scored as one edit over the whole text) or pass (legacy launcher: the text goes out "
-                          "unchanged). promptguard only; default: block")
     run.add_argument("--findings", help="findings file from metric-detection/scripts/run_gitleaks.py (gitleaks only, required)")
     run.add_argument("--out", default=str(DEFAULT_OUT), help="parent folder for run folders (default: metric-detection/results)")
     run.add_argument("--debug", action="store_true", help="also write debug/ with raw candidates (contains secrets)")
@@ -96,8 +92,8 @@ def default_use(args: argparse.Namespace) -> str:
 
 def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path | None]:
     """Return an adapter factory, the run folder label and the system checkout (if any)."""
-    if args.system != "promptguard" and (args.system_root or args.require_adapters or args.on_detector_failure):
-        raise ConfigError("--system-root, --require-adapters and --on-detector-failure apply to --system promptguard only")
+    if args.system != "promptguard" and (args.system_root or args.require_adapters):
+        raise ConfigError("--system-root and --require-adapters apply to --system promptguard only")
     if args.system != "credsweeper" and (args.ml or args.channels):
         raise ConfigError("--ml and --channels apply to --system credsweeper only")
     if (args.system == "gitleaks") != bool(args.findings):
@@ -112,9 +108,8 @@ def adapter_factory(args: argparse.Namespace) -> tuple[AdapterFactory, str, Path
         except SystemRootError as exc:
             raise ConfigError(str(exc)) from exc
         required = [name.strip() for name in (args.require_adapters or "").split(",") if name.strip()]
-        on_failure = args.on_detector_failure or "block"
-        return (lambda: PromptGuardAdapter(worker, debug=args.debug, on_failure=on_failure,
-                                           required_adapters=required)), "promptguard", root
+        # A failed detector call is handled as the checkout's own Mod does (blocked or passed unchanged).
+        return (lambda: PromptGuardAdapter(worker, debug=args.debug, required_adapters=required)), "promptguard", root
     if args.system == "credsweeper":
         ml = args.ml == "on"
         label = f"credsweeper_ml-{'on' if ml else 'off'}"

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import atexit
 import importlib.util
 import json
 import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -83,6 +86,28 @@ class ScriptedWorker:
                 return result
 
         self.load_detector = Detector
+
+
+BLOCKED_TEXT = "[PROMPTGUARD_BLOCKED: detector failure]"  # what a fail-closed Mod (ca858be and later) sends instead
+HAS_NODE = shutil.which("node") is not None
+NODE_REASON = "node is not installed (the PromptGuard Mod is JavaScript)"
+_MODS = Path(tempfile.mkdtemp(prefix="pg-mods-"))
+atexit.register(shutil.rmtree, _MODS, True)
+
+
+def mod_at(commit: str) -> Path | None:
+    """register.mjs as of a system commit (from the checkout's git history), or None without the commit."""
+    target = _MODS / commit / "hooks" / "register.mjs"
+    if not target.is_file():
+        if SYSTEM_ROOT is None:
+            return None
+        shown = subprocess.run(["git", "-C", str(SYSTEM_ROOT), "show", f"{commit}:src/native-mod/hooks/register.mjs"],
+                               capture_output=True)
+        if shown.returncode:
+            return None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(shown.stdout)
+    return target
 
 
 def require_credsweeper() -> None:

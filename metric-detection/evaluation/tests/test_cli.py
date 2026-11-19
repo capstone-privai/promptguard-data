@@ -232,9 +232,7 @@ class CliTests(unittest.TestCase):
                  ["--system", "promptguard", "--threshold", "0.5"],
                  ["--system", "promptguard", "--detectors", "credsweeper"],
                  ["--system", "promptguard", "--consensus", "any"],
-                 ["--system", "oracle", "--require-adapters", "ml-v9"],
-                 ["--system", "oracle", "--on-detector-failure", "pass"],
-                 ["--system", "promptguard", "--on-detector-failure", "ignore"]]
+                 ["--system", "oracle", "--require-adapters", "ml-v9"]]
         for extra in cases:
             code, _output = self._main("run", *DATA, "--out", str(self.out_dir), *extra)
             self.assertEqual(code, EXIT_CONFIG, extra)
