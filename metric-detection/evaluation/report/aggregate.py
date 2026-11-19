@@ -81,17 +81,32 @@ def aggregate(
     gold_chars = sum(result.end - result.start for _channel, result in gold)
     exposed_chars = sum(result.exposed_chars for _channel, result in gold)
 
-    recall = ratio(exact, len(gold))
-    precision = ratio(edits_tp, len(edits))
+    masked_chars = sum(score.masked_chars for score in scored)
+    masked_gold_chars = sum(score.masked_gold_chars for score in scored)
+    # Excluded spans (gold-file rows marked `excluded`): in no metric; counted here so a report can say how many.
+    channel_of = {(session.session_id, item.item_id): item.channel for session in sessions for item in session.items}
+    left_out = [span for session in sessions for span in session.excluded
+                if channel_of.get((session.session_id, span.item_id)) in SCORED_CHANNELS]
 
-    def recall_where(predicate) -> float | None:
+    # Headline: covered recall (a gold span counts when an edit masks all of it, exact or over) and character
+    # precision (the share of masked characters that are secret characters; a blocked item masks all of its text).
+    recall = ratio(exact + over, len(gold))
+    precision = ratio(masked_gold_chars, masked_chars)
+    # Earlier definitions, kept as secondary numbers: exact-span recall and edit-level precision.
+    exact_recall = ratio(exact, len(gold))
+    edit_precision = ratio(edits_tp, len(edits))
+
+    def recall_where(predicate, found=(SpanStatus.EXACT, SpanStatus.OVER)) -> float | None:
         selected = [result for channel, result in gold if predicate(channel, result)]
-        return ratio(sum(1 for result in selected if result.status is SpanStatus.EXACT), len(selected))
+        return ratio(sum(1 for result in selected if result.status in found), len(selected))
 
     return {
         "recall": recall,
         "precision": precision,
         "f2": f2_score(precision, recall),
+        "exact_recall": exact_recall,
+        "edit_precision": edit_precision,
+        "exact_f2": f2_score(edit_precision, exact_recall),
         "char_recall": ratio(gold_chars - exposed_chars, gold_chars),
         "over_rate": ratio(over, len(gold)),
         "partial_rate": ratio(partial, len(gold)),
@@ -109,6 +124,11 @@ def aggregate(
             "edits_fp": edits_fp,
             "gold_chars_total": gold_chars,
             "exposed_chars_total": exposed_chars,
+            "masked_chars": masked_chars,
+            "masked_gold_chars": masked_gold_chars,
+            "excluded_spans": len(left_out),
+            "excluded_chars": sum(span.end - span.start for span in left_out),
+            "excluded_masked_chars": sum(score.excluded_masked_chars for score in scored),
             "gold_excluded": sum(entry["gold"] for entry in excluded.values()),
             "edits_excluded": sum(entry["edits"] for entry in excluded.values()),
         },
@@ -124,6 +144,10 @@ def aggregate(
         "recall_by_type": {kind: recall_where(lambda _c, result, kind=kind: result.type == kind) for kind in GOLD_TYPES},
         "recall_by_channel": {name: recall_where(lambda channel, _r, name=name: channel == name)
                               for name in SCORED_CHANNELS},
+        "exact_recall_by_type": {kind: recall_where(lambda _c, result, kind=kind: result.type == kind,
+                                                    (SpanStatus.EXACT,)) for kind in GOLD_TYPES},
+        "exact_recall_by_channel": {name: recall_where(lambda channel, _r, name=name: channel == name,
+                                                       (SpanStatus.EXACT,)) for name in SCORED_CHANNELS},
         "sessions": len(sessions),
         "items": len(items),
     }

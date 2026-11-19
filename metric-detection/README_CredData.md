@@ -37,14 +37,18 @@ CredData의 행 범위는 값이 아닐 때가 있다(문장 전체, `key: value
 | 판정 | 행 | 기준 |
 |---|---|---|
 | 정답: 개인키 | 1,480 | 본문이 있는 개인키 블록, 또는 PEM 포장이 없는 키 재료(base64 PEM, PASERK, NKEY seed, 개인 성분이 있는 JWK) |
-| 정답: 자격증명 자리 | 10,242 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). 키 뒤의 따옴표 없는 값은 리터럴로 읽힐 때만(`label_rules.is_literal`) 정답이다 |
+| 정답: 자격증명 자리 | 10,122 | `label_rules.classify`의 자격증명 자리(`"password": "test"`, `aws_secret_access_key='dummy'`, `postgres://user:⟦pw⟧@host`). 키 뒤의 따옴표 없는 값은 리터럴로 읽힐 때만(`label_rules.is_literal`) 정답이다 |
 | 정답: 키 재료 | 4,005 | 키 이름 뒤의 hex·base64 값(`Key = 9f2c…`, `SharedSecret=…`), 헤더 이름 없는 `"Bearer …"` |
 | 정답: 형식 | 344 | 서비스 접두어 토큰, JWT처럼 형식만으로 자격증명인 값 |
 | 정답: 행 없는 자리 | 240 | CredData 행이 없는 줄의 리터럴 |
-| 음성: 제외 규칙 | 33,908 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`), 코드(`code`), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자, 문서 예시, 변수 참조, 해시 |
-| 음성: 자격증명 자리 아님 | 17,890 | 위 어디에도 들지 않는 값(`nonce`, `salt`, `x-github-request-id`, `appid`) |
+| 음성: 제외 규칙 | 34,335 | `label_rules.exclusion_kind`: 설명 문구·화면 문구(`descriptor`, 번역 파일의 문구 포함), 코드(`code`), 자리표시자(`template`), 가린 흔적(`redaction`), 식별자, 문서 예시, 변수 참조, 해시 |
+| 음성: 자격증명 자리 아님 | 17,583 | 위 어디에도 들지 않는 값(`nonce`, `salt`, `x-github-request-id`, `appid`, `user:password@host:port`의 포트, `MYSQL_ALLOW_EMPTY_PASSWORD: yes` 같은 설정 스위치) |
 
-정답 값이 세션의 다른 곳에 또 나오면 퍼뜨림 기준(`label_rules.judge_occurrence`)을 따른다. 그렇게 정답이 된 등장이 897곳, 정답이 아닌 등장이 4,235곳이다(labels의 `creddata_id`가 비어 있는 행).
+정답 값이 세션의 다른 곳에 또 나오면 퍼뜨림 기준(`label_rules.judge_occurrence`)을 따른다. 그렇게 정답이 된 등장이 829곳, 정답이 아닌 등장이 4,262곳이다(labels의 `creddata_id`가 비어 있는 행).
+
+2026-11-19에 규칙 세 가지를 고쳤다. 문장 규칙(`prose`)이 URL의 `password@host:` 뒤 포트를 값으로 읽던 것(`port/database`, `1337/`), 퍼뜨림이 대입의 왼쪽 이름을 정답으로 친 것(`ClientSecret = "ClientSecret"`의 왼쪽), 영어가 아닌 번역 파일 문구가 정답이 된 것(`"REMOVE_TWO_FACTOR_AUTH": "Fjern 2FA fra kontoen"`, juice-shop·Jitsi의 번역 JSON)이다. gold span은 17,026개에서 16,878개로 148개 줄었고 새로 생긴 것은 없다(포트 29, 대입의 왼쪽 12, 번역 문구 63과 그 문구 안의 낱말로 퍼진 등장 40, 포트 값이 정답에서 빠져 함께 빠진 퍼뜨림 4). 한 낱말로 된 번역(`"lockRoomPassword": "parool"`)은 이 규칙에 들지 않아 그대로 정답이다.
+
+같은 날 trajectory 정답 감사(`runs/label-fix-1119/audit/`)에서 틀린 값 13개가 나와 규칙을 더 고쳤다. 키 파일 경로 앞부분 `'file://'`(`reference`), `$` 대신 `!`로 쓴 bcrypt 해시 `phpass:!2a!08!…`(`hash`), `MYSQL_ALLOW_EMPTY_PASSWORD: yes`·`MYSQL_RANDOM_ROOT_PASSWORD: "yes"` 같은 설정 스위치(자격증명 자리 아님), 입력 칸의 종류 `type: "password"`(`code`), 타입 표기 `secret: SecretKey;`(`code`), Helm 값의 Kubernetes Secret 객체 이름 `tlsSecret: kiam-agent-tls`(`reference`)다. gold span은 16,878개에서 16,838개로 40개 줄었고 새로 생긴 것은 없다(CredData 행 28: 설정 스위치 11, 타입 표기 11, `file://` 2, bcrypt 2, Secret 이름 2. 퍼뜨린 등장 12: `file://` 6, 타입 이름 5, `type: "password"` 1). 스위치 키라도 값이 스위치 값(`yes`, `true`, `1` 등)이 아니면(`MYSQL_ALLOW_EMPTY_PASSWORD: ueohjjxvy`) 그대로 정답이다.
 
 2026-11-06에 CredData의 T 판정으로 정답을 정하던 예외를 없앴다. 이 예외로 정답이 된 값이 6,000개를 넘었고, `nonce`, `salt`, 요청 id처럼 자격증명이 아닌 값이 섞여 있었다. 판정이 텍스트 규칙만 따르면서 T였던 값도 자리나 형식을 규칙이 읽지 못하면 음성이 된다. `ROTP::TOTP.new('…')`처럼 사람은 알아보지만 규칙에 없는 자리가 그런 경우다.
 
@@ -56,8 +60,8 @@ CredData의 행 범위는 값이 아닐 때가 있다(문장 전체, `key: value
 | `gold_from_CredData.jsonl` | 정답 span. `gold.jsonl`과 같은 형식 |
 | `labels_from_CredData.jsonl` | CredData 전체 행을 item 좌표로 옮기고 우리 판정(`gold`, `kind`, `rule`)을 붙인 분석용 파일. Category와 Id를 함께 남긴다 |
 
-세션 11,030개, item 25,345개, gold span 17,500개(SECRET 6,761 / PASSWORD 6,060 / TOKEN 3,028 / PRIVATE_KEY 1,459 / ACCESS_KEY 192). 정답인 행과 그 값의 다른 등장(아래)에서 겹치는 것을 정리한 수다(변환 규칙 참고).
-gold가 있는 item은 6,432개다. 나머지 item은 스캐너가 후보로 잡았지만 비밀이 아닌 값만 있어서 어려운 음성 데이터로 쓸 수 있다.
+세션 11,030개, item 25,345개, gold span 16,838개(SECRET 6,594 / PASSWORD 5,863 / TOKEN 2,834 / PRIVATE_KEY 1,454 / ACCESS_KEY 93). 정답인 행과 그 값의 다른 등장(아래)에서 겹치는 것을 정리한 수다(변환 규칙 참고).
+gold가 있는 item은 6,035개다. 나머지 item은 스캐너가 후보로 잡았지만 비밀이 아닌 값만 있어서 어려운 음성 데이터로 쓸 수 있다.
 
 ## 변환 규칙
 
@@ -78,3 +82,19 @@ gold가 있는 item은 6,432개다. 나머지 item은 스캐너가 후보로 잡
 ## 나중에 ML 학습에 쓰게 되면
 
 지금은 평가 전용이지만, 학습에 쓰게 되면 **앞뒤 창(±10줄)에 자격증명이 끼어 있는 item은 학습 데이터에서 빼야 할 수 있다.** 창 안의 라벨 없는 줄에 있는 자격증명은 gold가 없으므로 음성으로 학습된다. 라벨된 줄 하나를 주변 줄과 함께 판정하는 모델이라면, 창 안의 다른 T 값도 그 줄의 라벨과 상관없는 신호가 된다. 학습에 쓰려면 [dataset_policy.py](scripts/dataset_policy.py)의 `external` 용도도 함께 바꿔야 한다.
+
+### 에이전트 작업을 만들기 전의 원본 분할
+
+[source_splits/creddata-v1](source_splits/creddata-v1/README.md)은 2026-11-15 현재 변환본을 대상으로 만든
+**원본 저장소·세션 목록**이다. 목표 비율은 train/val/test 80/10/10이며, 저장소와 중복 문맥으로 연결된
+저장소 묶음을 분리하지 않는다. 코드나 비밀값을 복사하지 않고 기존 평가 파일·용도 정책도 변경하지 않는다.
+각 파일의 현재 개수와 입력 SHA-256은 해당 manifest에 있으므로 위의 과거 수량과 구분한다.
+
+새 작업은 이 원본 분할을 상속해 작성하고, 실행·값 치환 증강에도 같은 분할을 유지한다. 원본을 학습에 사용하기
+전에는 값 치환, 근접 중복과 라벨 완전성 검토, 출처·분할별 용도 정책을 반영한 별도 export가 필요하다.
+이 원본에서 학습한 모델은 기존 CredData 전체를 독립 평가로 보고할 수 없다.
+
+```bash
+python3 metric-detection/scripts/split_creddata.py build
+python3 metric-detection/scripts/split_creddata.py verify
+```

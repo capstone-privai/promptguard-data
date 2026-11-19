@@ -21,6 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 import json
 import re
+import unicodedata
 
 WORDLISTS = Path(__file__).resolve().parent / "wordlists"
 
@@ -91,6 +92,9 @@ PROSE = [
     ("prose_quoted", re.compile(rf"(?i)\bpass(?:word|phrase)\s+{Q}$")),
     ("prose_direct", re.compile(rf"(?i)\bpass(?:word|phrase),?[ \t]+{Qo}$")),  # use the password 123456: never a dictionary word
 ]
+# Inside a URL's authority, or right after @host: (user:password@host:port): the host and port of a URL, not a value
+# a sentence names. "password" there is the userinfo (url_userinfo), not prose.
+URL_AUTHORITY = re.compile(r"[a-z][\w+.-]*://[^\s/'\"`]*$|@[\w.-]+:$")
 # Identifier positions: (name, text before, text after); None matches anything.
 IDENT = [
     ("ls_owner", re.compile(r"[-dlcbps][-rwxsStT]{9}[.+@]?\s+\d+\s+(?:[\w.-]+\s+)?$"), None),
@@ -106,6 +110,10 @@ IDENT = [
                            rf"|chown\s+(?:-\w+\s+)*(?:[\w.-]+:)?){Qo}$"), None),
     ("user_at_host", None, re.compile(r"^@")),
     ("kwarg_name", None, re.compile(r"^=(?!=)")),  # passwd="": the word before = names the argument
+    # ClientSecret = "…": an identifier alone at the start of a line (a diff's < > + - mark may come first) or after
+    # { ( , ; and assigned to is the name of a variable or property, not a value (classify also requires the
+    # occurrence to be an identifier)
+    ("assign_target", re.compile(r"(?:(?:^|\n)[<>+-]?|[{(,;\t])[ \t]*$"), re.compile(r"^[ \t]*:?=(?![=>~])")),
     ("dict_key", None, re.compile(r"""^\\{0,3}["']\s*(?::|=>)""")),  # {"token": ...}: the value is the key here
     ("subscript", re.compile(r"""\[\s*\\{0,3}["']$"""), re.compile(r"""^\\{0,3}["']\s*\]""")),  # data['password2']
     ("passwd_line", re.compile(rf"(?:{NL}|\"output\": \"|/etc/(?:passwd|group|shadow)-?:\d+:)$"), re.compile(r"^:")),
@@ -152,7 +160,8 @@ EXCLUDED_VALUE = [
     # one-way hashes: crypt ($6$, $2a$, $y$, $argon2id$), an LDAP {SCHEME}, Django pbkdf2_sha256$...
     ("hash", re.compile(r"^(?:\{[A-Za-z0-9-]+\})?\$(?:1|2[abxy]?|5|6|y|gy|7|P|H|apr1|md5|sha\d*|scrypt|argon2(?:id|i|d)"
                         r"|krb5\w*|pbkdf2[\w-]*)\$"
-                        r"|^\{(?:S?SHA\d*|S?MD5|CRYPT|BCRYPT|PBKDF2[\w-]*)\}|^(?:pbkdf2|argon2|bcrypt|scrypt|sha\d+|md5)[\w-]*\$")),
+                        r"|^\{(?:S?SHA\d*|S?MD5|CRYPT|BCRYPT|PBKDF2[\w-]*)\}|^(?:pbkdf2|argon2|bcrypt|scrypt|sha\d+|md5)[\w-]*\$"
+                        r"|^!2[abxy]?!\d\d![./A-Za-z0-9]{53}$")),  # bcrypt written with ! for $ ('phpass:!2a!08!…')
     ("redaction", re.compile(r"\*{3}|x{4}|X{4}|#{4}|redacted|_removed\b|\.\.\.|…|(?:^|[-_:])x{3}$", re.I)),
     ("template", re.compile(r"^<[^<>\n]+>$|^\[[A-Z][A-Z0-9_ -]*\]$"  # the whole value is a slot: <define>, [FUZZ]
                             r"|<[^<>\n]*(?:pass|token|key|secret|your|user|name|value|here|id)[^<>\n]*>|\{\{"
@@ -166,7 +175,9 @@ EXCLUDED_VALUE = [
                               r"|парол[ья])(?![^\W_])|密码|密碼|パスワード|비밀번호")),
     ("doc_example", re.compile(r"example(?!\.(?:com|org|net|edu|invalid|test|local)\b)", re.I)),  # AKIA...EXAMPLE, not example.com
     # ${TOKEN}, %PASS%, {token}, or the NAME of an environment variable (GITHUB_PASSWORD)
+    # A path names where the key is: /path, or a bare scheme that starts one ('file://' . __DIR__ . '/private.key')
     ("reference", re.compile(r"^\$\{?\w+\}?$|^%\w+%$|^\{\w+\}$|^@\w+@$|^#\{|\$t\(|^/[\w./@-]+$|os\.environ|process\.env|getenv"
+                             r"|^[a-z][a-z0-9+.-]*://$"
                              r"|^(?:[A-Z0-9]+_)*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|KEY|APIKEY|AUTH|USER)(?:_[A-Z0-9]+)*$")),
     ("code", re.compile(r"^[A-Za-z_$][\w.$]*[(\[]|[{}]$|^[A-Za-z_]{1,16}=$|\bself\.|\bthis\.|^[A-Za-z_]+(?:\.[A-Za-z_]+)+,?$"
                         r"|^(?:true|false|null|none|nil|undefined)$|^[).,;:\]}>]|\s\+$|^:\w+$|^&\w+$|\[$|^\W$|^\d+/\w+$"
@@ -186,7 +197,11 @@ EXCLUDED_BEFORE = [
     ("descriptor", re.compile(r"(?:^|[^A-Za-z0-9_])(?:TITLE|LABEL|BTN|BUTTON|MANDATORY|FORGOT|INVALID|MSG|MESSAGE|ERROR|ERR|TEXT|TXT|HINT|TOOLTIP"
                               r"|DESC|DESCRIPTION|NOTIFICATION|PLACEHOLDER)_\w*\W{0,4}$")),
     ("code", re.compile(r"\b(?:artisan|rake|rails)\s+[\w-]*:$")),  # php artisan credentials:edit
+    # the kind of a form field: password: { label: "Password", type: "password" }, <input type='password'>
+    ("code", re.compile(r"""(?i)(?<![\w.-])type\\{0,3}["']?\s*[:=]\s*\\{0,3}["'`]?$""")),
     ("reference", re.compile(r"\bfrom_secret:\s*$")),  # Drone CI: the name of a stored secret
+    # Helm values: the name of a Kubernetes Secret object (tlsSecret: kiam-agent-tls), not its content
+    ("reference", re.compile(r"""(?<![\w-])(?:tls|existing)Secret["']?[ \t]*:[ \t]*["']?$""")),
     # a list of passwords not to use
     ("doc_example", re.compile(r"(?i)\b(?:unacceptable|prohibited|forbidden|banned|weak)\s+passwords?\b[^\n]*(?:\n\s*[-*]\s*[^\n]*){0,6}"
                                r"\n\s*[-*]\s*[\"'`]?$")),
@@ -197,6 +212,14 @@ SECRET_WORD = re.compile(r"(?i)secret|token|passw|pwd|api[ _-]?key|access[ _-]?k
 SECRET_NAME = re.compile(r"[a-z]+(?:[A-Z][a-z]+|_[a-z]+)*_?(?:[Ss]ecret|[Pp]assword|[Pp]asswd|[Tt]oken|[Aa]pi[Kk]ey)"
                          r"(?:[A-Z][a-z]+|_[a-z]+)*")
 UNQUOTED_CODE_AFTER = re.compile(r"^[,)}]")  # PrivateKey: priv, / Credentials: creds}
+TYPE_NAME = re.compile(r"[A-Z][a-z]+(?:[A-Z][a-z]+)+")  # SecretKey, AccessToken: a type in a type annotation
+# MYSQL_ALLOW_EMPTY_PASSWORD: yes, MYSQL_RANDOM_ROOT_PASSWORD: "1": a switch named after the password, not the password
+SETTING_FLAG = re.compile(rf"(?i)(?:allow|random|empty|require|generate|skip)_\w*?(?:password|passwd|pass|pwd){Qo}\s*[:=]\s*{Qo}$")
+FLAG_VALUE = re.compile(r"(?i)yes|no|true|false|on|off|[01]")
+IDENTIFIER = re.compile(r"[A-Za-z_$][\w$]*")
+# One line of a JSON string table: "KEY": "text",
+TRANSLATION_LINE = re.compile(r"""^[ \t]*"(?:[^"\\\n]|\\.)+"[ \t]*:[ \t]*"((?:[^"\\\n]|\\.)*)",?[ \t]*$""", re.M)
+NOT_IN_TEXT = set("@#$%&*_\\/{}[]<>|=+^~`§")
 
 
 @lru_cache(maxsize=4096)
@@ -225,6 +248,8 @@ def classify(text: str, start: int, end: int, negative_context: re.Pattern | Non
     """
     before = re.sub(r"\\n", " \n", text[max(0, start - BEFORE):start])
     after = text[end:end + AFTER]
+    if FLAG_VALUE.fullmatch(text[start:end]) and SETTING_FLAG.search(before):
+        return "negative", "setting_flag"  # not a credential position (LABELING.md: password_min_length = 12)
     for name, pattern in SLOT:
         if pattern.search(before):
             right = SLOT_RIGHT.get(name)
@@ -233,9 +258,13 @@ def classify(text: str, start: int, end: int, negative_context: re.Pattern | Non
     for name, b, a in IDENT:
         if name in ("path", "path_next") and is_sed_subst(text, start, end):
             continue
+        if name == "assign_target" and not IDENTIFIER.fullmatch(text[start:end]):
+            continue
         if (b is None or b.search(before)) and (a is None or a.search(after)):
             return "ident", name
     for name, pattern in PROSE:
+        if URL_AUTHORITY.search(before):
+            break
         if pattern.search(before) and not (name == "prose_direct" and text[start:end].lower() in english_words()):
             return "slot", name
     if negative_context is not None and negative_context.search(text[max(0, start - 400):start]):
@@ -254,6 +283,8 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
             return kind
     if is_phrase(value) or is_foreign_word(value) or re.fullmatch(r"[^\W\d_]+:", value):
         return "descriptor"  # "Password:" is a screen label
+    if is_translated_string(text, start, end):
+        return "descriptor"  # "REMOVE_TWO_FACTOR_AUTH": "Fjern 2FA fra kontoen" in a translation file
     if text[end:end + 3] == "..." or text[end:end + 1] == "…":
         return "redaction"  # a value cut short: Bearer vp7jx... (normalize_span leaves the dots out of the span)
     before = text[max(0, start - BEFORE):start]
@@ -272,6 +303,9 @@ def exclusion_kind(text: str, start: int, end: int) -> str | None:
     if (not quoted and re.fullmatch(r"[A-Za-z_]+", value) and UNQUOTED_CODE_AFTER.match(text[end:end + 5])
             and re.search(r"[:=][ \t]*$", before)):
         return "code"  # an unquoted variable: PrivateKey: priv,
+    if (not quoted and TYPE_NAME.fullmatch(value) and re.search(r":[ \t]*$", before)
+            and re.match(r"[ \t]*(?:[;,)}|]|\r?\n[ \t]*[)}])", text[end:end + 40])):
+        return "code"  # a type annotation: secret: SecretKey; / token: AuthcToken⏎}
     if not quoted and value.isdigit() and re.match(r"\s*,", text[end:end + 5]) and re.search(
             r"\b[A-Z]\w*_[A-Z]\w*\s*=\s*$", before):
         return "code"  # an enum member: IoErr_Auth = 7178,
@@ -432,6 +466,39 @@ def is_foreign_word(value: str) -> bool:
     """Letters mostly outside ASCII and no digit: a translated screen string (პაროლი), not a generated value."""
     letters = [c for c in value if c.isalpha()]
     return bool(letters) and not any(c.isdigit() for c in value) and sum(not c.isascii() for c in letters) * 2 >= len(letters)
+
+
+def is_natural_text(value: str) -> bool:
+    """Words of a natural language in any script ("Fjern 2FA fra kontoen", "アカウントから2FAを削除する"): letters,
+    digits, spaces and sentence punctuation only, with two or more letter-only words, or mostly non-ASCII letters in
+    a script written without spaces."""
+    if not value or "\n" in value or len(value) > 300:
+        return False
+    if any(c in NOT_IN_TEXT or unicodedata.category(c)[0] == "S" for c in value):
+        return False
+    tokens = value.split()
+    if len(tokens) >= 2:
+        words = [t for t in tokens if not any(c.isdigit() for c in t) and sum(c.isalpha() for c in t) >= 2]
+        return len(words) >= 2 and len(words) * 2 >= len(tokens)
+    letters = [c for c in value if c.isalpha()]
+    return len(letters) >= 4 and sum(not c.isascii() for c in letters) * 2 >= len(letters)
+
+
+def is_translated_string(text: str, start: int, end: int, whole: bool = True) -> bool:
+    """A screen string of a translation file: the whole value of a JSON line "KEY": "text", in natural language, with
+    at least three more such lines around it. Text only (LABELING.md): a table of sentences is what marks the file.
+    A config file's values ("DB_HOST": "localhost") are not sentences, so a passphrase there stays a value.
+    whole=False: text[start:end] is any part of such a string ("Vale ⟦parool⟧", for another occurrence)."""
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line_end = len(text) if line_end < 0 else line_end
+    m = TRANSLATION_LINE.match(text, line_start, line_end)
+    if not m or m.end() != line_end or not (m.start(1) <= start and end <= m.end(1)):
+        return False
+    if (whole and m.group(1).strip() != text[start:end]) or not is_natural_text(m.group(1).strip()):
+        return False
+    lines = TRANSLATION_LINE.finditer(text, max(0, line_start - 2000), min(len(text), line_end + 2000))
+    return sum(1 for other in lines if other.start() != m.start() and is_natural_text(other.group(1))) >= 3
 
 
 def is_example(text: str, start: int) -> bool:
@@ -768,9 +835,9 @@ def judge_occurrence(text: str, start: int, end: int, common: bool,
     """(gold, kind, rule) for another occurrence of a gold value: an excluded kind (exclusion_kind) is never gold,
     otherwise the propagation rule decides. kind is the classify verdict when gold, else the exclusion kind,
     identifier or not_propagated."""
-    excluded = exclusion_kind(text, start, end)
+    excluded = exclusion_kind(text, start, end) or ("descriptor" if is_translated_string(text, start, end, whole=False) else None)
     if excluded:
-        return False, excluded, None
+        return False, excluded, None  # a word inside a translated screen string is part of a descriptor
     verdict, rule = classify(text, start, end, negative_context)
     if is_gold(common, verdict):
         return True, verdict, rule

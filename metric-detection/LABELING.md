@@ -21,12 +21,12 @@ metric-detection의 모든 데이터셋(합성 3종, CredData, privesc-llm-data,
 |---|---|
 | 자격증명 자리에 들어간 리터럴 | `DB_PASSWORD=admin`, `"api_key": "test_api_key"`, `-p hunter2`, `sshpass -p '…'`, `echo '…' \| sudo -S`, `--requirepass …`, `redis-cli -a …`, `mongosh -p …`, `htpasswd -b 파일 사용자 ⟦값⟧`, `Password=…;`(연결 문자열) |
 | 인증 헤더·쿠키의 값 | `Authorization: Bearer ⟦값⟧`, `Authorization: Basic ⟦값⟧`, `Cookie: session=⟦값⟧` |
-| URL에 든 자격증명 | `postgresql://app:⟦값⟧@db:5432/app`, `https://x-access-token:⟦값⟧@github.com/…` |
+| URL에 든 자격증명 | `postgresql://app:⟦값⟧@db:5432/app`, `https://x-access-token:⟦값⟧@github.com/…`. 호스트·포트·경로는 아니다: 문장에서 `password` 뒤에 왔어도 `user:password@host:port/db`의 `port/db`는 값이 아니다 |
 | 형식만으로 자격증명인 값 | 서비스 접두어가 있는 토큰(`ghp_…`, `xoxb-…`, `sk-…`, `AKIA…`), 개인키 블록, 인증 자리의 JWT |
 | 문장 속에서 자격증명이라고 밝힌 값 | "비번은 ⟦값⟧이야", "The password for the share is ⟦값⟧", "use the API key ⟦값⟧" |
 | 자격증명 자체인 URL | Slack·Teams·Discord 웹훅처럼 URL을 아는 것만으로 쓸 수 있는 URL |
 
-**자격증명 자리**는 키·옵션·문맥이 비밀번호, 비밀, 토큰, 키, 인증을 가리키는 자리다(`password`, `passwd`, `pwd`, `pass`, `secret`, `token`, `api_key`, `apikey`, `access_key`, `private_key`, `auth`, `credential`, `-p`, `--password` 등). 키 이름에 이런 말이 들어 있어도 값이 그 자격증명이 아니면 자격증명 자리가 아니다. 예: `"TITLE_CHANGE_PASSWORD": "Endre passord"`(화면 문구), `password_min_length = 12`(설정값), `max_tokens = 4096`.
+**자격증명 자리**는 키·옵션·문맥이 비밀번호, 비밀, 토큰, 키, 인증을 가리키는 자리다(`password`, `passwd`, `pwd`, `pass`, `secret`, `token`, `api_key`, `apikey`, `access_key`, `private_key`, `auth`, `credential`, `-p`, `--password` 등). 키 이름에 이런 말이 들어 있어도 값이 그 자격증명이 아니면 자격증명 자리가 아니다. 예: `"TITLE_CHANGE_PASSWORD": "Endre passord"`, `"REMOVE_TWO_FACTOR_AUTH": "Fjern 2FA fra kontoen"`(화면 문구), `password_min_length = 12`, `MYSQL_ALLOW_EMPTY_PASSWORD: yes`(설정값), `max_tokens = 4096`.
 
 ## 정답이 아닌 것
 
@@ -36,15 +36,16 @@ metric-detection의 모든 데이터셋(합성 3종, CredData, privesc-llm-data,
 |---|---|---|
 | `redaction` | 지우거나 가린 흔적 | `********`, `xxxx`, `XXXX`, `[REDACTED]`, `<redacted>`, `ghp_-XXX`, `sk-...9f2c`, `login_and_password_removed` |
 | `template` | 채워 넣을 자리를 표시한 문법이나 안내문 | `<your-token>`, `<password>`, `{{ .Values.x }}`, `YOUR_API_KEY`, `your-token-here`, `<generate-with-openssl-rand-hex-32>`, `your-secret-key-change-this-in-production` |
-| `reference` | 변수·환경변수·속성 참조 | `${TOKEN}`, `$DB_PASS`, `%PASS%`, `os.environ["KEY"]`, `self.api_key`, `{token}` |
-| `code` | 값이 아닌 코드 표현식, 타입, 함수 호출 | `values[EnvAPIPassword]`, `password: string;`, `kwargs.get(`, `generate_password_hash(` |
+| `reference` | 변수·환경변수·속성 참조, 비밀이 있는 곳의 이름 | `${TOKEN}`, `$DB_PASS`, `%PASS%`, `os.environ["KEY"]`, `self.api_key`, `{token}`, `$privateKey = 'file://' . __DIR__ . '/private.key'`의 `file://`(키 파일 경로의 앞부분), `tlsSecret: kiam-agent-tls`(Kubernetes Secret 객체 이름) |
+| `code` | 값이 아닌 코드 표현식, 타입, 함수 호출 | `values[EnvAPIPassword]`, `password: string;`, `secret: SecretKey;`(타입 이름), `type: "password"`(입력 칸의 종류), `kwargs.get(`, `generate_password_hash(` |
 | `doc_example` | 공개 문서·표준·도구 설명서에 실린 예시 값, 또는 글에서 예시라고 밝힌 값 | `AKIAIOSFODNN7EXAMPLE`, jwt.io 예시 JWT, RFC 7617의 `open sesame`, `EXAMPLE`이 든 값, 정책 문서의 "such as `Ocean@2025`", man 페이지의 `--password pass` |
-| `descriptor` | 값이 아니라 그 값을 가리키는 말. 다른 언어로 쓴 "비밀번호"도 같다 | `new password`, `your password`, `temporary password`, `'password' => 'lozinka'` |
-| `hash` | 비밀번호 해시와 같은 단방향 해시 | `$6$…`, `$2a$04$…`, `$y$…`, Kerberos 해시 |
+| `descriptor` | 값이 아니라 그 값을 가리키는 말. 다른 언어로 쓴 "비밀번호"도 같다. 번역 파일의 화면 문구도 어느 언어든 같다 | `new password`, `your password`, `temporary password`, `'password' => 'lozinka'`, `"REMOVE_TWO_FACTOR_AUTH": "Eliminar la autenticación de dos factores de su cuenta"` |
+| `hash` | 비밀번호 해시와 같은 단방향 해시 | `$6$…`, `$2a$04$…`, `$y$…`, `'phpass:!2a!08!…'`(`$` 대신 `!`로 쓴 bcrypt), Kerberos 해시 |
 | `identifier` | 사용자명, 이메일, 계정·리소스·클라이언트 id, request id, 커밋 해시, 이름 | `x-github-request-id`, `"_postman_id": "…"`, `"uid": "…"`, OAuth client id, AWS 계정 id, ARN, `/etc/passwd`의 사용자명 |
 | `non_credential` | 자격증명이 아닌 비밀·개인정보 | PIN, CVV, 카드 번호, 계좌 번호, CSRF 토큰, 추적·환경설정 쿠키 |
 | `empty` | 빈 값 | `DB_PASSWORD=` |
 
+- 번역 파일의 화면 문구는 텍스트로 알아본다. JSON 줄 `"키": "문구",`의 값 전체가 자연어 문장(글자로만 된 낱말 두 개 이상, 띄어 쓰지 않는 문자는 대부분 비ASCII 글자)이고, 앞뒤 2,000자 안에 같은 꼴의 문장 줄이 3개 이상 더 있으면 `descriptor`다(`label_rules.is_translated_string`). 설정 파일의 값(`"DB_HOST": "localhost"`)은 문장이 아니므로, 그런 파일의 공백 든 비밀번호는 정답으로 남는다. 영어 낱말로 된 여러 낱말 값(`correct horse battery staple`)은 이전부터 어느 자리에서나 `descriptor`다(`is_phrase`).
 - UUID는 모양이 아니라 자리로 판정한다. `api_key = "1fd2…"`의 UUID는 정답이고, `"id": "…"`, `RequestId`, `ChangeToken`(AWS의 중복 요청 방지 값)의 UUID는 `identifier`다.
 - 해시 모양의 hex도 자리로 판정한다. `SECRET_KEY = "9f2c…"`(64자 hex)는 정답이고, 비밀번호를 해시한 값은 `hash`다.
 - 무작위 모양이 아닌 값도 정답에서 빼지 않는다. `aaaaaaaa`, `12345678`, `a1b2c3d4`, `changeme`가 자격증명 자리에 있으면 정답이다. 빼는 것은 위 표의 경우뿐이다.
@@ -55,7 +56,7 @@ metric-detection의 모든 데이터셋(합성 3종, CredData, privesc-llm-data,
 
 | 값 | 자격증명 자리 | 자격증명 자리 밖의 다른 등장 |
 |---|---|---|
-| 고유한 값 (`toor`, `qwer1234`, `P@ssw0rd`, 무작위 값) | 정답 | 정답. 단 `identifier` 역할로 나온 곳은 아님 |
+| 고유한 값 (`toor`, `qwer1234`, `P@ssw0rd`, 무작위 값) | 정답 | 정답. 단 `identifier` 역할로 나온 곳(대입의 왼쪽 이름 포함)은 아님 |
 | 흔한 값 (`root`, `admin`, `password`, `guest`, `debian`, `123456`) | 정답 | 정답 아님 |
 
 비밀번호가 `root`인 세션이라면 `{"password": "⟦root⟧"}`, `echo '⟦root⟧' | su -`, `Trying root:⟦root⟧`는 정답이고, `"user": "root"`, `/root/.ssh`, `Running as root`는 정답이 아니다. 흔한 문자열은 문맥이 자격증명이라고 가리키는 곳에서만 비밀이다. 다른 등장까지 정답으로 두면 모델이 문맥이 아니라 세션에서 본 문자열을 외우게 된다.
@@ -70,6 +71,8 @@ metric-detection의 모든 데이터셋(합성 3종, CredData, privesc-llm-data,
 틀릴 때 덜 해로운 쪽을 고른 기준이다. 흔한 값을 고유하다고 잘못 보면 일반 단어까지 정답이 되어 학습에 해롭고, 고유한 값을 흔하다고 잘못 보면 다른 등장 몇 곳이 빠질 뿐이다. 그래서 넷 중 하나에만 걸려도 흔한 값으로 본다.
 
 다른 문자열 안의 일부로 나온 것(앞뒤가 영숫자나 `_`로 이어짐)은 같은 값의 등장으로 보지 않는다.
+
+코드의 이름 자리도 `identifier` 역할이다. 줄 처음(diff 출력의 `<`, `>`, `+`, `-` 표시 뒤 포함, 또는 `{`, `(`, `,`, `;` 뒤)에 홀로 놓이고 `=`나 `:=`로 값을 받는 식별자 모양의 등장이 그렇다. `ClientSecret = "⟦ClientSecret⟧"`에서 왼쪽은 속성 이름이고 따옴표 안의 리터럴만 정답이다(`label_rules`의 `assign_target`).
 
 ## 경계
 

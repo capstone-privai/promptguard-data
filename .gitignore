@@ -49,3 +49,7 @@ frame.csv
 
 # 비밀값 환경 변수 파일
 .env
+# metric-latency matrix runs (matrix_latency.py): per-cell timings and run settings stay local; only the summaries go into git
+metric-latency/results/creddata-matrix-*/**
+!metric-latency/results/creddata-matrix-*/summary.csv
+!metric-latency/results/creddata-matrix-*/summary.md

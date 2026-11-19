@@ -102,12 +102,86 @@ python3 -m unittest discover -s metric-latency/tests
 - **Guard 재생의 입력**: metric-task는 Final Guard 없이 Mod만 붙여 돌렸다. 재생하는 요청 본문은 Mod를 거쳐 Claude Code가 보낸 것이라 Guard가 받았을 것과 같다고 보지만, Guard가 요청을 막았다면 이후 세션은 달라졌을 것이다.
 - 글자 수(`chars`)는 Python 문자열 길이(코드 포인트)다. 시스템의 오프셋 단위(UTF-16)와는 이모지 같은 문자에서 다르다.
 
+## CredData-trajectory 행렬의 호출 지연 (matrix_latency.py)
+
+[metric-detection/scripts/creddata_matrix.py](../metric-detection/scripts/creddata_matrix.py)의 행렬(시스템 커밋 8개 × base와 모델, 26칸)과 프로토타입(CredSweeper 1.19.0 기본 규칙, ML 꺼짐) 1칸, 모두 27칸에서 **4,096바이트 텍스트 하나에 대한 탐지기 호출 한 번**의 시간을 잰다. 행렬 정의는 그 스크립트를 import해서 쓴다.
+
+- 재는 것: 체크아웃의 `pgdetector.load_detector()`로 만든 탐지기의 `detector.scan(text, source)` 한 번. 채점기(`promptguard_adapter.py`)가 부르는 것과 같다. 프로토타입은 채점기의 `CredSweeperAdapter(ml=False).detect(text)`다. Mod와 HTTP는 들어가지 않는다.
+- 칸마다 프로세스를 하나 띄운다. 불러오기와 warmup(20회)은 시간에 넣지 않는다.
+- ML 조합의 사본은 행렬과 같다: ML 어댑터 하나만 켜고 `required: true`, 모델 경로, `--device`(기본 `cpu`). timeout 등 나머지는 커밋 기본값이다.
+- gitleaks는 시스템처럼 호출마다 프로세스를 띄운다. 대시보드의 gitleaks 캐시는 쓰지 않는다. PATH에 gitleaks 8.30.1이 없으면 실행을 멈춘다.
+- 입력: `metric-detection/data_test/sessions_from_CredData-trajectory.jsonl`이 있으면 채점 채널(prompt, instructions, tool_output) 텍스트에서 줄 시작부터 자른 4,096바이트 창을 쓴다. 없으면 m4의 합성 텍스트(`secrets`, 4,096바이트)를 쓴다. 둘 다 seed가 고정이라 모든 칸이 같은 텍스트를 같은 순서로 받는다. 어느 쪽을 썼는지와 지문은 결과에 남는다. 지문이 다른 결과끼리는 비교하지 않는다.
+- 기본값은 칸마다 1,000회다. 백분위수는 m4와 같은 nearest rank다.
+
+### 집 PC 준비
+
+필요한 것: Python 3.12, git, git-lfs, PATH의 gitleaks 8.30.1([릴리스](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1)에서 OS에 맞는 파일을 받는다. Homebrew는 다른 버전을 줄 수 있다).
+
+```bash
+git clone https://github.com/capstone-privai/promptguard-data
+cd promptguard-data
+git checkout creddata-trajectory-data   # 이 스크립트가 있는 브랜치
+
+# 시스템·모델 저장소를 옆에 clone하고, 모델 저장소를 1619e76에 맞추고, 행렬 모델 4개를 git lfs로 받아 sha256을 확인한다.
+# --venv를 주면 venv를 만들고 고정 버전 패키지를 설치한다
+# (torch 2.14.1, credsweeper 1.19.0, transformers 4.57.6, peft 0.21.2 등).
+python3 metric-latency/scripts/matrix_latency.py setup --venv .venv-matrix --torch cpu    # NVIDIA: --torch cuda, macOS: --torch default
+```
+
+Windows(PowerShell)에서는 `python3` 대신 `py -3.12`를 쓰고, 이후 명령의 venv Python은 `.venv-matrix\Scripts\python.exe`다. Linux와 macOS에서는 `.venv-matrix/bin/python`이다.
+
+평가 세트(`sessions_from_CredData-trajectory.jsonl`, sha256 `2c856d91…`)는 git에 없다. 비밀 형식 문자열이 들어 있으므로 서버에서 직접 복사해 `metric-detection/data_test/`에 둔다. 없으면 합성 입력으로 돈다.
+
+### 토큰 분류기 bundle (mmbert-traj, qwen-traj)
+
+이 두 칸의 모델은 어느 저장소에도 없다. Colab에서 Drive의 학습 결과로 만들었다(RUN_NOTES.md). 없으면 그 두 칸은 `skipped`로 남고 나머지는 돈다.
+
+1. Colab 계정의 Google Drive에서 `promptguard-runs/token-span-creddata-mmbert/`와 `promptguard-runs/token-span-creddata-qwen/` 폴더를 통째로 받아 한 폴더(예: `drive-runs/`) 아래에 둔다. `config.json`, `selection.json`, `epoch-1/`(mmbert), `epoch-3/`(qwen)이 필요하다.
+2. bundle을 만든다. Colab의 `build_bundles.py`와 같은 일을 하고, 받은 파일과 만든 `model.safetensors`의 sha256을 Colab 값과 비교한다. qwen은 Hugging Face에서 Qwen2.5-Coder-0.5B-Instruct(고정 revision)를 받아 LoRA를 합치므로 인터넷이 필요하다.
+
+```bash
+.venv-matrix/bin/python metric-latency/scripts/matrix_latency.py bundles --drive-runs drive-runs --out bundles
+```
+
+sha256이 다르면 그 칸은 `skipped`가 된다. 그래도 재려면 `run`에 `--no-model-check`를 준다(결과에 실제 sha256이 남는다).
+
+### 실행
+
+```bash
+PY=.venv-matrix/bin/python                     # Windows: $PY = ".venv-matrix\Scripts\python.exe"
+$PY metric-latency/scripts/matrix_latency.py run --token-bundles bundles --dry-run   # 칸 목록과 상태만
+$PY metric-latency/scripts/matrix_latency.py run --token-bundles bundles             # 27칸, 칸마다 1,000회
+$PY metric-latency/scripts/matrix_latency.py run --token-bundles bundles --device cuda --out metric-latency/results/creddata-matrix-cuda
+$PY metric-latency/scripts/matrix_latency.py run --cells prototype 668c2c1/base 668c2c1/v10 --calls 200
+$PY metric-latency/scripts/matrix_latency.py report metric-latency/results/creddata-matrix-<시각>
+```
+
+- `--cells`: `prototype`, 커밋(그 커밋의 모든 칸), `커밋/모델`, `*/모델`.
+- 같은 `--out`으로 다시 돌리면 끝난 칸(`status: ok`)은 건너뛴다. 실패하거나 건너뛴 칸만 다시 돈다. 설정(`--calls`, `--warmup`, `--seed`, `--device`, 입력)이 처음과 다르면 멈춘다.
+- 다른 부하 없이 돌린다. ML 칸은 CPU에서 느리다. 칸 하나에 1,000회면 수십 분이 걸릴 수 있다.
+- ML 어댑터의 timeout(대개 4초)을 넘은 호출은 탐지기가 실패를 돌려준다. 시스템이라면 그 텍스트는 막힌다. 그 시간도 백분위수에 넣고, 실패 수는 따로 적는다.
+
+### 결과
+
+`--out`(기본 `metric-latency/results/creddata-matrix-<시각>/`):
+
+| 파일 | 내용 | git |
+|---|---|---|
+| `summary.md` | summary.md와 같은 배치의 표: 행은 프로토타입과 커밋(날짜순), 열은 base와 모델, 칸은 p50 / p90 / p95 / p99(ms). 위에 기기, 버전, 입력 | 넣는다 |
+| `summary.csv` | 칸마다 한 줄: 백분위수, 평균·최소·최대, 실패 수, 불러오기 시간, 상태 | 넣는다 |
+| `cells/<칸>.json` | 칸마다 모든 호출 시간, 탐지기 설명, 모델 sha256, detector.json sha256. 텍스트는 없다 | 넣지 않는다 |
+| `run.json` | 설정, 기기(CPU 모델, 코어, RAM, GPU, OS, Python, torch), 저장소 경로와 커밋 | 넣지 않는다 |
+
+설정된 시스템 사본과 칸마다의 로그는 `runs/metric-latency/creddata-matrix-work/`(`--work`)에 있다.
+
 ## 파일
 
 | 파일 | 내용 |
 |---|---|
 | [scripts/m4.py](scripts/m4.py) | 실행기(`run`), 리포트(`report`), null 탐지기 |
 | [scripts/m4_workloads.py](scripts/m4_workloads.py) | 워크로드: 합성 텍스트, Guard 재생 규칙, 기록 재생 |
+| [scripts/matrix_latency.py](scripts/matrix_latency.py) | CredData-trajectory 행렬의 칸마다 4 KB 호출 지연(`setup`, `bundles`, `run`, `report`) |
+| [tests/test_matrix_latency.py](tests/test_matrix_latency.py) | 4 KB 입력, 백분위수, 칸 선택, 표 배치 |
 | [tests/test_m4.py](tests/test_m4.py) | 워크로드, Guard 캐시 규칙, 통계, null 탐지기로 처음부터 끝까지 |
 | [../metric-task/scripts/detector_capture.py](../metric-task/scripts/detector_capture.py) | metric-task 실행 중 Mod의 탐지기 호출을 기록하는 프록시 |
 | `results/<이름>/` | `summary.md`, `summary.csv` (git에 넣는다. 텍스트는 없다) |

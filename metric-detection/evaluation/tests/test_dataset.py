@@ -124,6 +124,57 @@ class DatasetTests(unittest.TestCase):
         self.assertEqual([str(issue) for issue in caught.exception.issues],
                          ["s2 / - / meta.allowed_use does not include 'ml_eval'"])
 
+    def test_excluded_rows_are_not_gold(self) -> None:
+        text = "DB_PASSWORD=mysecret123 PORT=x7k2\n"
+        session = _session(items=[{**ITEM, "text": text}])
+        paths = self._write([session], [_gold(), _gold(span_id=1, start=29, end=33, excluded="slot_no_longer_gold")])
+        self.assertEqual(validate_dataset(*paths), [])
+        loaded = load_sessions(*paths)[0]
+        self.assertEqual([(s.start, s.end) for s in loaded.gold_for(0)], [(12, 23)])
+        self.assertEqual([(s.start, s.end) for s in loaded.excluded_for(0)], [(29, 33)])
+        self.assertEqual(loaded.excluded_for(1), [])
+        # An excluded span may not overlap a gold span: a character is one or the other.
+        overlapping = [_gold(), _gold(span_id=1, start=20, end=33, excluded="slot_no_longer_gold")]
+        self.assertIn("overlap", self._issues([session], overlapping)[0])
+
+    def test_excluded_spans_are_in_no_metric(self) -> None:
+        from evaluation.adapters.base import ItemOutput
+        from evaluation.run import evaluate_sessions
+        from evaluation.scorer.edits import Edit, apply_edits
+
+        text = "DB_PASSWORD=mysecret123 PORT=x7k2 HOST=db1\n"
+        session = _session(items=[{**ITEM, "text": text}])
+        gold = [_gold(), _gold(span_id=1, start=29, end=33, excluded="slot_no_longer_gold")]
+
+        class Masks:
+            name = "masks"
+
+            def __init__(self, edits):
+                self.edits = edits
+
+            def describe(self):
+                return {}
+
+            def run_session(self, session):
+                return {0: ItemOutput(0, apply_edits(text, self.edits), self.edits)}
+
+        def metrics(edits, rows):
+            return evaluate_sessions(load_sessions(*self._write([session], rows)), Masks(edits)).metrics
+
+        secret, port, host = Edit(12, 23, "[P]"), Edit(29, 33, "[X]"), Edit(39, 42, "[H]")
+        with_port, without = metrics([secret, port], gold), metrics([secret], gold)
+        for key in ("recall", "precision", "f2", "edit_precision", "fp_per_1k_lines"):
+            self.assertEqual(with_port[key], without[key], key)
+        self.assertEqual((with_port["recall"], with_port["precision"]), (1.0, 1.0))
+        counts = with_port["counts"]
+        self.assertEqual([counts[k] for k in ("gold_total", "edits_total", "edits_fp", "masked_chars", "excluded_spans",
+                                              "excluded_chars", "excluded_masked_chars")], [1, 1, 0, 11, 1, 4, 4])
+        self.assertEqual(without["counts"]["excluded_masked_chars"], 0)
+        # Before the row was marked, masking the planted value was a false positive.
+        self.assertEqual(metrics([secret, port], gold[:1])["precision"], 11 / 15)
+        # Other non-gold text is a false positive as before.
+        self.assertEqual(metrics([secret, port, host], gold)["precision"], 11 / 14)
+
 
 if __name__ == "__main__":
     unittest.main()

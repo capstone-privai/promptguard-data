@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.catalog import CHANNEL_LABELS, TYPE_LABELS, dataset_info, dataset_order
-from pipeline.collect import merge
+from pipeline.collect import CHAR_KEYS, COUNT_KEYS, ITEM_FIELDS, merge
 from pipeline.paths import DASHBOARD_ROOT, METRIC_DETECTION
 from pipeline.taxonomy import CHANNELS, EDIT_CLASSES, STATUSES, TYPES
 
@@ -36,11 +36,14 @@ from evaluation.dataset.io import file_sha256, gold_path_for
 SHARD_SCRIPT = DASHBOARD_ROOT / "pipeline" / "shard.py"
 # Code whose change changes the numbers: the scorer, and the parts of this pipeline that count and pick examples.
 # Display names (catalog.py) are not here: index.json carries the current ones.
-SCORING_CODE = [*sorted((METRIC_DETECTION / "evaluation").rglob("*.py")),
+SCORING_CODE = [*sorted([*(METRIC_DETECTION / "evaluation").rglob("*.py"), *(METRIC_DETECTION / "evaluation").rglob("*.mjs")]),
                 *(DASHBOARD_ROOT / "pipeline" / name
                   for name in ("__init__.py", "paths.py", "runner.py", "taxonomy.py", "collect.py", "shard.py",
                               "gitleaks_cache.py"))]
-SUMMARY_VERSION = 2  # earlier results did not pin the evaluated inputs to their key
+# 2: results pin the evaluated inputs to their key. 3: items rows and counts carry masked_chars and masked_gold_chars;
+# the headline is covered recall and character precision (exact recall and edit precision kept beside them).
+# 4: each commit's own Mod (register.mjs under Node) does the substitution, instead of a Python port of one Mod.
+SUMMARY_VERSION = 4
 
 
 class EvaluationError(Exception):
@@ -220,8 +223,16 @@ def plan(datasets: Sequence[Dataset], weights: dict[str, list[int]], jobs: int) 
 def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, python: str, jobs: int,
                progress: Callable[[int, int], None], cancelled: Callable[[], bool], *,
                shard_script: Path = SHARD_SCRIPT, gitleaks_cache: Path | None = None,
-               checkpoint_dir: Path | None = None) -> None:
+               checkpoint_dir: Path | None = None, detections_dir: Path | None = None,
+               replay_detections: Path | None = None) -> None:
     cache_args = ["--gitleaks-cache", str(gitleaks_cache)] if gitleaks_cache else []
+    if replay_detections is not None:
+        cache_args += ["--replay-detections", str(replay_detections)]
+
+    def detections_args(shard):
+        if detections_dir is None:
+            return []
+        return ["--detections-out", str(detections_dir / f"{shard.name}.jsonl.gz")]
     total = sum(shard.weight for shard in shards)
     done = 0
     pending = list(shards)
@@ -233,10 +244,11 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
 
     def valid(shard, payload):
         return (isinstance(payload, dict) and payload.get("sessions") == shard.high - shard.low
-                and all(key in payload for key in ("cells", "items", "picks", "sources", "counts", "system",
+                and all(key in payload for key in ("cells", "items", "picks", "sources", "values", "counts", "system",
                                                    "lines_total", "item_count", "seconds"))
-                and isinstance(payload["items"], list)
-                and all(isinstance(row, list) and len(row) >= 3 and type(row[2]) is int and row[2] >= 0
+                and isinstance(payload["items"], list) and isinstance(payload["counts"], dict)
+                and all(key in payload["counts"] for key in CHAR_KEYS)
+                and all(isinstance(row, list) and len(row) == 2 + ITEM_FIELDS and type(row[2]) is int and row[2] >= 0
                         for row in payload["items"])
                 and sum(row[2] for row in payload["items"]) == shard.weight)
 
@@ -258,6 +270,8 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
                 saved = json.loads((checkpoint_dir / f"{shard.name}.json").read_text(encoding="utf-8"))
                 if saved.get("identity") != identity(shard) or not valid(shard, saved.get("payload")):
                     continue
+                if detections_dir is not None and not (detections_dir / f"{shard.name}.jsonl.gz").is_file():
+                    continue  # its saved detections are gone: run it again
             except (OSError, ValueError, TypeError, KeyError, IndexError):
                 continue
             write_json(work_dir / "shards" / f"{shard.name}.json", saved["payload"])
@@ -275,7 +289,7 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
                     [python, str(shard_script), "run", "--dataset", shard.dataset.stem,
                      "--sessions", str(shard.dataset.sessions), "--gold", str(shard.dataset.gold),
                      "--lines", f"{shard.low}:{shard.high}", "--system-root", str(system_root),
-                     "--out", str(work_dir / "shards" / f"{shard.name}.json"), *cache_args],
+                     "--out", str(work_dir / "shards" / f"{shard.name}.json"), *cache_args, *detections_args(shard)],
                     stdout=log, stderr=subprocess.STDOUT, env=child_env())
                 running.append((shard, process, log))
             time.sleep(0.5)
@@ -309,25 +323,38 @@ def run_shards(shards: Sequence[Shard], system_root: Path, work_dir: Path, pytho
                 checkpoint(shard)
 
 
+def _f(beta: float, precision: float | None, recall: float | None) -> float | None:
+    if precision is None or recall is None:
+        return None
+    weight = beta * beta
+    return 0.0 if precision + recall == 0 else (1 + weight) * precision * recall / (weight * precision + recall)
+
+
 def prf(counts: dict[str, int]) -> dict[str, float | None]:
+    """recall: gold spans an edit masks fully (exact or over) / gold spans. precision: masked characters inside gold /
+    masked characters (a blocked item masks all of its text). exact_recall and edit_precision are the earlier ones:
+    exactly masked spans / gold spans, and edits inside one gold span / edits."""
     gold = counts["exact"] + counts["over"] + counts["partial"] + counts["missed"]
     edits = counts["edits_tp"] + counts["edits_over"] + counts["edits_fp"]
-    recall = counts["exact"] / gold if gold else None
-    precision = counts["edits_tp"] / edits if edits else None
-    if precision is None or recall is None:
-        f1 = None
-    else:
-        f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
-    return {"precision": precision, "recall": recall, "f1": f1}
+    recall = (counts["exact"] + counts["over"]) / gold if gold else None
+    precision = counts["masked_gold_chars"] / counts["masked_chars"] if counts["masked_chars"] else None
+    exact_recall = counts["exact"] / gold if gold else None
+    edit_precision = counts["edits_tp"] / edits if edits else None
+    return {"precision": precision, "recall": recall, "f1": _f(1, precision, recall), "f2": _f(2, precision, recall),
+            "exact_recall": exact_recall, "edit_precision": edit_precision,
+            "exact_f2": _f(2, edit_precision, exact_recall)}
 
 
 def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, python: str, jobs: int,
              cache_dir: Path, commit: dict[str, Any], system_fingerprint: str, bench: dict[str, Any],
              progress: Callable[[int, int], None] = lambda done, total: None,
              cancelled: Callable[[], bool] = lambda: False, gitleaks_cache: Path | None = None,
-             resume_dir: Path | None = None) -> dict[str, Any]:
+             resume_dir: Path | None = None, detections_dir: Path | None = None,
+             replay_detections: Path | None = None) -> dict[str, Any]:
     """Evaluate, merge and write out_dir; return the headline numbers (overall and per dataset).
 
+    detections_dir: save each shard's detector results there (<shard>.jsonl.gz). replay_detections: a folder of such
+    files to score instead of running the detector (the checkout's Mod still runs).
     gitleaks_cache: SQLite file the shards share for gitleaks runs (gitleaks_cache.py); None runs gitleaks per text."""
     started = time.perf_counter()
     out_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -343,8 +370,11 @@ def evaluate(system_root: Path, datasets: Sequence[Dataset], out_dir: Path, *, p
             namespace = hashlib.sha256(f'{system_fingerprint}|{bench["fingerprint"]}'.encode()).hexdigest()
             checkpoint_dir = resume_dir / namespace
         try:
+            if detections_dir is not None:
+                detections_dir.mkdir(parents=True, exist_ok=True)
             run_shards(shards, system_root, work_dir, python, jobs, progress, cancelled, shard_script=shard_script,
-                       gitleaks_cache=gitleaks_cache, checkpoint_dir=checkpoint_dir)
+                       gitleaks_cache=gitleaks_cache, checkpoint_dir=checkpoint_dir, detections_dir=detections_dir,
+                       replay_detections=replay_detections)
         except (EvaluationError, KeyboardInterrupt, SystemExit):
             shutil.copytree(work_dir / "logs", out_dir.with_name(out_dir.name + ".failed-logs"), dirs_exist_ok=True)
             raise
@@ -380,7 +410,7 @@ def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, d
     channel_index = {channel: index for index, channel in enumerate(CHANNELS)}
     type_index = {type_: index for index, type_ in enumerate(TYPES)}
     cells, items, facts, overview, by_dataset = [], [], [], [], {}
-    totals = dict.fromkeys(("exact", "over", "partial", "missed", "edits_tp", "edits_over", "edits_fp"), 0)
+    totals = dict.fromkeys(COUNT_KEYS + CHAR_KEYS, 0)
     for d, dataset in enumerate(datasets):
         result = merged[dataset.stem]
         info = dataset_info(dataset.stem)
@@ -398,6 +428,8 @@ def write_result(out_dir: Path, datasets: Sequence[Dataset], merged: dict[str, d
             "key": dataset.stem, "label": info.label, "about": info.about, "group_label": info.group_label,
             "groups": groups, **result["facts"],
             "gold": counts["exact"] + counts["over"] + counts["partial"] + counts["missed"],
+            # distinct gold texts, gold spans not found (partial or missed) and the distinct texts among those
+            **result["values"],
             "edits": counts["edits_tp"] + counts["edits_over"] + counts["edits_fp"],
             "lines": result["lines_total"],
             "sessions_sha256": dataset.sessions_sha256, "gold_sha256": dataset.gold_sha256,

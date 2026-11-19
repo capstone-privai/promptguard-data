@@ -84,7 +84,11 @@ class PlaceholderTypeTest(unittest.TestCase):
 
 class CatalogTest(unittest.TestCase):
     def test_every_grouped_dataset_has_names(self):
-        self.assertEqual(set(taxonomy.GROUPS), set(catalog.DATASETS))
+        self.assertLessEqual(set(taxonomy.GROUPS), set(catalog.DATASETS))
+        # display-only entries (registered evaluations' datasets) group by meta, not by a GROUPS entry
+        for stem in set(catalog.DATASETS) - set(taxonomy.GROUPS):
+            self.assertTrue(stem.startswith("sessions_mleval_"), stem)
+            self.assertEqual(taxonomy.group_of(stem)({"scenario": "password_reuse"}), "password_reuse")
         names = catalog.as_json()
         self.assertEqual(set(names["types"]), set(taxonomy.TYPES))
         self.assertEqual(set(names["channels"]), set(taxonomy.CHANNELS))
@@ -104,10 +108,13 @@ class CountsTest(unittest.TestCase):
     def check(self, adapter):
         payload, metrics = payload_for(self.sessions, adapter)
         merged = collect.merge([payload])  # raises MergeError when the cells disagree with the scorer
-        self.assertEqual(merged["counts"], {key: metrics["counts"][key] for key in collect.COUNT_KEYS})
+        self.assertEqual(merged["counts"],
+                         {key: metrics["counts"][key] for key in collect.COUNT_KEYS + collect.CHAR_KEYS})
         result = prf(merged["counts"])
-        self.assertEqual(result["recall"], metrics["recall"])
-        self.assertEqual(result["precision"], metrics["precision"])
+        for key in ("recall", "precision", "f2", "exact_recall", "edit_precision", "exact_f2"):
+            self.assertEqual(result[key], metrics[key], key)
+        for index, key in enumerate(collect.CHAR_KEYS):
+            self.assertEqual(sum(row[5 + index] for row in merged["items"]), metrics["counts"][key], key)
         return merged
 
     def test_oracle_identity_and_every_outcome(self):
@@ -117,8 +124,10 @@ class CountsTest(unittest.TestCase):
         self.assertIsNone(prf(identity["counts"])["precision"])
         scripted = self.check(ScriptedAdapter())
         counts = scripted["counts"]
-        for key in ("exact", "over", "partial", "missed", "edits_tp", "edits_over", "edits_fp"):
+        for key in ("exact", "over", "partial", "missed", "edits_tp", "edits_over", "edits_fp", "masked_chars",
+                    "masked_gold_chars"):
             self.assertGreater(counts[key], 0, key)
+        self.assertLess(counts["masked_gold_chars"], counts["masked_chars"])
 
     def test_false_positives_take_their_placeholder_type(self):
         merged = self.check(ScriptedAdapter())
@@ -149,9 +158,36 @@ class CountsTest(unittest.TestCase):
         self.assertEqual(metrics["counts"]["gold_excluded"], 1)
         self.assertEqual(sum(row[3] for row in merged["cells"]), metrics["counts"]["exact"])
 
+    def test_repeated_values_are_counted_once(self):
+        text = "a=hunter22\nb=hunter22\nc=zz9secret"
+        spans = [GoldSpan(0, 0, 2, 10, "PASSWORD"), GoldSpan(0, 1, 13, 21, "PASSWORD"), GoldSpan(0, 2, 24, 33, "PASSWORD")]
+
+        class MasksLast:
+            name = "masks-last"
+
+            def describe(self):
+                return {}
+
+            def run_session(self, session):
+                edits = [Edit(24, 33, "[PASSWORD_1]")]
+                return {0: ItemOutput(0, apply_edits(text, edits), edits)}
+
+        reread = [Session(name, [Item(0, "t", "tool_output", text)], spans) for name in ("s1", "s2")]
+        whole, _ = payload_for(reread, MasksLast())
+        halves = [payload_for([session], MasksLast())[0] for session in reread]
+        for merged in (collect.merge([whole]), collect.merge(halves)):
+            self.assertEqual(merged["values"], {"gold_values": 2, "unfound": 4, "unfound_values": 1,
+                                                "excluded_spans": 0, "excluded_values": 0, "excluded_chars": 0,
+                                                "excluded_masked_chars": 0})
+        self.assertNotIn("hunter22", json.dumps(whole["values"]))
+
     def test_mismatch_is_refused(self):
         payload, _ = payload_for(self.sessions, OracleAdapter())
         payload["counts"] = {**payload["counts"], "exact": payload["counts"]["exact"] + 1}
+        with self.assertRaises(collect.MergeError):
+            collect.merge([payload])
+        payload, _ = payload_for(self.sessions, OracleAdapter())
+        payload["counts"] = {**payload["counts"], "masked_chars": payload["counts"]["masked_chars"] + 1}
         with self.assertRaises(collect.MergeError):
             collect.merge([payload])
 
@@ -208,11 +244,45 @@ class ExamplesTest(unittest.TestCase):
         self.assertLessEqual(spans[0][0], 1000 - collect.PAD + collect.SNAP)
 
     def test_many_groups_fold_into_other(self):
-        items = {(f"g{index:02d}", "tool_output"): [index + 1, 0, 1] for index in range(MAX_GROUPS + 5)}
+        items = {(f"g{index:02d}", "tool_output"): [index + 1, 0, 1, 0, 0] for index in range(MAX_GROUPS + 5)}
         groups = collect._fold_groups(items)
         self.assertEqual(len(set(groups.values())), MAX_GROUPS)
         self.assertEqual(groups["g00"], OTHER_GROUP)  # the smallest
         self.assertEqual(groups[f"g{MAX_GROUPS + 4:02d}"], f"g{MAX_GROUPS + 4:02d}")
+
+
+class ExcludedSpanTest(unittest.TestCase):
+    def test_excluded_spans_are_counted_and_in_no_cell(self):
+        text = "a=hunter22\nport=x7k2\nhost=db1\nagain=x7k2"
+        gold = [GoldSpan(0, 0, 2, 10, "PASSWORD")]
+        excluded = [GoldSpan(0, 1, 16, 20, "PASSWORD"), GoldSpan(0, 2, 36, 40, "PASSWORD")]
+
+        class Masks:
+            name = "masks"
+
+            def describe(self):
+                return {}
+
+            def run_session(self, session):
+                edits = [Edit(2, 10, "[PASSWORD_1]"), Edit(16, 20, "[PASSWORD_2]"), Edit(26, 29, "[X_1]")]
+                return {0: ItemOutput(0, apply_edits(text, edits), edits)}
+
+        sessions = [Session(name, [Item(0, "t", "tool_output", text)], gold, {}, excluded) for name in ("s1", "s2")]
+        whole, metrics = payload_for(sessions, Masks())
+        halves = [payload_for([session], Masks())[0] for session in sessions]
+        for merged in (collect.merge([whole]), collect.merge(halves)):
+            self.assertEqual(merged["values"], {"gold_values": 1, "unfound": 0, "unfound_values": 0,
+                                                "excluded_spans": 4, "excluded_values": 1, "excluded_chars": 16,
+                                                "excluded_masked_chars": 8})
+            counts = merged["counts"]
+            # per session: the gold span (8 characters) and "db1" are masked; the masked excluded span is in neither
+            self.assertEqual([counts[k] for k in ("exact", "edits_tp", "edits_fp", "masked_chars", "masked_gold_chars")],
+                             [2, 2, 2, 22, 16])
+        self.assertEqual(metrics["counts"]["excluded_spans"], 4)
+        self.assertNotIn("x7k2", json.dumps(whole["excluded"]))
+        # a payload written before excluded spans existed still merges
+        old = {key: value for key, value in whole.items() if key != "excluded"}
+        self.assertEqual(collect.merge([old])["values"]["excluded_spans"], 0)
 
 
 if __name__ == "__main__":

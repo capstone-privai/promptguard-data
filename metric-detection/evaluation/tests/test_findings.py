@@ -15,14 +15,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from evaluation.adapters.promptguard_adapter import BLOCKED, PromptGuardAdapter
+from evaluation.adapters.promptguard_adapter import PromptGuardAdapter
 from evaluation.dataset.io import load_sessions
 from evaluation.dataset.schema import GoldSpan, Item, Session
 from evaluation.report.findings import match_gold, per_finding_rows, per_scan_rows
 from evaluation.report.meta import build_run_meta
 from evaluation.report.write import write_run
 from evaluation.run import evaluate_sessions
-from evaluation.tests.support import GOLD, HAS_PROMPTGUARD, SESSIONS, SKIP_REASON, utf16_len
+from evaluation.tests.support import BLOCKED_TEXT, GOLD, HAS_PROMPTGUARD, SESSIONS, SKIP_REASON, utf16_len
 
 
 @dataclass(frozen=True)
@@ -115,7 +115,7 @@ class RecordedFindingsTests(unittest.TestCase):
 
     def test_failed_item_is_blocked_and_keeps_its_findings(self) -> None:
         output = self.result.outputs[("s", 2)]
-        self.assertEqual(output.text, BLOCKED)
+        self.assertEqual(output.text, BLOCKED_TEXT)
         scan = {row["item_id"]: row for row in self.scans}
         self.assertEqual((scan[2]["adapter_errors"], scan[2]["blocked"]), (["ADAPTER_FAILURE:c"], True))
         self.assertEqual((scan[0]["adapter_errors"], scan[0]["blocked"], scan[0]["findings"]), ([], False, 3))

@@ -51,6 +51,20 @@ DATASETS: dict[str, DatasetInfo] = {
     "sessions_from_noseyparker": DatasetInfo(
         "Nosey Parker", "Nosey Parker 내장 규칙 189개의 예시와 음성 예시. 수백 종 서비스의 토큰 형식을 시험한다.",
         "예시 종류"),
+    # ML 학습 0단계(ml-train-pilot 5b812c7)의 평가 전용 split. data_test/에는 없고, 파일럿 모델 평가처럼 따로 등록한
+    # 평가(evaluations.json)에서만 쓴다. taxonomy.GROUPS에 넣지 않으므로 meta.category·scenario로 묶인다(group_of).
+    "sessions_mleval_v1_test": DatasetInfo(
+        "ML 0단계 · LLM 템플릿 test", "ML 학습 0단계의 LLM 템플릿 test split. 파일럿 모델 학습에 쓰지 않았다. 설정·자연어·"
+        "문서 문맥이 많고, 가림 표시·개인정보·리소스 이름 같은 음성 값이 섞여 있다.", "그룹"),
+    "sessions_mleval_v1_test_ood": DatasetInfo(
+        "ML 0단계 · LLM 템플릿 test_ood", "학습 쪽에 없는 형식의 LLM 템플릿 묶음. 세션 10개, 정답 14개라 참고용이다.",
+        "그룹"),
+    "sessions_mleval_hand_v1_test": DatasetInfo(
+        "ML 0단계 · 손 템플릿 test", "ML 학습 0단계의 손 템플릿 test split. 경계 규칙을 몰아 넣어 실제 트래픽보다 정답 "
+        "밀도가 높다. 해시·ID·공개키·예시 값 같은 음성 값이 있다.", "그룹"),
+    "sessions_mleval_privesc_test_ood": DatasetInfo(
+        "ML 0단계 · privesc test_ood", "privesc-llm-data의 test_ood 시나리오(password_reuse, ssh_key_reuse). train과 "
+        "같은 VM이라 수천 item이 train과 사실상 같아 점수가 낙관적이다.", "시나리오"),
 }
 
 
@@ -76,4 +90,7 @@ def as_json() -> dict[str, Any]:
     }
 
 
-assert set(GROUPS) == set(DATASETS), "taxonomy.GROUPS and catalog.DATASETS must list the same datasets"
+# Every grouped dataset has display data. A dataset only some registered evaluations use (sessions_mleval_*) may have
+# display data without a GROUPS entry: taxonomy.py is part of the scoring fingerprint, and adding to it would make
+# the service evaluate every commit again.
+assert set(GROUPS) <= set(DATASETS), "every taxonomy.GROUPS dataset needs a catalog.DATASETS entry"

@@ -39,7 +39,7 @@ PromptGuard는 체크아웃에 설정된 그대로 한 가지로만 돌린다. �
 
 `--system promptguard`는 PromptGuard 체크아웃을 다음 순서로 찾는다: `--system-root DIR`, 환경 변수 `PROMPTGUARD_CLAUDE_ROOT`(metric-task와 같다), 이 저장소 옆의 `../promptguard-claude-demoV0`. 그 체크아웃이 지금 가리키는 브랜치의 코드가 평가된다. 설치된 `credsweeper`가 체크아웃의 `requirements.txt`에 고정된 버전과 다르면 설정 오류로 멈춘다.
 
-실행할 때마다 `metric-detection/results/<YYYYmmdd-HHMMSS>_<system>[_<설정>]/`가 생기고, 그 경로와 recall, precision, F2, 1,000줄당 과잉 마스킹, gold 수, 비밀 밀도가 출력된다. `metric-detection/results/`는 git에 올리지 않는다.
+실행할 때마다 `metric-detection/results/<YYYYmmdd-HHMMSS>_<system>[_<설정>]/`가 생기고, 그 경로와 recall, precision, F2(정의는 [지표](#지표)), exact_recall, edit_precision, 1,000줄당 과잉 마스킹, gold 수, 비밀 밀도가 출력된다. `metric-detection/results/`는 git에 올리지 않는다.
 
 ### 옵션
 
@@ -121,6 +121,7 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 - 세션 파일: 한 줄에 세션 하나(`session_id`, `items`, `meta`). `session_id`는 파일 안에서 유일하고, `item_id`는 세션 안에서만 유일한 0 이상의 정수다. item은 시간 순서다.
 - `channel`은 `prompt`, `instructions`, `tool_input`, `tool_output` 중 하나.
 - 정답 파일: 한 줄에 span 하나(`session_id`, `item_id`, `span_id`, `span: {start, end, type}`). span이 없는 item과 세션은 정답 파일에 나오지 않는다.
+- 정답 파일의 행에 `"excluded": "<이유>"`(빈 값이 아닌 것)가 있으면 정답이 아니라 **채점에서 빼는 span**이다. 데이터 세트가 심은 값이 정답이 아닌 자리에 남은 경우에 쓴다. 가리지 않아도 놓친 것이 아니고(정답 수에 들지 않는다), 가려도 오탐이 아니다: 그 글자는 `counts.masked_chars`에 넣지 않고, 뺀 span 안에만 있는 edit는 edit 수와 `edits_fp`에 넣지 않는다. 뺀 span과 다른 텍스트를 함께 가린 edit는 전과 같이 판정하고 다른 글자는 그대로 센다. 형식 규칙은 정답 span과 같다(`span_id`는 item 안에서 유일, 정답 span과 겹치면 안 된다). `counts.excluded_spans`, `counts.excluded_chars`, `counts.excluded_masked_chars`에 채점 채널의 수가 남는다.
 - `type`은 `PASSWORD`, `TOKEN`, `ACCESS_KEY`, `PRIVATE_KEY`, `SECRET` 중 하나. 유형은 분석용일 뿐 성공 판정에 쓰지 않는다. PromptGuard의 placeholder 유형(`API_KEY`, `AWS_KEY`, `JWT` 등)과는 따로 정한 것이다.
 - 위치는 item `text`의 Python 문자열(코드 포인트) 인덱스이며 `start`는 포함, `end`는 포함하지 않는다. 비어 있으면 안 된다. 한 item 안의 정답 span은 겹치면 안 되고, 맞닿는 것은 괜찮다.
 - `meta`는 `run_meta.json`에 요약되어 남으므로 비밀값을 넣지 않는다.
@@ -132,20 +133,25 @@ CredSweeper의 ML 검증을 켠 평가는 `ml_eval`이다. `authored`, `recorded
 - 정답은 데이터셋에서만 온다. 시스템이 보지 못한 비밀도 놓친 것으로 센다.
 - 채점하는 채널은 `prompt`, `instructions`, `tool_output`이다(`dataset/schema.py`의 `SCORED_CHANNELS`). `tool_input`은 모델이 직접 쓴 도구 인자라 가릴 대상이 아니고, 실행 직전에 placeholder를 원래 값으로 되돌리는 자리다. 그래서 모든 시스템에서 `tool_input` item의 정답 span, edit, 줄 수를 아래 지표의 분자와 분모 양쪽에서 뺀다. 시스템이 `tool_input`을 검사해 가렸어도(`--channels all`, `oracle`) 점수는 같다. item과 정답은 데이터에 그대로 두고 채점할 때만 뺀다. 뺀 양은 `metrics.json`의 `counts.gold_excluded`, `counts.edits_excluded`, `excluded_by_channel`에 남는다.
 - 채점에는 시스템이 보고한 edit(원문 좌표의 `start`, `end`, `replacement`)만 쓴다. item을 채점하기 전에 edit를 원문에 적용해 보고, 결과가 시스템의 실제 출력과 한 글자라도 다르면 종료 코드 2로 멈춘다. 후보, 예측, 감사 로그는 채점에 쓰지 않고, 출력 텍스트끼리 diff하지도 않는다.
-- 정답 span의 모든 글자가 edit 합집합 안에 있고 span에 걸친 edit가 모두 span 안에 있으면 `exact`, 모든 글자를 덮었지만 span 밖으로 넘친 edit가 있으면 `over`, 한 글자도 없으면 `missed`, 그 사이면 `partial`이다. `exact`만 성공이다. edit는 정답 span 하나 안에 들어가면 참양성(`within_gold`), 정답과 겹치지 않으면 과잉 마스킹(`overlaps_gold`가 false)이고, 그 사이(겹치지만 넘침)는 어느 쪽도 아닌 넓은 마스킹이다. 대체 문자열의 내용은 보지 않는다. 판정 예시는 [metric-detection README](../README.md#판정)에 있다.
+- 정답 span의 모든 글자가 edit 합집합 안에 있고 span에 걸친 edit가 모두 span 안에 있으면 `exact`, 모든 글자를 덮었지만 span 밖으로 넘친 edit가 있으면 `over`, 한 글자도 없으면 `missed`, 그 사이면 `partial`이다. recall에서는 `exact`와 `over`가 찾은 것이고(정답 글자가 하나도 드러나지 않았으므로), 예전 exact recall에서는 `exact`만 성공이다. edit는 정답 span 하나 안에 들어가면 참양성(`within_gold`), 정답과 겹치지 않으면 과잉 마스킹(`overlaps_gold`가 false)이고, 그 사이(겹치지만 넘침)는 어느 쪽도 아닌 넓은 마스킹이다. 대체 문자열의 내용은 보지 않는다. 판정 예시는 [metric-detection README](../README.md#판정)에 있다.
 
 ## 지표
 
 | 키 | 정의 |
 |---|---|
-| `recall` | exact 정답 span / 전체 정답 span. 정답, edit, 줄은 모두 채점 채널의 것만 센다 |
-| `precision` | 정답 span 안에 들어간 edit / 전체 edit. 정답 밖으로 넘친 edit는 참양성이 아니다 |
-| `f2` | `5PR / (4P + R)`. 둘 다 0이면 `0.0`, 하나라도 `None`이면 `None` |
+| `recall` | 다 가려진 정답 span / 전체 정답 span. 정답 span의 글자가 모두 edit로 가려졌으면(`exact`, `over`) 찾은 것이고, 일부만 가려졌거나(`partial`) 하나도 안 가려졌으면(`missed`) 못 찾은 것이다. 정답, edit, 글자, 줄은 모두 채점 채널의 것만 센다 |
+| `precision` | 가린 글자 가운데 정답 글자의 비율(글자 단위). item마다 원문 좌표에서 가린 글자(edit가 바꾼 글자의 합집합)와 그 가운데 정답 span 안에 있는 글자를 세고, 모든 item을 더해 `Σ 가린 정답 글자 / Σ 가린 글자`로 계산한다. fail-closed로 차단된 item은 edit 하나가 item 전체를 바꾸므로 item의 모든 글자를 가린 것으로 센다. 정답보다 넓게 가리면 넘친 글자만큼 낮아진다. 채점에서 빼는 span(`excluded`)의 글자는 가린 글자에 넣지 않는다 |
+| `f2` | `5PR / (4P + R)`, 위의 `precision`과 `recall`로 계산한다. 둘 다 0이면 `0.0`, 하나라도 `None`이면 `None` |
+| `exact_recall` | 예전 recall. 정확히 가린(`exact`) 정답 span / 전체 정답 span |
+| `edit_precision` | 예전 precision. 정답 span 하나 안에 들어간 edit / 전체 edit. 정답 밖으로 넘친 edit는 참양성이 아니다 |
+| `exact_f2` | `exact_recall`과 `edit_precision`으로 계산한 F2 |
+| `counts.masked_chars`, `counts.masked_gold_chars` | 가린 글자 수, 그 가운데 정답 span 안에 있는 글자 수. `precision`의 분모와 분자다 |
 | `fp_per_1k_lines` | 정답과 겹치지 않는 edit / 전체 줄 수 × 1000 |
 | `char_recall` | 가려진 정답 글자 수 / 전체 정답 글자 수 |
-| `over_rate`, `partial_rate`, `missed_rate` | over / partial / missed 정답 span의 비율. 다 덮었는지만 보는 옛 recall은 `recall + over_rate`다 |
+| `over_rate`, `partial_rate`, `missed_rate` | over / partial / missed 정답 span의 비율. `recall = exact_recall + over_rate`다 |
 | `counts.edits_tp`, `counts.edits_over`, `counts.edits_fp` | 정답 span 안에 들어간 edit, 정답과 겹치지만 넘친 edit, 정답과 겹치지 않는 edit의 수 |
-| `recall_by_type`, `recall_by_channel` | 유형별, 채널별 recall. 해당 그룹에 정답이 없으면 `None` |
+| `recall_by_type`, `recall_by_channel` | 유형별, 채널별 recall(다 가려진 정답 기준). 해당 그룹에 정답이 없으면 `None` |
+| `exact_recall_by_type`, `exact_recall_by_channel` | 같은 묶음의 exact recall |
 | `latency_ms` | 시스템이 처리한 item의 p50 / p95 / max / n (선형 보간 백분위). 같은 기계에서 잰 실행끼리만 비교한다 |
 | `density_per_1k_lines`, `lines_total`, `composition` | 1,000줄당 정답 수, 전체 줄 수(`count("\n")`에 끝 줄이 개행 없이 끝나면 1을 더함), 유형별·채널별 정답 수 |
 | `scored_channels` | 채점한 채널 (`prompt`, `instructions`, `tool_output`) |

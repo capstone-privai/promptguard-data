@@ -1,0 +1,9 @@
+{
+  "version": "creddata-instructions-v1",
+  "instructions": {
+    "analysis": "subject.py 또는 subject.json을 읽고 역할, 주요 구성 요소, 처리·설정의 관계, 외부 의존성과 주의점을 analysis.md에 정리해줘. 설명의 근거가 되는 이름과 위치를 포함하고, 코드 조각만으로 확인할 수 없는 내용은 명시해줘.",
+    "documentation": "subject.py 또는 subject.json을 사용할 개발자를 위한 USAGE.md를 작성해줘. 코드라면 함수의 역할·입력·출력·부수 효과·사용 시 주의점을, 설정이라면 항목의 역할·자료형·관계·변경 시 주의점을 설명해줘. 보이지 않는 구현이나 동작은 추측하지 말고 명시해줘.",
+    "refactoring": "subject.py가 있으면 보이는 범위에서 의미 있는 작은 구조 개선을 하나 선택해 적용해줘. 공개된 이름과 입출력의 의미를 유지하고 변경점을 짧게 설명해줘. subject.json이 있으면 키·값·자료형을 보존한 migrated.toml을 만들고, Python 표준 라이브러리 tomllib로 다시 읽어 원본 JSON과 구조를 비교해줘. 원본 JSON은 유지해줘.",
+    "test_writing": "subject.py가 있으면 보이는 범위에서 단위 테스트할 수 있는 최상위 함수 하나를 골라 unittest 테스트를 test_subject.py에 작성하고 실행해줘. 외부 의존성은 unittest.mock으로 대체하고, 필요하면 snippet_loader.load_function에 bindings를 전달해 대상 함수만 로드해줘. subject.json이 있으면 JSON 읽기·주요 키·자료형을 검증하는 unittest 테스트를 test_subject.py에 작성하고 실행해줘. 파일의 값 전체를 정답으로 복제하지 말고 구조와 예상하는 경계 조건을 확인해줘. 원본 subject 파일은 수정하지 말아줘."
+  }
+}

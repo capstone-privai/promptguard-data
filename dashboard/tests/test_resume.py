@@ -25,8 +25,8 @@ class ResumeTests(unittest.TestCase):
 
     def write_result(self, command):
         out = Path(command[command.index("--out") + 1])
-        payload = {"sessions": 1, "cells": [], "items": [["g", "prompt", 1, 1, 1]], "picks": [], "sources": [],
-                   "counts": {}, "system": {}, "lines_total": 1, "item_count": 1, "seconds": .1}
+        payload = {"sessions": 1, "cells": [], "items": [["g", "prompt", 1, 1, 1, 0, 0]], "picks": [], "sources": [], "values": [],
+                   "counts": {"masked_chars": 0, "masked_gold_chars": 0}, "system": {}, "lines_total": 1, "item_count": 1, "seconds": .1}
         runner.write_json(out, payload)
 
     def run_shards(self, shards, work, popen):

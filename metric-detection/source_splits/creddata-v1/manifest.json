@@ -1,0 +1,131 @@
+{
+  "artifacts": {
+    "duplicate_components.json": {
+      "sha256": "e3a05b9279113ff96ab5baaf319f94087ee1342e3bb8ca46d44616c8fa39064f"
+    },
+    "repositories.jsonl": {
+      "sha256": "69c4d20212f8f947e4a4774ce0587a293ed12b8525a757f67cf6b3f026630dee"
+    },
+    "test.txt": {
+      "sha256": "2ba7033ec66adb2334c33e234fa9dd274a1bd1fceca9eb8cc6a1bf6e671defea"
+    },
+    "train.txt": {
+      "sha256": "9b0da1015daac8eaedec9b748ca59a57a3406aa5dd82f864460a980060bd38bf"
+    },
+    "val.txt": {
+      "sha256": "906ab6af3716b19da5431e8243bf78af176977593c7031b69bbdfc5737c28ffc"
+    }
+  },
+  "assignment_unit": "repository components linked by identical gold-masked, whitespace-normalized items",
+  "balancing_features": [
+    "repositories",
+    "sessions",
+    "items",
+    "positive_items",
+    "negative_items",
+    "PASSWORD",
+    "SECRET",
+    "TOKEN",
+    "ACCESS_KEY",
+    "PRIVATE_KEY"
+  ],
+  "checks": {
+    "all_sessions_assigned_once": true,
+    "cross_repository_duplicate_context_hashes": 85,
+    "gold_value_hashes_12plus_chars_in_multiple_splits": 7,
+    "informative_context_hashes_in_multiple_splits": 0,
+    "informative_context_items": 24838,
+    "repositories_in_multiple_splits": 0,
+    "source_ids_and_gold_offsets_valid": true
+  },
+  "configuration": {
+    "minimum_nonsecret_context_chars": 160,
+    "seed": "creddata-v1-20261115",
+    "target_ratios": {
+      "test": 0.1,
+      "train": 0.8,
+      "val": 0.1
+    }
+  },
+  "counts": {
+    "test": {
+      "components": 34,
+      "gold_by_type": {
+        "ACCESS_KEY": 10,
+        "PASSWORD": 569,
+        "PRIVATE_KEY": 134,
+        "SECRET": 505,
+        "TOKEN": 280
+      },
+      "gold_spans": 1498,
+      "items": 2602,
+      "negative_items": 1876,
+      "positive_items": 726,
+      "repositories": 34,
+      "sessions": 1107
+    },
+    "train": {
+      "components": 244,
+      "gold_by_type": {
+        "ACCESS_KEY": 73,
+        "PASSWORD": 4867,
+        "PRIVATE_KEY": 1178,
+        "SECRET": 5628,
+        "TOKEN": 2290
+      },
+      "gold_spans": 14036,
+      "items": 20162,
+      "negative_items": 15529,
+      "positive_items": 4633,
+      "repositories": 269,
+      "sessions": 8790
+    },
+    "val": {
+      "components": 31,
+      "gold_by_type": {
+        "ACCESS_KEY": 10,
+        "PASSWORD": 560,
+        "PRIVATE_KEY": 142,
+        "SECRET": 488,
+        "TOKEN": 292
+      },
+      "gold_spans": 1492,
+      "items": 2581,
+      "negative_items": 1836,
+      "positive_items": 745,
+      "repositories": 34,
+      "sessions": 1133
+    }
+  },
+  "inputs": {
+    "gold": {
+      "path": "metric-detection/data_answer/gold_from_CredData.jsonl",
+      "sha256": "109c45ddc541decc711dc7fceb182ea53e722fdece6e0595d4cf932838b310e0"
+    },
+    "sessions": {
+      "path": "metric-detection/data_test/sessions_from_CredData.jsonl",
+      "sha256": "c9ff1db0846934a181bb5dfc0f2375aeac448fbfdaeba1a415c3e3f167202ed8"
+    }
+  },
+  "limitations": [
+    "Only converted file windows are available locally; this is not a split of runnable complete repositories.",
+    "Only known gold spans are masked for duplicate checks; labels are not guaranteed exhaustive.",
+    "Short contexts and approximate duplicates/forks have not been excluded by this check.",
+    "Gold values may recur across splits. Replace values with split-specific synthetic values before agent runs.",
+    "Task-template families and any new code imports must be checked for cross-split reuse later.",
+    "Existing evaluation-only inputs and dataset_policy are unchanged. No model may train from this manifest directly.",
+    "The full existing CredData benchmark is not independent once any of these sources trains a model.",
+    "Existing holdout benchmarks have already been inspected; this is not a pristine blind evaluation."
+  ],
+  "ready_for_training": false,
+  "schema_version": 1,
+  "source": {
+    "creddata_commits": [
+      "0b1940e171725ad8937311120b191602608a4801"
+    ],
+    "dataset_versions": [
+      "creddata@0b1940e17172"
+    ]
+  },
+  "stage": "source_partition_only"
+}

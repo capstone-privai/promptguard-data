@@ -78,7 +78,8 @@ def evaluate_sessions(sessions: list[Session], adapter: SystemUnderTest) -> RunR
             output = produced[item.item_id]
             try:
                 scores.append(score_item(session.session_id, item.item_id, item.channel, item.text, output.text,
-                                         output.edits, session.gold_for(item.item_id)))
+                                         output.edits, session.gold_for(item.item_id),
+                                         session.excluded_for(item.item_id)))
             except (EditError, VerificationError) as exc:
                 raise ScoringError(session.session_id, item.item_id, str(exc)) from exc
             outputs[(session.session_id, item.item_id)] = output
